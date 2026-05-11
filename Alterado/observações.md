@@ -3,7 +3,6 @@
 > Análise inicial das bases em `Base de Dados/datasets/` (somente leitura, nenhum arquivo foi alterado).
 
 ---
-OBS: 11/05/2026
 ## 📁 Pasta `apontamentos/`
 
 | Aspecto | XLSX | PARQUET |
@@ -76,3 +75,107 @@ OBS: 11/05/2026
 1. Na telemetria, **converter** `Inicio_Turno`, `Fim_Turno` e `Valor` para os tipos corretos (datetime e numérico).
 2. A coluna `Porte` **só existe no XLSX** — se for relevante, será necessário cruzar com outra fonte ou derivá-la (ex.: a partir da `Tag_Frota`).
 3. Os 6 parquets de telemetria podem ser **concatenados** para formar a base completa do semestre.
+
+---
+
+## 📝 Observações sobre os arquivos da pasta `Base de Dados/` — 11/05/2026
+
+> **Prompt do usuário:** *"Explique o que cada arquivo dessa pasta `C:\Users\marcelo.ayala\Desktop\DadosVale\Alterado\Base de Dados` apresenta de dados, alguns não entendi direito a função dele."*
+
+### Estrutura da pasta
+
+```
+Base de Dados/
+├── README.md
+├── Dicionario_Dados.xlsx
+├── Alarmes - Regra de Negocio.xlsx
+└── datasets/
+    ├── apontamentos/   (.xlsx + .parquet)
+    └── telemetria/     (.xlsx + 6× .parquet)
+```
+
+### 📄 `README.md`
+Texto curto que descreve o conteúdo da pasta e traz um **resumo dos volumes**:
+- Apontamentos: 377.907 registros (jan a jun/2025).
+- Telemetria: 37.164.054 registros (jan a jun/2025).
+
+É um "guia rápido" da pasta.
+
+---
+
+### 📘 `Dicionario_Dados.xlsx` — Dicionário de Dados
+Arquivo de **referência** (não tem dados operacionais, só metadados). Tem 2 abas:
+
+**Aba `Apontamentos`** (9 colunas descritas):
+
+| Coluna | Significado |
+|---|---|
+| `Id` | Identificador único do ciclo de apontamento |
+| `Inicio` / `Fim` | Início e término do apontamento |
+| `Tag` | Código do equipamento |
+| `Frota` | Modelo da frota (ex.: 793-D 5S) |
+| `Tipo` | Caminhão, Carregadeira, etc. |
+| `Classe` | Classificação da atividade (Operando, Parado…) |
+| `Nome_Operador_Anon` | Código anonimizado do operador (OP_XXX) |
+| `Matricula_Operador_Hash` | Hash da matrícula |
+
+**Aba `Telemetria`** (18 colunas descritas), com destaque para:
+- `Id_Criticidade` — **1 = Crítico, 2 = Não Crítico**, etc.
+- `Is_Dont_Go` — **flag binário (1 = consta na lista Don't Go, 0 = não)**.
+- `Classe` — estado do alarme (`Activate` / `Inactive`).
+
+👉 **Use este arquivo sempre que tiver dúvida sobre o que uma coluna significa.**
+
+---
+
+### 📕 `Alarmes - Regra de Negocio.xlsx` — Regras de Negócio dos Alarmes
+Este é o arquivo "que define o que dispara o quê". Tem 3 abas:
+
+**Aba `CMA`** (151 linhas) — **regras do CMA (Centro de Monitoramento de Ativos)**. Define **quando um alarme deve gerar uma ação**.
+
+| Coluna | Significado |
+|---|---|
+| `TIPO` | `ALARME OEM`, `TENDÊNCIA` ou `SISTEMA` (origem da regra) |
+| `EVENTO` | Nome do alarme (ex.: `Low Transmission Oil Level`) |
+| `SITUACAO` | Condição de disparo (ex.: *"Mediante cinco alarmes nível 2 consecutivos"*) |
+| `QTD` | Quantidade de ocorrências necessárias (1 a 10) |
+| `TEMPO` | Janela em minutos (0 a 720) |
+| `NIVEL` | Severidade da regra: `Alto` ou `Muito Alto` |
+
+Exemplo de leitura: *"Se houver 5 alarmes de `Low Transmission Oil Level` nível 2 consecutivos em até 360 min → criticidade Muito Alta."*
+
+**Aba `Tendências`** (371 linhas) — **catálogo de tendências monitoradas**. Lista nomes e descrições de "tendências" criadas para acompanhar variáveis operacionais (ex.: *"Pressão Acumulada Freio < 12300 kPa - OP 793F"*). É o que está por trás de eventos do tipo `TENDÊNCIA` na aba CMA.
+
+**Aba `Eventos O&M`** (147.943 linhas) — **catálogo completo de eventos O&M (Operação & Manutenção)**. É só uma coluna `Name` com **todos os nomes de alarmes/eventos possíveis** que os equipamentos podem emitir (ex.: `+24V - Calculated Grasp 1`, `Engine Coolant Level - Active`). Funciona como **vocabulário de referência** dos alarmes que aparecem na coluna `Alarme` da telemetria.
+
+👉 **Resumo da função do arquivo:** ele junta o **vocabulário de alarmes** (`Eventos O&M`), o **catálogo de tendências** (`Tendências`) e as **regras de criticidade** (`CMA`) — ou seja, é o que transforma a telemetria bruta em decisão de negócio.
+
+---
+
+### 📁 `datasets/apontamentos/`
+- `desenvolver_apontamentos.xlsx` — **amostra** (100 linhas) para protótipo no Excel.
+- `desenvolver_apontamentos.parquet` — **base completa** (377.907 linhas, jan–jun/2025).
+
+Cada registro = **um ciclo de operação** de um equipamento (operando, parado, manutenção…), com início/fim, frota, tipo e classe.
+
+---
+
+### 📁 `datasets/telemetria/`
+- `desenvolver_dontgo.xlsx` — **amostra ilustrativa** (147 linhas) com **1 exemplo de evento "Don't Go"**.
+- 6 arquivos `telemetry_<mês>.parquet` — **base completa**, **1 arquivo por mês** (jan a jun/2025), totalizando ~37 milhões de eventos.
+
+Cada registro = **um evento de alarme/telemetria** disparado por um equipamento em um instante, com a criticidade, o valor e a flag `Is_Dont_Go`.
+
+---
+
+### 🧭 Resumindo a "função" de cada arquivo
+
+| Arquivo | Função |
+|---|---|
+| `README.md` | Resumo rápido da pasta |
+| `Dicionario_Dados.xlsx` | **Dicionário** — explica cada coluna das tabelas |
+| `Alarmes - Regra de Negocio.xlsx` | **Regras de negócio** — define alarmes, tendências e quando geram criticidade |
+| `datasets/apontamentos/*` | Dados de **ciclos operacionais** dos equipamentos |
+| `datasets/telemetria/*` | Dados de **eventos de telemetria** (alarmes) dos equipamentos |
+
+Os dois `.xlsx` dentro de `datasets/` são só **amostras de desenvolvimento**; o "dado de verdade" para análise está nos `.parquet`. Já os dois `.xlsx` da raiz (`Dicionario_Dados` e `Alarmes - Regra de Negocio`) são **documentos de apoio** — não são dados operacionais, são "manuais" que você consulta enquanto analisa.
