@@ -1,3 +1,9 @@
+## 📌 Prompt Inicial — 11/05/2026
+
+> O arquivo `C:\Users\marcelo.ayala\Desktop\DadosVale\Estudo Guiado - Análise Avançada de Dados.pdf` contém instruções do que é esperado, primeiramente a pasta `C:\Users\marcelo.ayala\Desktop\DadosVale\Base de Dados\datasets\apontamentos` tem um arquivo .xlsx e um arquivo .parquet, a pasta `C:\Users\marcelo.ayala\Desktop\DadosVale\Base de Dados\datasets\telemetria` tem um arquivo .xlsx e varios arquivos .parquet. Qual a diferença dos arquivos .xlsx e .parquet em relação aos dados dentro deles?
+
+---
+
 # Observações — Comparação dos Arquivos `.xlsx` vs `.parquet`
 
 > Análise inicial das bases em `Base de Dados/datasets/` (somente leitura, nenhum arquivo foi alterado).
@@ -179,3 +185,39 @@ Cada registro = **um evento de alarme/telemetria** disparado por um equipamento 
 | `datasets/telemetria/*` | Dados de **eventos de telemetria** (alarmes) dos equipamentos |
 
 Os dois `.xlsx` dentro de `datasets/` são só **amostras de desenvolvimento**; o "dado de verdade" para análise está nos `.parquet`. Já os dois `.xlsx` da raiz (`Dicionario_Dados` e `Alarmes - Regra de Negocio`) são **documentos de apoio** — não são dados operacionais, são "manuais" que você consulta enquanto analisa.
+
+---
+
+## 🚨 O que significa `Is_Dont_Go = 1`? — 11/05/2026
+
+> **Prompt do usuário:** *"Cada registro = **um evento de alarme/telemetria** disparado por um equipamento em um instante, com a criticidade, o valor e a flag `Is_Dont_Go`. Is_dont_Go marcado com 1 significa o que?"*
+
+### Definição
+
+`Is_Dont_Go = 1` significa que o alarme/evento **dispara a regra "Don't Go"** — ou seja, o equipamento **não deve sair da mina / não deve continuar operando** até que o problema seja resolvido.
+
+É um **sinalizador crítico de segurança/operação**.
+
+### Interpretação dos valores
+
+| Flag | Significado |
+|---|---|
+| `Is_Dont_Go = 0` | Alarme "normal" — equipamento pode continuar operando (requer monitoramento) |
+| `Is_Dont_Go = 1` | **Alarme crítico — equipamento deve PARAR até resolução** (falha de segurança, defeito grave, etc.) |
+
+### Exemplos práticos
+
+- ❌ `Is_Dont_Go = 1` → "Engine Coolant Level - Critical" → o motor pode superaquecer → **pare agora**
+- ❌ `Is_Dont_Go = 1` → "Transmission Oil Pressure - Low" → transmissão vai falhar → **pare agora**
+- ⚠️ `Is_Dont_Go = 0` → "Cabin Temperature - High" → incômodo mas operável → monitore
+
+### Volume nos dados
+
+| Dados | Eventos `Is_Dont_Go = 1` | Total de eventos | Percentual |
+|---|---:|---:|---|
+| **XLSX** (`desenvolver_dontgo.xlsx`) | 1 | 147 | 0,68% (exemplo ilustrativo) |
+| **PARQUET janeiro** | 2.581 | 5.400.002 | 0,048% |
+
+### Referência de regras
+
+A coluna `Alarmes - Regra de Negocio.xlsx` aba `CMA` define **quais alarmes** gatilham a flag `Is_Dont_Go = 1` — essa é a **"lista Don't Go"** que o sistema consulta na ingestão de telemetria.
