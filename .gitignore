@@ -23,13 +23,13 @@ desktop.ini
 *.swp
 *~
 
-# Dados intermediarios e features (reproduziveis via codigo/01-04)
-# Os parquets brutos em Alterado/ continuam versionados
-dados/intermediarios/*.parquet
-dados/features/*.parquet
+# Dados intermediarios e features (reproduziveis via Projeto/codigo/01-04)
+# Os parquets brutos em Projeto/Alterado/ continuam versionados
+Projeto/dados/intermediarios/*.parquet
+Projeto/dados/features/*.parquet
 
-# Modelos treinados (reproduziveis via codigo/05-08)
-modelos/*.pkl
-modelos/*.joblib
-modelos/*.lgb
-modelos/*.txt
+# Modelos treinados (reproduziveis via Projeto/codigo/05-08)
+Projeto/modelos/*.pkl
+Projeto/modelos/*.joblib
+Projeto/modelos/*.lgb
+Projeto/modelos/*.txt

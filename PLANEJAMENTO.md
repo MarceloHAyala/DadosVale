@@ -84,39 +84,50 @@ Justificativa: exige modelo multi-classe separado com tratamento específico de 
 ## 4. Estrutura do projeto
 
 ```
-AnaliseDadosVale/
-├── Alterado/                          (dados intocados — base de trabalho)
-├── Original/                          (cópia de backup)
-├── codigo/
-│   ├── 01_ingestao.py                 (W1)
-│   ├── 02_eda.py                      (W2)
-│   ├── 03_limpeza.py                  (W3)
-│   ├── 04_features.py                 (W3-W4)
-│   ├── 05_split.py                    (W4)
-│   ├── 06_baseline.py                 (W5)
-│   ├── 07_lightgbm.py                 (W5-W6)
-│   ├── 08_sobrevivencia.py            (W6 — Weibull AFT / Cox)
-│   ├── 09_evaluation.py               (W7)
-│   ├── 10_isolation_forest.py         (W6 — K, 3ª abordagem não supervisionada)
-│   └── utils.py
-├── dados/
-│   ├── intermediarios/                (parquets pós-limpeza)
-│   └── features/                      (matriz pronta para modelo)
-├── modelos/                           (artifacts pickle/joblib)
-├── relatorio/
-│   ├── figuras/                       (PNGs finais — 13 do guia + 3 extras)
-│   ├── tabelas/                       (CSVs: estatisticas, features, controle_alteracoes)
-│   ├── controle_alteracoes.md         (ANTES/DEPOIS de toda decisão metodológica)
-│   ├── hipoteses_eda.md               (hipóteses levantadas na EDA — confirmadas ou não)
-│   ├── rascunho.md                    (escrita progressiva W2→W8)
-│   └── relatorio_final.docx           (W9)
-├── PLANEJAMENTO.md                    (este arquivo)
-├── README.md
-├── pyproject.toml                     (deps gerenciadas via uv)
-├── uv.lock                            (versões exatas — versionado no Git)
-├── .python-version                    (Python 3.13 pinado)
-└── .gitignore
+AnaliseDadosVale/                            ← raiz do repositório Git
+├── .gitignore
+├── .python-version                          (Python 3.13 pinado)
+├── pyproject.toml                           (deps gerenciadas via uv)
+├── uv.lock                                  (versões exatas — versionado no Git)
+├── README.md                                (como rodar em outra máquina)
+├── PLANEJAMENTO.md                          (este arquivo)
+├── Original/                                (backup intocado dos dados originais)
+└── Projeto/                                 ← código + dados + entregáveis
+    ├── Alterado/                            (dados de trabalho — base utilizada)
+    │   ├── Base de Dados/
+    │   │   ├── datasets/
+    │   │   │   ├── apontamentos/desenvolver_apontamentos.parquet
+    │   │   │   └── telemetria/telemetry_{jan,feb,mar,abr,may,jun}.parquet
+    │   │   ├── Alarmes - Regra de Negocio.xlsx
+    │   │   └── Dicionario_Dados.xlsx
+    │   ├── Estudo Guiado - Análise Avançada de Dados.pdf
+    │   └── Desenvolver_Template.docx
+    ├── codigo/
+    │   ├── 01_ingestao.py                   (W1)
+    │   ├── 02_eda.py                        (W2)
+    │   ├── 03_limpeza.py                    (W3)
+    │   ├── 04_features.py                   (W3-W4)
+    │   ├── 05_split.py                      (W4)
+    │   ├── 06_baseline.py                   (W5)
+    │   ├── 07_lightgbm.py                   (W5-W6)
+    │   ├── 08_sobrevivencia.py              (W6 — Weibull AFT / Cox)
+    │   ├── 09_evaluation.py                 (W7)
+    │   ├── 10_isolation_forest.py           (W6 — 3ª abordagem não supervisionada)
+    │   └── utils.py
+    ├── dados/
+    │   ├── intermediarios/                  (parquets pós-ingestão e limpeza — gitignored)
+    │   └── features/                        (matriz pronta para modelo — gitignored)
+    ├── modelos/                             (artifacts pickle/joblib — gitignored)
+    └── relatorio/
+        ├── figuras/                         (PNGs finais — 13 do guia + 3 extras)
+        ├── tabelas/                         (CSVs: estatisticas, features, controle_alteracoes)
+        ├── controle_alteracoes.md           (ANTES/DEPOIS de toda decisão metodológica)
+        ├── hipoteses_eda.md                 (hipóteses levantadas na EDA)
+        ├── rascunho.md                      (escrita progressiva W2→W8)
+        └── relatorio_final.docx             (W9)
 ```
+
+**Convenção:** todos os scripts dentro de `Projeto/codigo/` usam `Path(__file__).resolve().parents[1]` como raiz — ou seja, resolvem caminhos relativos a `Projeto/`. Por isso `Projeto/codigo/01_ingestao.py` lê de `Projeto/Alterado/...` e escreve em `Projeto/dados/...` sem hardcoded paths.
 
 ---
 
@@ -151,16 +162,16 @@ AnaliseDadosVale/
 - [X] Instalar VC++ Redistributable 2015-2022 (dep nativa do lightgbm no Windows)
 - [X] Validar imports: polars 1.40.1 / pandas 2.3.3 / lightgbm 4.6.0 / shap 0.51.0 / lifelines 0.30.3
 - [X] Configurar repositório privado no GitHub e fazer primeiro push (incluir `uv.lock`)
-- [X] `codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
+- [X] `Projeto/codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
 - [ ] Corrigir tipos: `Inicio_Turno`, `Fim_Turno`, `Valor` → datetime/float
 - [ ] Normalizar `Criticidade` (caracteres corrompidos)
-- [ ] Salvar `dados/intermediarios/telemetria_consolidado.parquet`
+- [ ] Salvar `Projeto/dados/intermediarios/telemetria_consolidado.parquet`
 - [ ] Validar: 37.164.054 linhas, taxa DG ≈ 0,05%
 - [ ] Criar sample de 500k linhas para desenvolvimento rápido
 - [ ] **Verificação de duplicados** (CM 2.1): contar registros duplicados por dataset (apontamentos e telemetria), registrar quantidade e decisão de tratamento em `controle_alteracoes.md`
 - [ ] **Frequência média de registros** (CM 2.1): calcular registros/dia, registros/hora e registros/equipamento (TAG) para apontamentos e telemetria → reportar no rascunho como característica do volume bruto
-- [ ] **Tabela de estatísticas descritivas** (CM 2.1): para cada variável numérica gerar coluna/tipo/% nulos/min/max/média/mediana/desvio padrão → `relatorio/tabelas/estatisticas_descritivas.csv`
-- [ ] Inicializar `relatorio/controle_alteracoes.md` com primeira decisão (filtragem Informacional, normalização Criticidade)
+- [ ] **Tabela de estatísticas descritivas** (CM 2.1): para cada variável numérica gerar coluna/tipo/% nulos/min/max/média/mediana/desvio padrão → `Projeto/relatorio/tabelas/estatisticas_descritivas.csv`
+- [ ] Inicializar `Projeto/relatorio/controle_alteracoes.md` com primeira decisão (filtragem Informacional, normalização Criticidade)
 
 **Entregável:** parquet consolidado + script reproduzível + tabela estatísticas + controle_alteracoes iniciado.
 
@@ -190,8 +201,8 @@ AnaliseDadosVale/
 - [ ] Análise da distribuição por **Frota / Tipo / Classe** → responde **Q4**
 - [ ] **Distribuição de alertas por TAG de equipamento** (Pareto/bar plot) — CM 2.2 pede explicitamente
 - [ ] **Tabela `eventos_muito_alto.csv`** listando eventos da CMA com NIVEL "Muito Alto" (CM 1.1) — colunas: TIPO / EVENTO / SITUACAO / QTD / TEMPO / NIVEL
-- [ ] Escrever em `relatorio/rascunho.md` seção EDA + achados de Q4 e Q5
-- [ ] **`relatorio/hipoteses_eda.md`** — registrar TODAS as hipóteses levantadas (confirmadas e não confirmadas) com 1 parágrafo cada
+- [ ] Escrever em `Projeto/relatorio/rascunho.md` seção EDA + achados de Q4 e Q5
+- [ ] **`Projeto/relatorio/hipoteses_eda.md`** — registrar TODAS as hipóteses levantadas (confirmadas e não confirmadas) com 1 parágrafo cada
 
 **Entregável:** 6 figuras obrigatórias + extras desejáveis + hipoteses_eda.md + eventos_muito_alto.csv + rascunho EDA.
 
@@ -201,13 +212,13 @@ AnaliseDadosVale/
 
 **Objetivo:** matriz v1 com 10-15 features documentadas.
 
-- [ ] `codigo/03_limpeza.py`: tratar outliers em `Valor` (IQR + flag, manter linhas)
+- [ ] `Projeto/codigo/03_limpeza.py`: tratar outliers em `Valor` (IQR + flag, manter linhas)
 - [ ] **Estratégia de missing values por coluna** (CM 3.1): para cada coluna com nulos, decidir e justificar — remoção de linhas, imputação por mediana/moda, forward-fill (séries temporais) ou flag de ausência. Registrar tabela coluna×estratégia em `controle_alteracoes.md`
 - [ ] Tratar registros com `Inicio > Fim` nos apontamentos
 - [ ] **Detecção de sobreposições de ciclo** (CM 3.1): identificar registros onde ciclos do mesmo TAG se sobrepõem no tempo; reportar quantidade e decisão (manter / merge / descartar com justificativa)
 - [ ] Filtrar `Criticidade = "Informacional"` (não tem positivos, economiza ~80% do volume)
-- [ ] Tabela ANTES/DEPOIS em `relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa
-- [ ] `codigo/04_features.py` — features básicas:
+- [ ] Tabela ANTES/DEPOIS em `Projeto/relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa
+- [ ] `Projeto/codigo/04_features.py` — features básicas:
   - [ ] `hora_dia`, `dia_semana`, `turno`, `mes`
   - [ ] **Encoding categórico documentado para as 5 categorias** (CM 3.2) — decisão por cardinalidade:
     - `Tag` (alta cardinalidade, ~centenas de equipamentos) → **target encoding** com smoothing + KFold para evitar leakage
@@ -216,8 +227,8 @@ AnaliseDadosVale/
     - `Classe` (baixa-média cardinalidade) → **one-hot** ou **frequency encoding** conforme contagem distinta
     - `Operador` (alta cardinalidade, anonimizado) → **frequency encoding** + feature derivada `taxa_DG_operador_30d` (semântica útil sem one-hot explodindo dimensão)
   - [ ] Registrar a justificativa de cada escolha em `documentacao_features.csv` (coluna Motivação)
-- [ ] Salvar `dados/features/v1.parquet`
-- [ ] Iniciar **`relatorio/tabelas/documentacao_features.csv`** (CM 3.2): para cada feature criada — nome, descrição, fórmula/lógica, motivação/hipótese
+- [ ] Salvar `Projeto/dados/features/v1.parquet`
+- [ ] Iniciar **`Projeto/relatorio/tabelas/documentacao_features.csv`** (CM 3.2): para cada feature criada — nome, descrição, fórmula/lógica, motivação/hipótese
 - [ ] Registrar em `controle_alteracoes.md` decisões de limpeza (filtros, outliers, encoding)
 
 **Entregável:** matriz v1 + tabela ANTES/DEPOIS + documentacao_features.csv iniciado.
@@ -236,10 +247,10 @@ AnaliseDadosVale/
 - [ ] Construir target: `y = 1` se houver evento DG na janela de +0 a +4h do equipamento (CM 3.3)
 - [ ] **[Profundidade 1] Análise de sensibilidade da janela de predição** (~2h): gerar targets paralelos para janelas de **2h, 4h e 8h**; treinar LightGBM com parâmetros default em cada um e comparar AUC-PR/Recall no conjunto de validação. Tabela `sensibilidade_janela.csv` → justificar empiricamente a escolha de 4h em vez de só argumentar com motivos operacionais. Registrar conclusão em `controle_alteracoes.md`
 - [ ] **Fig 7** — Diagrama da janela de predição: instante de decisão → janela 4h → evento alvo (CM 3.3)
-- [ ] `codigo/05_split.py` — split: treino jan-abr, val mai, teste jun
+- [ ] `Projeto/codigo/05_split.py` — split: treino jan-abr, val mai, teste jun
 - [ ] **Fig 8** — Diagrama da estratégia de validação temporal (CM 4.1)
 - [ ] Escrever justificativa explícita do porquê não usar k-fold aleatório (data leakage)
-- [ ] Salvar `dados/features/v2.parquet`
+- [ ] Salvar `Projeto/dados/features/v2.parquet`
 - [ ] Registrar decisões em `controle_alteracoes.md` (janela 4h, definição target, datas de corte)
 
 **Entregável:** matriz v2 + documentacao_features.csv completa + Fig 7 + Fig 8.
@@ -250,16 +261,16 @@ AnaliseDadosVale/
 
 **Objetivo:** modelo principal funcionando, batendo o baseline.
 
-- [ ] `codigo/06_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
+- [ ] `Projeto/codigo/06_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
 - [ ] Métricas baseline no teste de jun: Precision, Recall, F1, AUC-PR
-- [ ] `codigo/07_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default
+- [ ] `Projeto/codigo/07_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default
 - [ ] **Documentar pré-processamento específico do baseline e do LightGBM** (CM 4.3): baseline usa só `Criticidade` e `TAG`; LightGBM usa matriz completa v2
 - [ ] Comparar com baseline
 - [ ] 🚦 **GATE MARCO 1: LightGBM bate baseline em AUC-PR?**
   - SIM → avança para W6
   - NÃO → pare. Reveja features antes de tunar parâmetros
 
-**Entregável:** tabela comparativa baseline×LightGBM + modelos serializados em `modelos/` + pré-processamento documentado.
+**Entregável:** tabela comparativa baseline×LightGBM + modelos serializados em `Projeto/modelos/` + pré-processamento documentado.
 
 ---
 
@@ -269,7 +280,7 @@ AnaliseDadosVale/
 
 - [ ] Optuna no LightGBM: 50 trials sobre validação (mai)
 - [ ] LightGBM v2 com melhores parâmetros, avaliar no teste
-- [ ] `codigo/08_sobrevivencia.py` — **Modelo de Sobrevivência (Weibull AFT, fallback Cox PH)** com `lifelines`:
+- [ ] `Projeto/codigo/08_sobrevivencia.py` — **Modelo de Sobrevivência (Weibull AFT, fallback Cox PH)** com `lifelines`:
   - [ ] **Reformatar dados para análise de sobrevivência**: para cada equipamento (TAG), construir tuplas (T, E, X) onde T = tempo até o próximo DG (em horas), E = 1 se evento observado / 0 se censurado (fim da janela jan-jun sem DG), X = features no instante de referência
   - [ ] Treinar `WeibullAFTFitter` no treino (jan-abr), avaliar **C-index** em validação (mai) e teste (jun)
   - [ ] Se WeibullAFT não convergir ou C-index < 0.6 → fallback para `CoxPHFitter` (CM 4.3 nota: dois modelos bem feitos > cinco superficiais)
@@ -289,13 +300,13 @@ AnaliseDadosVale/
   - (G6) Categóricas codificadas (`Tag`, `Frota`, `Tipo`, `Classe`)
   - Tabela `ablation_grupos.csv` com ΔAUC-PR e ΔRecall por grupo. **Fig Extra E** — gráfico de barras. Vira insight de produto (qual sinal carrega o modelo)
 - [ ] **[Qualidade A] Calibração do modelo escolhido**: calibration plot + Brier score → Fig Extra D. Se descalibrado, aplicar Platt scaling
-- [ ] **[K — Isolation Forest, 3ª abordagem não supervisionada] (~3h)**: `codigo/10_isolation_forest.py`
+- [ ] **[K — Isolation Forest, 3ª abordagem não supervisionada] (~3h)**: `Projeto/codigo/10_isolation_forest.py`
   - [ ] Treinar `IsolationForest(n_estimators=200, contamination=0.001)` em jan-abr **sem usar `Is_Dont_Go`** (matriz v2 — mesma feature engineering dos outros modelos)
   - [ ] Scoring em validação (mai) e teste (jun); converter anomaly score em ranking
   - [ ] AUC-PR e **Recall@K** (top 1%, 5%, 10%) usando `Is_Dont_Go` apenas como ground truth de validação (CM 4.3 — abordagem "label de anomalia")
   - [ ] **Critério de abort (hora 1)**: se IF não rodar em tempo viável (> 1h em matriz v2 completa) ou Recall@10% < baseline aleatório, abandonar e registrar tentativa em `controle_alteracoes.md` — sem custo afundado significativo
   - [ ] Enquadrar no relatório como **diagnóstico complementar**, NÃO modelo competidor — tabela à parte, não entra na ROC/PR principal junto a LightGBM/Sobrevivência (comparação seria enviesada)
-  - [ ] Salvar `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv`
+  - [ ] Salvar `Projeto/modelos/isolation_forest.joblib` + `Projeto/relatorio/tabelas/if_diagnostico.csv`
 - [ ] Registrar em `controle_alteracoes.md` escolha de hiperparâmetros, modelo vencedor (LightGBM ou Sobrevivência), decisão de calibração, e resultado do IF (convergiu / aborted)
 
 **Entregável:** 3 modelos supervisionados/sobrevivência (baseline + LightGBM + Sobrevivência) + Isolation Forest como diagnóstico complementar + Fig 9, Fig 11, Fig 12 + ablation_grupos.csv + calibração + tabela de hazard ratios + tabela IF (AUC-PR / Recall@K).
@@ -306,7 +317,7 @@ AnaliseDadosVale/
 
 **Objetivo:** pipeline analítico fechado. A partir daqui só escrita.
 
-- [ ] `codigo/09_evaluation.py`:
+- [ ] `Projeto/codigo/09_evaluation.py`:
   - [ ] **Fig 10** — Matriz de confusão do modelo escolhido com anotações de impacto operacional (CM 5.2)
   - [ ] Análise dos falsos negativos: que TAGs/frotas/operadores escapam?
   - [ ] **[Qualidade C] Análise de erro estratificada**: matriz de confusão e métricas por **frota** e por **tipo** (Caminhão vs. Escavadeira) — modelo não pode falhar mais em uma frota
@@ -360,7 +371,7 @@ AnaliseDadosVale/
 
 **Objetivo:** versão `.docx` final pronta.
 
-- [ ] Migrar markdown → `Alterado/Desenvolver_Template.docx`
+- [ ] Migrar markdown → `Projeto/Alterado/Desenvolver_Template.docx`
 - [ ] Inserir figuras com legenda numerada
 - [ ] Formatar tabelas
 - [ ] 2 leituras críticas (manhã + tarde de dias diferentes)
@@ -368,7 +379,7 @@ AnaliseDadosVale/
 - [ ] Anexos: dicionário de features + tabela ANTES/DEPOIS
 - [ ] Validar referências bibliográficas
 
-**Entregável:** `relatorio/relatorio_final.docx`.
+**Entregável:** `Projeto/relatorio/relatorio_final.docx`.
 
 ---
 
@@ -403,7 +414,7 @@ Se algum gate falhar: **pare, diagnostique, ajuste plano antes de avançar.**
 O Estudo Guiado exige (Nota da página 1):
 > *"Sempre que uma alteração, exclusão ou decisão metodológica relevante for tomada, registre o ANTES e o DEPOIS com a justificativa correspondente."*
 
-Por isso, **`relatorio/controle_alteracoes.md`** é alimentado durante TODO o projeto (não só na limpeza). Toda vez que uma decisão metodológica for tomada — janela de predição, definição do target, filtro de classe, escolha de modelo, limiar — registrar com o template:
+Por isso, **`Projeto/relatorio/controle_alteracoes.md`** é alimentado durante TODO o projeto (não só na limpeza). Toda vez que uma decisão metodológica for tomada — janela de predição, definição do target, filtro de classe, escolha de modelo, limiar — registrar com o template:
 
 ```markdown
 ### [Data] — [Tema da decisão]

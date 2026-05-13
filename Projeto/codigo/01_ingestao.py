@@ -1,16 +1,20 @@
 """
-01_ingestao.py — Ingestao dos dados brutos.
+01_ingestao.py - Ingestao dos dados brutos.
 
-Le os 6 parquets mensais de telemetria + apontamentos, concatena a telemetria
-em ordem cronologica, valida contagens e salva o consolidado em
-`dados/intermediarios/telemetria_consolidado.parquet`.
+Le os 6 parquets mensais de telemetria + apontamentos em
+`Projeto/Alterado/Base de Dados/datasets/`, concatena a telemetria em ordem
+cronologica, valida contagens e salva o consolidado em
+`Projeto/dados/intermediarios/telemetria_consolidado.parquet`.
 
 Escopo deste script: somente ingestao crua. Correcao de tipos, normalizacao
 de encoding, verificacao de duplicados e estatisticas descritivas ficam em
 scripts subsequentes da W1.
 
-Executar:
-    python codigo/01_ingestao.py
+Os caminhos sao resolvidos via `Path(__file__).resolve().parents[1]`, ou seja,
+relativos a `Projeto/`. Funciona de onde voce rodar o comando.
+
+Executar (da raiz do repositorio):
+    uv run python Projeto/codigo/01_ingestao.py
 """
 from pathlib import Path
 import time

@@ -14,18 +14,34 @@ Desafio: **Antecipação de Alertas Críticos (Don't Go) em Frotas de Mineraçã
 
 ## Estrutura
 
+A raiz do repositório contém apenas arquivos de configuração e documentação. Todo o conteúdo de trabalho (código, dados, modelos, relatório) está em **`Projeto/`**.
+
+```
+AnaliseDadosVale/                          ← raiz do repo Git
+├── pyproject.toml, uv.lock, .python-version, .gitignore    (config)
+├── README.md, PLANEJAMENTO.md             (docs)
+├── Original/                              (backup intocado)
+└── Projeto/                               ← código + dados + entregáveis
+    ├── Alterado/                          (dados de trabalho)
+    ├── codigo/                            (scripts numerados 01→10)
+    ├── dados/intermediarios/              (parquets pós-ingestão — gitignored)
+    ├── dados/features/                    (matriz para modelo — gitignored)
+    ├── modelos/                           (artifacts — gitignored)
+    └── relatorio/                         (figuras, tabelas, relatório final)
+```
+
 | Pasta | Conteúdo | Versionado no Git? |
 |---|---|---|
-| `Alterado/` | Dados brutos (intocados) — telemetria, apontamentos, regras de negócio | ✅ Sim |
+| `Projeto/Alterado/` | Dados brutos (intocados) — telemetria, apontamentos, regras de negócio | ✅ Sim |
 | `Original/` | Backup dos dados originais | ✅ Sim |
-| `codigo/` | Scripts Python numerados por ordem de execução | ✅ Sim |
-| `dados/intermediarios/` | Parquets pós-ingestão e limpeza | ❌ Não (reproduzível) |
-| `dados/features/` | Matrizes de features para os modelos | ❌ Não (reproduzível) |
-| `modelos/` | Artifacts pickle/joblib dos modelos treinados | ❌ Não (reproduzível) |
-| `relatorio/figuras/` | PNGs finais para o relatório | ✅ Sim (entrega) |
-| `relatorio/tabelas/` | CSVs finais para o relatório | ✅ Sim (entrega) |
-| `relatorio/rascunho.md` | Escrita progressiva W2→W8 | ✅ Sim |
-| `relatorio/relatorio_final.docx` | Entrega final (W9) | ✅ Sim |
+| `Projeto/codigo/` | Scripts Python numerados por ordem de execução | ✅ Sim |
+| `Projeto/dados/intermediarios/` | Parquets pós-ingestão e limpeza | ❌ Não (reproduzível) |
+| `Projeto/dados/features/` | Matrizes de features para os modelos | ❌ Não (reproduzível) |
+| `Projeto/modelos/` | Artifacts dos modelos treinados | ❌ Não (reproduzível) |
+| `Projeto/relatorio/figuras/` | PNGs finais para o relatório | ✅ Sim (entrega) |
+| `Projeto/relatorio/tabelas/` | CSVs finais para o relatório | ✅ Sim (entrega) |
+| `Projeto/relatorio/rascunho.md` | Escrita progressiva W2→W8 | ✅ Sim |
+| `Projeto/relatorio/relatorio_final.docx` | Entrega final (W9) | ✅ Sim |
 
 ---
 
@@ -108,30 +124,32 @@ Se erro de DLL no `lightgbm`: voltar ao Passo 2 e instalar VC++ Redistributable.
 
 ### Passo 6 — Reconstruir dados intermediários
 
-Os parquets consolidados **não estão no Git** (são gitignored porque pesam ~200 MB e são reproduzíveis). Para reconstruir a partir dos dados brutos:
+Os parquets consolidados **não estão no Git** (gitignored porque pesam ~200 MB e são reproduzíveis). Para reconstruir a partir dos dados brutos:
 
 ```powershell
-uv run python codigo/01_ingestao.py
+uv run python Projeto/codigo/01_ingestao.py
 ```
 
-Tempo: ~35 segundos. Cria `dados/intermediarios/telemetria_consolidado.parquet`.
+Tempo: ~35 segundos. Cria `Projeto/dados/intermediarios/telemetria_consolidado.parquet`.
 
 ### Passo 7 — Rodar os próximos scripts em ordem
 
 ```powershell
-uv run python codigo/02_correcao_tipos.py    # próximo no pipeline
-uv run python codigo/03_limpeza.py
-uv run python codigo/04_features.py
-# ... seguir numeração até 09_evaluation.py
+uv run python Projeto/codigo/02_correcao_tipos.py    # próximo no pipeline
+uv run python Projeto/codigo/03_limpeza.py
+uv run python Projeto/codigo/04_features.py
+# ... seguir numeração até 10_isolation_forest.py
 ```
+
+A ordem dos scripts segue a numeração (01_ → 10_).
 
 ---
 
 ## Comandos do dia a dia
 
 ```powershell
-# Rodar qualquer script (usa o .venv automaticamente)
-uv run python codigo/01_ingestao.py
+# Rodar qualquer script (usa o .venv automaticamente, sem precisar ativar)
+uv run python Projeto/codigo/01_ingestao.py
 
 # Adicionar pacote novo (atualiza pyproject.toml + uv.lock automaticamente)
 uv add ruff
@@ -143,6 +161,8 @@ uv lock --upgrade-package polars
 Remove-Item -Recurse -Force .venv
 uv sync
 ```
+
+Os scripts em `Projeto/codigo/` resolvem caminhos relativamente a `Projeto/` (não à raiz do repo) usando `Path(__file__).resolve().parents[1]`. Por isso eles funcionam independentemente de onde você está rodando o comando.
 
 ---
 
@@ -159,8 +179,8 @@ git push
 ```powershell
 git clone <repo-url>
 cd AnaliseDadosVale
-uv sync                                    # instala ambiente exato via uv.lock
-uv run python codigo/01_ingestao.py        # regera dados/intermediarios/
+uv sync                                              # instala ambiente exato via uv.lock
+uv run python Projeto/codigo/01_ingestao.py          # regera Projeto/dados/intermediarios/
 ```
 
 Pronto — ambiente idêntico bit-a-bit graças ao `uv.lock`.
@@ -203,8 +223,8 @@ uv run jupyter lab
 
 ## Documentos de referência
 
-- `Alterado/Estudo Guiado - Análise Avançada de Dados.pdf` — critérios e conteúdos mínimos
-- `Alterado/Desenvolver_Template.docx` — template do relatório final
-- `Alterado/Base de Dados/Dicionario_Dados.xlsx` — dicionário de colunas
-- `Alterado/Base de Dados/Alarmes - Regra de Negocio.xlsx` — regras CMA
+- `Projeto/Alterado/Estudo Guiado - Análise Avançada de Dados.pdf` — critérios e conteúdos mínimos
+- `Projeto/Alterado/Desenvolver_Template.docx` — template do relatório final
+- `Projeto/Alterado/Base de Dados/Dicionario_Dados.xlsx` — dicionário de colunas
+- `Projeto/Alterado/Base de Dados/Alarmes - Regra de Negocio.xlsx` — regras CMA
 - [PLANEJAMENTO.md](PLANEJAMENTO.md) — plano de execução completo W1-W10
