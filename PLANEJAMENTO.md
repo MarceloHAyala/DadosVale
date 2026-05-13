@@ -77,6 +77,7 @@ Justificativa: exige modelo multi-classe separado com tratamento específico de 
 | Interpretabilidade | **SHAP** (LightGBM) + coeficientes/HR (sobrevivência) | Padrão da indústria; sobrevivência permite interpretação direta de hazard ratio |
 | Visualização | **matplotlib + seaborn** (não plotly) | Exporta PNG limpo para Word |
 | Versionamento | Git local + push semanal para GitHub privado | Backup + sync entre máquinas |
+| Gerenciador de pacotes | **uv** (pyproject.toml + uv.lock) | Reprodutibilidade exata entre máquinas; downloads paralelos; pina versão do Python |
 
 ---
 
@@ -111,7 +112,9 @@ AnaliseDadosVale/
 │   └── relatorio_final.docx           (W9)
 ├── PLANEJAMENTO.md                    (este arquivo)
 ├── README.md
-├── requirements.txt
+├── pyproject.toml                     (deps gerenciadas via uv)
+├── uv.lock                            (versões exatas — versionado no Git)
+├── .python-version                    (Python 3.13 pinado)
 └── .gitignore
 ```
 
@@ -142,8 +145,12 @@ AnaliseDadosVale/
 
 **Objetivo:** ler todos os parquets com tipos corretos, sample pronto para iterar rápido.
 
-- [X] Criar estrutura de pastas + `git init` + `requirements.txt`
-- [X] Configurar repositório privado no GitHub e fazer primeiro push
+- [X] Criar estrutura de pastas + `git init` + `pyproject.toml` + `.python-version`
+- [X] Instalar `uv` e configurar `UV_HTTP_TIMEOUT`
+- [X] Rodar `uv sync` (gerou `uv.lock` com 144 pacotes em `.venv/`)
+- [X] Instalar VC++ Redistributable 2015-2022 (dep nativa do lightgbm no Windows)
+- [X] Validar imports: polars 1.40.1 / pandas 2.3.3 / lightgbm 4.6.0 / shap 0.51.0 / lifelines 0.30.3
+- [X] Configurar repositório privado no GitHub e fazer primeiro push (incluir `uv.lock`)
 - [X] `codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
 - [ ] Corrigir tipos: `Inicio_Turno`, `Fim_Turno`, `Valor` → datetime/float
 - [ ] Normalizar `Criticidade` (caracteres corrompidos)

@@ -5,11 +5,12 @@ __pycache__/
 *.pyd
 .ipynb_checkpoints/
 
-# Ambientes virtuais
+# Ambientes virtuais (uv cria .venv automaticamente)
 venv/
 .venv/
 env/
 .env
+.uv/
 
 # Sistema operacional
 .DS_Store
@@ -21,3 +22,14 @@ desktop.ini
 .idea/
 *.swp
 *~
+
+# Dados intermediarios e features (reproduziveis via codigo/01-04)
+# Os parquets brutos em Alterado/ continuam versionados
+dados/intermediarios/*.parquet
+dados/features/*.parquet
+
+# Modelos treinados (reproduziveis via codigo/05-08)
+modelos/*.pkl
+modelos/*.joblib
+modelos/*.lgb
+modelos/*.txt

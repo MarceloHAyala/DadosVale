@@ -1,0 +1,48 @@
+[project]
+name = "analise-avancada-dados-vale"
+version = "0.1.0"
+description = "Antecipacao de alertas Dont Go em frotas de mineracao - Programa Desenvolver 2026 (Vale)"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+authors = [
+    { name = "Marcelo Ayala", email = "marcelo.ayala@mstech.com.br" },
+]
+
+dependencies = [
+    # Engine de dados
+    "polars>=0.20",
+    "pyarrow>=14.0",
+    "pandas>=2.0",
+    "numpy>=1.24",
+
+    # Modelagem - supervisionada
+    "scikit-learn>=1.3",
+    "lightgbm>=4.0",
+
+    # Modelagem - sobrevivencia (Weibull AFT / Cox PH)
+    "lifelines>=0.27",
+
+    # Tuning e interpretabilidade
+    "optuna>=3.4",
+    "shap>=0.44",
+    # Pinar numba/llvmlite minimos compativeis com Python 3.13
+    # (sem isso, uv resolver pega llvmlite 0.36 que so suporta Python 3.6-3.9)
+    "numba>=0.60",
+    "llvmlite>=0.44",
+
+    # Visualizacao
+    "matplotlib>=3.7",
+    "seaborn>=0.13",
+
+    # Manipulacao de arquivos
+    "openpyxl>=3.1",
+    "python-docx>=1.1",
+
+    # Notebook (exploracao ad-hoc)
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+]
+
+[tool.uv]
+# Garantir HTTP timeout maior para conexoes lentas
+# (pode ser sobrescrito via env var UV_HTTP_TIMEOUT)
