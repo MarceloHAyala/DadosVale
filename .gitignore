@@ -1,0 +1,23 @@
+# Python cache (lixo, recriado em qualquer máquina)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+.env
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*~
