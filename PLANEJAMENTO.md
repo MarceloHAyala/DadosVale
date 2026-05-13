@@ -142,9 +142,9 @@ AnaliseDadosVale/
 
 **Objetivo:** ler todos os parquets com tipos corretos, sample pronto para iterar rápido.
 
-- [ ] Criar estrutura de pastas + `git init` + `requirements.txt`
-- [ ] Configurar repositório privado no GitHub e fazer primeiro push
-- [ ] `codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
+- [X] Criar estrutura de pastas + `git init` + `requirements.txt`
+- [X] Configurar repositório privado no GitHub e fazer primeiro push
+- [X] `codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
 - [ ] Corrigir tipos: `Inicio_Turno`, `Fim_Turno`, `Valor` → datetime/float
 - [ ] Normalizar `Criticidade` (caracteres corrompidos)
 - [ ] Salvar `dados/intermediarios/telemetria_consolidado.parquet`
