@@ -1,0 +1,108 @@
+# Controle de Alterações Metodológicas
+
+Registro ANTES/DEPOIS de toda decisão metodológica relevante, conforme nota do Estudo Guiado (página 1):
+
+> *"Sempre que uma alteração, exclusão ou decisão metodológica relevante for tomada, registre o ANTES e o DEPOIS com a justificativa correspondente."*
+
+Este arquivo é **anexo do relatório final** e mostra o rastro analítico das decisões tomadas durante o projeto.
+
+---
+
+## Template
+
+```markdown
+### YYYY-MM-DD — [Tema da decisão]
+- **ANTES:** estado anterior / opção descartada
+- **DEPOIS:** estado novo / opção escolhida
+- **Justificativa:** por que mudou
+- **Impacto:** o que isso afeta (volume, métrica, escopo)
+```
+
+---
+
+## Registro cronológico
+
+### 2026-05-13 — Escopo: descarte do sample 500k (W1)
+
+- **ANTES:** Plano original incluía gerar `telemetria_sample_500k.parquet` para acelerar iteração em scripts de desenvolvimento (W3-W5).
+- **DEPOIS:** Task removida do PLANEJAMENTO.md. Iteração rápida em desenvolvimento será feita carregando um dos parquets mensais (`telemetry_jan.parquet`, ~5.4M linhas, ~2s de carga) quando necessário.
+- **Justificativa:** Os parquets mensais já oferecem volume reduzido vs. consolidado (5-7M vs 37M linhas). Criar e manter um sample adicional seria redundância sem ganho prático significativo. Confirmação prática: a extensão DuckDB do VSCode carrega os parquets mensais sem problema.
+- **Impacto:** Nenhum impacto em resultados analíticos. Pequena perda de velocidade em desenvolvimento (~2s vs ~0.5s por carga) — aceitável.
+
+---
+
+### 2026-05-13 — Conversão de tipos pós-ingestão (W1)
+
+Os parquets brutos trazem três colunas com tipo inadequado para análise temporal e numérica. Conversão executada por `Projeto/codigo/02_correcao_tipos.py`.
+
+#### 2a. Inicio_Turno e Fim_Turno
+
+- **ANTES:** `String` com formato `"YYYY-MM-DD HH:MM:SS.fff"` (com milissegundos), ex: `"2025-06-29 06:00:00.000"`.
+- **DEPOIS:** `Datetime(time_unit='us', time_zone=None)`, convertido com formato `%Y-%m-%d %H:%M:%S%.f`.
+- **Justificativa:** Necessário para:
+  - Extração de features temporais em W4 (`.dt.hour()`, `.dt.weekday()`, `.dt.month()`)
+  - Cálculo de duração de turno (`Fim_Turno - Inicio_Turno`) em W4
+  - Join temporal com apontamentos em W4 (apontamentos.Inicio é Datetime, telemetria.Inicio_Turno era String)
+  - Filtros por intervalo de tempo em toda a EDA (W2)
+- **Impacto:** 0 nulls gerados. Formato 100% consistente em todos os 37.164.054 registros e em todos os meses jan-jun/2025. Conversão sem perda de informação.
+- **Validação adicional:** Duração do turno = 12h em todos os registros (asserção no script).
+
+#### 2b. Valor
+
+- **ANTES:** `String` com mistura de três tipos:
+  - 92% inteiros como string (`"0"`, `"1"`, `"2"`, `"48"`...): dominado por `"0"` (34,4M registros, 92% do total).
+  - ~2,2% **floats em formato brasileiro** (vírgula como separador decimal): `"46,2569999694824"`, `"45,3499984741211"`, etc. — descoberto na primeira tentativa de conversão (asserção falhou).
+  - 0,64% (237.443) strings literais `"NULL"`.
+- **DEPOIS:** `Float64`. Duas transformações encadeadas:
+  1. String literal `"NULL"` → null real do Polars.
+  2. Vírgula decimal substituída por ponto (`"85,5"` → `"85.5"`) antes do cast.
+- **Justificativa:** Permite:
+  - Estatísticas descritivas (`mean`, `median`, `std`) — CM 2.1
+  - Comparações de magnitude e features de threshold em W4
+  - Agregações em rolling windows (média móvel, max em janela) em W4
+  - Sem o cast, qualquer `.mean()` retornaria `null` silenciosamente — bug perigoso
+- **Decisão metodológica adicional:** Optou-se pela conversão simples (cast para `Float64`) em vez de criar três colunas separadas (`Valor_num` + `Valor_categoria` + `valor_eh_numerico`). Razão: 100% dos valores não-`"NULL"` são numéricos puros — não há texto categórico misturado (tipo `"Active"`, `"Inactive"`). A feature `valor_eh_numerico` seria 100% redundante com `Valor IS NOT NULL`.
+- **Lição metodológica:** A exploração inicial via regex `^-?[0-9]+([.,][0-9]+)?$` falhou em detectar o problema porque o regex aceita vírgula como separador decimal, mas o `Polars.cast(Float64)` não. A descoberta só veio porque o script tem asserção de contagem de nulls. Reforça o padrão de **asserções defensivas** que devem permanecer em todos os scripts da pipeline.
+- **Impacto:** 237.443 valores que eram a string literal `"NULL"` agora são null real do Polars (0,64% do total). 36.926.611 valores numéricos preservados (99,36%), dos quais ~821.849 (2,2% do total) precisaram da troca vírgula→ponto.
+
+---
+
+### 2026-05-13 — Normalização de Criticidade + achado de inconsistência no sistema fonte (W1)
+
+Aplicada por `Projeto/codigo/03_limpeza.py` (etapa 2/6).
+
+**Distribuição bruta encontrada (5 variantes em 37.164.054 registros):**
+
+| Valor original | Quantidade | % |
+|---|---|---|
+| `Informacional` | 36.619.169 | 98,53% |
+| `Não Crítico` (com acento) | 461.854 | 1,24% |
+| `Critico` (**sem acento**) | 83.020 | 0,22% |
+| `N??o Crítico` (encoding parcial) | 6 | < 0,0001% |
+| `Não Cr??tico` (encoding parcial) | 5 | < 0,0001% |
+
+**Achados metodológicos não-óbvios:**
+
+1. **Inconsistência sistemática de encoding entre níveis de criticidade.** "Critico" aparece **sem acento** em 100% dos casos (83.020 registros), enquanto "Não Crítico" aparece **com acento** em 99,99% dos casos. Não é caso isolado de corrupção — é padrão. Hipótese mais provável: a coluna `Criticidade` é populada por **duas pipelines distintas** (provavelmente um sistema legado escrevendo "Critico" sem acento e um sistema mais novo escrevendo "Não Crítico" com UTF-8 correto). Sem acesso ao DBA da Vale para confirmar, fica registrado como hipótese.
+
+2. **11 registros com falha parcial de encoding** (caracteres específicos substituídos por `??`): 6 com `"N??o Crítico"` (perdeu o `ã`) e 5 com `"Não Cr??tico"` (perdeu o `í`). Indica que houve um ponto da pipeline onde caracteres não-ASCII foram convertidos com `errors='replace'` em vez de `errors='strict'`. Volume desprezível (< 0,001%) mas o padrão é interessante: dois caracteres distintos falham em registros distintos, sugerindo que a corrupção não é determinística.
+
+**Decisão de normalização:**
+
+- **ANTES:** 5 variantes mistas (com/sem acento + 2 com `??`)
+- **DEPOIS:** 3 categorias canônicas em ASCII puro: `Critico`, `Nao_Critico`, `Informacional`
+- **Justificativa:** Encoding inconsistente é fonte de bugs silenciosos em filtros (`df.filter(pl.col("Criticidade") == "Não Crítico")` falha para os 11 registros com `??`). ASCII puro elimina a ambiguidade para sempre e facilita serialização (CSV, JSON) sem se preocupar com encoding.
+- **Impacto:** 100% dos registros classificados corretamente. Os 11 registros com `??` foram absorvidos no grupo `Nao_Critico` (interpretação inequívoca dada a posição do `??` no meio das palavras).
+- **Recomendação para a Vale (vai para Trabalhos Futuros do relatório):** padronizar a escrita em ASCII puro na fonte. Eliminaria a duplicidade de pipelines e a corrupção parcial.
+
+**Distribuição final pós-normalização:**
+
+| Criticidade final | Quantidade | % |
+|---|---|---|
+| `Informacional` | 36.619.169 | 98,53% |
+| `Nao_Critico` | 461.865 | 1,24% |
+| `Critico` | 83.020 | 0,22% |
+
+---
+
+<!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

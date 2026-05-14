@@ -163,15 +163,15 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 - [X] Validar imports: polars 1.40.1 / pandas 2.3.3 / lightgbm 4.6.0 / shap 0.51.0 / lifelines 0.30.3
 - [X] Configurar repositório privado no GitHub e fazer primeiro push (incluir `uv.lock`)
 - [X] `Projeto/codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
-- [ ] Corrigir tipos: `Inicio_Turno`, `Fim_Turno`, `Valor` → datetime/float
-- [ ] Normalizar `Criticidade` (caracteres corrompidos)
+- [X] Corrigir tipos: `Inicio_Turno`, `Fim_Turno` → Datetime(us), `Valor` → Float64 (com tratamento de string "NULL" e vírgula decimal BR). Script `Projeto/codigo/02_correcao_tipos.py`. Output: `telemetria_tipada.parquet`.
+- [X] Normalizar `Criticidade`: 5 variantes → 3 categorias canônicas ASCII (`Critico`, `Nao_Critico`, `Informacional`). Achado: inconsistência sistemática "Critico" sem acento vs "Não Crítico" com acento sugere 2 pipelines fonte distintas. Script `Projeto/codigo/03_limpeza.py`.
 - [X] Salvar `Projeto/dados/intermediarios/telemetria_consolidado.parquet`
-- [ ] Validar: 37.164.054 linhas, taxa DG ≈ 0,05%
+- [X] Validar: 37.164.054 linhas ✅ (assert em `01_ingestao.py`) + taxa DG = 0,0537% ✅ (19.962 positivos no semestre — assert em `03_limpeza.py`)
 - ~~Criar sample de 500k linhas para desenvolvimento rápido~~ — **DESCARTADO** (13/05/2026): os parquets mensais em `Projeto/Alterado/Base de Dados/datasets/telemetria/` (5-7M linhas, 33-43 MB cada) já servem ao duplo propósito de visualização (abrem no VSCode) e iteração rápida em scripts (~2s para carregar). Sample 500k adicional seria redundância sem ganho prático.
-- [ ] **Verificação de duplicados** (CM 2.1): contar registros duplicados por dataset (apontamentos e telemetria), registrar quantidade e decisão de tratamento em `controle_alteracoes.md`
-- [ ] **Frequência média de registros** (CM 2.1): calcular registros/dia, registros/hora e registros/equipamento (TAG) para apontamentos e telemetria → reportar no rascunho como característica do volume bruto
-- [ ] **Tabela de estatísticas descritivas** (CM 2.1): para cada variável numérica gerar coluna/tipo/% nulos/min/max/média/mediana/desvio padrão → `Projeto/relatorio/tabelas/estatisticas_descritivas.csv`
-- [ ] Inicializar `Projeto/relatorio/controle_alteracoes.md` com primeira decisão (filtragem Informacional, normalização Criticidade)
+- [X] **Verificação de duplicados** (CM 2.1): 0 duplicatas por chave primária em ambos datasets (Telemetria via `Id_Eventos_Telemetria`, Apontamentos via `Id`). Pipeline da Vale entrega chaves únicas.
+- [X] **Frequência média de registros** (CM 2.1): Telemetria 206k/dia, 8.6k/hora, 5.9k/TAG/dia | Apontamentos 2.088/dia, 87/hora, 44/TAG/dia. **Achado:** telemetria cobre 35 TAGs vs 47 do apontamentos — diferença a investigar em W2.
+- [X] **Tabela de estatísticas descritivas** (CM 2.1) → `Projeto/relatorio/tabelas/estatisticas_descritivas.csv`. 6 variáveis numéricas perfiladas. **Achado:** `Id_Criticidade` tem max=4 mas só 3 categorias normalizadas — investigar em W2 se existe 4º nível não mapeado.
+- [X] Inicializar `Projeto/relatorio/controle_alteracoes.md` com 2 entradas iniciais: descarte do sample 500k + conversão de tipos (W1). Estrutura ANTES/DEPOIS/Justificativa/Impacto definida.
 
 **Entregável:** parquet consolidado + script reproduzível + tabela estatísticas + controle_alteracoes iniciado.
 
