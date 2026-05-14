@@ -146,7 +146,10 @@ def salvar_consolidado(telemetria: pl.DataFrame) -> Path:
     destino = DIR_INTERMEDIARIOS / "telemetria_consolidado.parquet"
     print(f"\n[4/4] Salvando {destino.relative_to(ROOT)}")
     t0 = time.time()
-    telemetria.write_parquet(destino, compression="zstd")
+    # snappy: compatibilidade ampla (visualizadores VSCode, DBeaver, Tad) +
+    # leitura mais rapida que zstd. Tamanho final ~270MB (vs ~210MB com zstd) -
+    # irrelevante porque o arquivo e gitignored.
+    telemetria.write_parquet(destino, compression="snappy")
     tamanho_mb = destino.stat().st_size / 1024 / 1024
     print(f"  {tamanho_mb:,.0f} MB  ({time.time()-t0:.1f}s)")
     return destino

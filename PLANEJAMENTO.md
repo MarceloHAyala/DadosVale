@@ -165,9 +165,9 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 - [X] `Projeto/codigo/01_ingestao.py`: ler 6 telemetry_*.parquet + apontamentos.parquet com Polars
 - [ ] Corrigir tipos: `Inicio_Turno`, `Fim_Turno`, `Valor` → datetime/float
 - [ ] Normalizar `Criticidade` (caracteres corrompidos)
-- [ ] Salvar `Projeto/dados/intermediarios/telemetria_consolidado.parquet`
+- [X] Salvar `Projeto/dados/intermediarios/telemetria_consolidado.parquet`
 - [ ] Validar: 37.164.054 linhas, taxa DG ≈ 0,05%
-- [ ] Criar sample de 500k linhas para desenvolvimento rápido
+- ~~Criar sample de 500k linhas para desenvolvimento rápido~~ — **DESCARTADO** (13/05/2026): os parquets mensais em `Projeto/Alterado/Base de Dados/datasets/telemetria/` (5-7M linhas, 33-43 MB cada) já servem ao duplo propósito de visualização (abrem no VSCode) e iteração rápida em scripts (~2s para carregar). Sample 500k adicional seria redundância sem ganho prático.
 - [ ] **Verificação de duplicados** (CM 2.1): contar registros duplicados por dataset (apontamentos e telemetria), registrar quantidade e decisão de tratamento em `controle_alteracoes.md`
 - [ ] **Frequência média de registros** (CM 2.1): calcular registros/dia, registros/hora e registros/equipamento (TAG) para apontamentos e telemetria → reportar no rascunho como característica do volume bruto
 - [ ] **Tabela de estatísticas descritivas** (CM 2.1): para cada variável numérica gerar coluna/tipo/% nulos/min/max/média/mediana/desvio padrão → `Projeto/relatorio/tabelas/estatisticas_descritivas.csv`
