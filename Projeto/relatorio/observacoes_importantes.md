@@ -18,35 +18,6 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ## 2. Observações sobre o domínio (negócio)
 
-### - [ ] 2.1 Top 5 alarmes concentram 88% dos DGs no semestre completo?
-
-**Contexto:** No relatório inicial (apenas janeiro), 5 alarmes concentraram 88% dos Don't Go:
-1. Engine Coolant Level - Active (1.505)
-2. Aftercooler Level - Active (249)
-3. Transmission Oil Level - Active (205)
-4. Left Rear Brake Temperature - Active (160)
-5. Right Front Brake Temperature - Active (116)
-
-**Por que importa:** Se a concentração se mantém no semestre, foca feature engineering nesses 5 (vs criar features para 4.402 alarmes únicos).
-
-**Investigar:** Mesma análise sobre `telemetria_limpa.parquet` (6 meses).
-
-**Onde resolver:** W2 (EDA).
-
----
-
-### - [ ] 2.2 `Informacional` continua sendo 0% de DGs no semestre completo?
-
-**Contexto:** No relatório inicial (janeiro), 5.319.047 eventos Informacionais geraram **0** DGs.
-
-**Por que importa:** Se a propriedade se mantém no semestre, podemos filtrar Informacional na limpeza (W3), economizando ~98,5% do volume sem perder positivos.
-
-**Investigar:** Contar `Is_Dont_Go=1` quando `Criticidade='Informacional'` em todo o semestre.
-
-**Onde resolver:** W2 ou W3.
-
----
-
 ### - [ ] 2.3 Padrão "calmaria → acúmulo → disparo" do caso CA65924 aparece em outros equipamentos?
 
 **Contexto:** O arquivo `desenvolver_dontgo.xlsx` traz 147 eventos consecutivos do caminhão CA65924 culminando em um DG, com narrativa clara de acúmulo gradual.
@@ -74,35 +45,39 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ---
 
-### - [ ] 2.5 504 DGs com `Nao_Critico` se mantêm como acumulação no semestre?
+### - [ ] 2.6 Por que `Nao_Critico` saltou de 20% para 48% dos DGs entre janeiro e o semestre?
 
-**Contexto:** No relatório inicial (janeiro), 80% dos DGs vieram de `Critico` e 20% (504) de `Nao_Critico`. Os de `Nao_Critico` são alertas que só viram DG **por acúmulo** (regra `QTD > 1` na aba CMA).
+**Contexto:** Investigação de Obs 2.5 (16/05/2026) revelou mudança radical na composição dos DGs entre janeiro (80% `Critico` / 20% `Nao_Critico`, total 2.509 DGs) e o semestre completo (51,5% / 48,5%, total 19.962 DGs). Fev-jun acumulou 9.172 DGs `Nao_Critico` — média de 1.834/mês, **3,6× a taxa de janeiro**.
 
-**Por que importa:** Confirma necessidade de features de rolling window. Quantifica a proporção do problema que depende de padrão temporal vs. estado instantâneo.
+**Por que importa:**
+- Se for crescimento mensal sustentado, indica **mudança estrutural** (mais equipamentos, mudança de regra CMA, deriva operacional) que afeta diretamente a generalização do modelo treinado em jan-abr para o teste em jun.
+- Se for picos isolados em meses específicos, indica eventos pontuais (ex: 1 frota em ramp-up, 1 problema sazonal) — modelo precisa lidar com não estacionariedade.
+- Conecta com risco 3.2 (drift temporal): se a distribuição dos DGs muda mês a mês, validação por split temporal precisa ser interpretada com cautela.
 
-**Investigar:** Mesma análise no semestre completo. Comparar proporção Critico × Nao_Critico nos DGs.
+**Investigar:**
+- Distribuição mensal de DGs `Nao_Critico` (jan, fev, mar, abr, mai, jun) — tendência linear, exponencial ou picos?
+- Quebrar por **frota / tipo / alarme**: o salto vem de toda a operação ou de subgrupo específico?
+- Cruzar com calendário operacional da Vale se possível (não disponível neste escopo)
 
-**Onde resolver:** W2.
+**Onde resolver:** W2 (EDA visual — alimenta Fig 4 do guia: série temporal de DGs).
 
 ---
 
 ## 3. Riscos a monitorar (não são observações, mas precisam vigilância)
 
-### - [ ] 3.1 Estouro de memória em W4 (features com rolling windows)
+### - [x] 3.1 Estouro de memória em W4 (features com rolling windows) — RISCO DESATIVADO
 
-**Risco:** Features de rolling 1h/4h/24h sobre 37M linhas vão multiplicar colunas. RAM pode estourar 4GB do `.venv` se não usar lazy mode.
+**Risco original:** Features de rolling 1h/4h/24h sobre 37M linhas vão multiplicar colunas. RAM pode estourar 4GB do `.venv` se não usar lazy mode.
 
-**Monitorar:** Ao iniciar W4, primeiro teste com uma janela e medir uso de RAM antes de escalar.
-
-**Mitigação se acontecer:** Migrar para `pl.scan_parquet().collect()` (lazy).
-
-**Onde resolver:** W4.
+**Conclusão (16/05/2026):** Risco desativado pela decisão de filtrar `Criticidade = Informacional` em W3 (registrada em `controle_alteracoes.md`, validada na Obs 2.2). Pós-filtro o dataset cai para ~544.885 linhas (de 37.164.054) — rolling windows passam a caber confortavelmente em RAM. Nova posição: monitorar memória só se algum experimento exigir reincluir `Informacional` (não previsto no plano).
 
 ---
 
 ### - [ ] 3.2 Drift temporal do modelo (jan-abr → jun)
 
 **Risco:** Operação de mineração tem sazonalidade (chuva, troca de equipamentos, recapagem de pneus). Modelo treinado em jan-abr pode degradar em jun.
+
+**Reforço (16/05/2026):** Obs 2.5 já mostrou mudança radical na composição dos DGs entre janeiro e o semestre — o risco de drift **não é teórico**, é empiricamente provável. Investigação 2.6 vai quantificar.
 
 **Monitorar:** Análise de drift mensal (AUC-PR por mês no teste de junho).
 
@@ -133,6 +108,11 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
   - `Id_Criticidade=4` = eventos de bypass manual do operador
   - `Valor` max=4347 = peso de carga com erro de unidade
   - Padrão emergente: frota LeTourneau L 1850 aparece em 3 achados independentes
+
+- **W2 (16/05/2026 — investigado antecipadamente):** ver `PLANEJAMENTO.md` → seção W2 → "Observações e Conclusões (W2)"
+  - Obs 2.2: `Informacional` = 0 DGs no semestre (36,6M eventos) → filtro habilitado em W3
+  - Obs 2.1: Top 5 alarmes concentra 87,3% dos DGs (vs 88% jan); só 19 alarmes geram DG no semestre todo
+  - Obs 2.5: `Nao_Critico` saltou de 20% para 48% dos DGs entre jan e semestre — rolling windows validadas como feature dominante; nova obs 2.6 gerada para investigar o salto
 
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 

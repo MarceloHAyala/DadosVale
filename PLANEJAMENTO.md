@@ -478,7 +478,100 @@ Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — 
 
 #### Observações e Conclusões (W2)
 
-*(A preencher quando observações de W2 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+##### 1. `Informacional` = 0 DGs no semestre completo (Obs 2.2 confirmada com precisão cirúrgica)
+
+<details>
+<summary><b>Script usado para investigar</b></summary>
+
+Função `obs_2_2_informacional_dgs()` em [`Projeto/codigo/exploracao_w2_obs.py`](Projeto/codigo/exploracao_w2_obs.py). Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w2_obs.py
+```
+
+</details>
+
+Distribuição de DGs por Criticidade no semestre completo (jan-jun/2025):
+
+| Criticidade | Total eventos | Total DGs | Taxa DG | % volume |
+|---|---:|---:|---:|---:|
+| **Informacional** | 36.619.169 | **0** | **0,0000%** | 98,53% |
+| Nao_Critico | 461.865 | 9.676 | 2,10% | 1,24% |
+| Critico | 83.020 | 10.286 | **12,39%** | 0,22% |
+
+- **Confirmação total da hipótese:** zero DGs em 36,6M eventos Informacionais — não é "praticamente zero", é **exatamente zero**.
+- **Filtrar `Informacional` em W3 é seguro:** zero positivos perdidos, 98,53% do volume eliminado.
+- **Bônus inesperado:** a taxa de DG de eventos `Critico` é **12,39%** — 1 em cada 8 eventos críticos é DG. É o sinal instantâneo mais forte do dataset.
+
+**Implicação para W3 (limpeza):** decisão registrada em `controle_alteracoes.md` (2026-05-16). Pós-filtro o dataset cai de 37.164.054 para ~544.885 linhas — viabiliza rolling windows em W4 sem risco de estouro de RAM.
+
+---
+
+##### 2. Top 5 alarmes concentra 87,3% dos DGs (Obs 2.1 confirmada com surpresa de reordenação)
+
+<details>
+<summary><b>Script usado para investigar</b></summary>
+
+Função `obs_2_1_top_alarmes()` em [`Projeto/codigo/exploracao_w2_obs.py`](Projeto/codigo/exploracao_w2_obs.py).
+
+</details>
+
+A concentração do top 5 é **virtualmente idêntica entre janeiro e o semestre** (87,3% vs 88%), mas a **ordem mudou** significativamente:
+
+| Pos. | Alarme | DGs jan | DGs semestre | % semestre | Movimento |
+|---:|---|---:|---:|---:|---|
+| 1 | Engine Coolant Level | 1.505 | 9.615 | 48,17% | mantém #1 |
+| 2 | **Right Front Brake Temperature** | 116 | 4.494 | 22,51% | **5º → 2º** ↑↑ |
+| 3 | Transmission Oil Level | 205 | 1.426 | 7,14% | mantém |
+| 4 | Left Rear Brake Temperature | 160 | 999 | 5,00% | mantém |
+| 5 | **Aftercooler Level** | 249 | 892 | 4,47% | **2º → 5º** ↓↓ |
+
+**Achado lateral surpreendente:** apenas **19 alarmes distintos** geraram >=1 DG no semestre todo (de 4.402 alarmes únicos no dataset). Feature engineering em W4 pode focar nesses 19 — 99,6% dos alarmes do dataset são irrelevantes para o target.
+
+**Implicação para W2 (EDA visual):** o salto de "Right Front Brake Temperature" (5º → 2º, +3782%) e a queda de "Aftercooler Level" (2º → 5º) são candidatos a investigação de **sazonalidade ou mudança operacional**. Vale plotar série temporal mensal por alarme (alimenta Fig 4 do guia).
+
+**Insight para CM 6.1 (Insights não óbvios):** o universo de alarmes operacionalmente críticos é **muito menor que o universo de alarmes monitorados**. Recomendação para Vale: redirecionar atenção da operação para esses ~19 alarmes em vez de monitorar 4.402.
+
+---
+
+##### 3. Nao_Critico EXPLODIU de 20% para 48,47% dos DGs (Obs 2.5 — mudança radical)
+
+<details>
+<summary><b>Script usado para investigar</b></summary>
+
+Função `obs_2_5_nao_critico_acumulacao()` em [`Projeto/codigo/exploracao_w2_obs.py`](Projeto/codigo/exploracao_w2_obs.py).
+
+</details>
+
+Distribuição dos DGs entre `Critico` e `Nao_Critico`:
+
+| Período | Critico | Nao_Critico | Total DGs |
+|---|---:|---:|---:|
+| Janeiro (relatório inicial) | **80% (2.005)** | **20% (504)** | 2.509 |
+| Semestre completo (jan-jun) | **51,53% (10.286)** | **48,47% (9.676)** | 19.962 |
+
+Em valores absolutos: janeiro teve 504 DGs `Nao_Critico`; fev-jun acumulou **+9.172 DGs** (média de **~1.834/mês — 3,6× a taxa de janeiro**).
+
+**O que mudou?** Hipóteses (a investigar com Fig 4 da EDA visual):
+1. **Janeiro foi atípico** (baixa atividade operacional — chuvas, feriados, ramp-up?)
+2. **Mudança operacional ou de regra CMA** após janeiro (recalibração de thresholds de acumulação?)
+3. **Crescimento orgânico** (mais equipamentos em operação, mais ciclos de carga)
+
+**Implicação central para W4 (feature engineering):** **rolling windows estão fortemente validadas como família dominante de features**. Metade dos DGs do semestre só viraram DG por **acumulação** (regra CMA `QTD > 1`), não por nível crítico em um único evento. Sem rolling window, o modelo não vê essa metade do problema.
+
+**Narrativa para o relatório (W7-W8):** "do total de 19.962 DGs no semestre, **48% só são detectáveis pelo padrão de acumulação temporal** — não por nível crítico em um único evento. Isso justifica empiricamente a escolha de feature engineering temporal sobre estado instantâneo."
+
+---
+
+##### Padrão emergente: as 3 obs se consolidam em um plano operacional para W3-W4
+
+Cruzando os 3 achados, o desenho da próxima semana fica claro:
+
+1. **Filtrar `Informacional`** (Obs 2.2) — viabiliza qualquer rolling window depois
+2. **Restringir feature engineering aos 19 alarmes relevantes** (Obs 2.1) — reduz dimensionalidade em 99,6%
+3. **Priorizar rolling windows 1h/4h/24h** (Obs 2.5) — captura os 48% de DGs por acumulação
+
+Nova observação pendente gerada nesta investigação: **distribuição mensal dos DGs `Nao_Critico`** para entender se o salto 20% → 48% é tendência ou pico — registrada em `observacoes_importantes.md` (item 2.6).
 
 ---
 
