@@ -45,6 +45,35 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ---
 
+### - [ ] 2.7 Diferenciar as 3 hipóteses para os 12,65% de DGs em estado `Manutenção`
+
+**Contexto:** Investigação de Q4 via join temporal (16/05/2026, `Projeto/codigo/04_eda.py` função `tabela_q4()`) revelou que **2.525 dos 19.962 DGs (12,65%) ocorreram com o equipamento em estado `Manutenção`** segundo o ciclo de apontamento ativo no momento. Esperaria-se ~0 (equipamento não está produzindo durante manutenção).
+
+**Por que importa — as 3 hipóteses têm consequências analíticas distintas:**
+
+1. **Hipótese 1 — DG → transição de estado:** o evento foi registrado enquanto o ciclo ainda era "Operando", mas o apontamento atualizou para "Manutenção" pouco depois. O DG **causou** a transição. **Consequência:** vira feature útil em W4 (`transicao_estado_pos_DG`) — correlacionaria com severidade real do DG.
+2. **Hipótese 2 — Falsos positivos de bancada:** em diagnósticos de manutenção, sistemas elétricos são energizados sem produção real → testes disparam alarmes. **Consequência:** esses 2.525 DGs deveriam ser **excluídos do target** em W3 (limpeza). Evidência **direta** do Risco 3.3 (viés inerente do label CMA) — não mais hipotética.
+3. **Hipótese 3 — Bug de pipeline CMA:** geração de DGs sem checagem de estado. **Consequência:** recomendação para Vale + filtro defensivo.
+
+**Investigar:**
+
+Para cada um dos 2.525 DGs em estado Manutenção, calcular a **posição relativa** de `Data_Evento` dentro do intervalo `[Inicio, Fim]`:
+
+```python
+posicao = (Data_Evento - Inicio) / (Fim - Inicio)
+```
+
+Distribuição esperada por hipótese:
+- **Massa concentrada perto de 0** (≤ 10% do intervalo) → hipótese 1 confirmada (DG ocorreu logo após transição, possivelmente causou)
+- **Distribuição uniforme** (mediana ~ 0,5) → hipótese 2 (testes de bancada distribuídos no tempo)
+- **Concentração em alarmes específicos de bancada** (não os top 5 de produção, ex: "Channel Forced", "Limits Bypassed") → hipótese 3 (bug)
+
+**Cruzar adicionalmente com Alarme:** os 2.525 vêm dos mesmos top 5 alarmes que respondem por 87,3% dos DGs (Engine Coolant, brake temperatures, etc) ou de alarmes de diagnóstico (`Channel Forced`, `Limits Bypassed` — que já apareceram em Id_Criticidade=4 no achado W1)?
+
+**Onde resolver:** W3 (limpeza — decidir se filtrar) ou W4 (criação da feature `transicao_estado_pos_DG`).
+
+---
+
 ### - [ ] 2.6 Por que `Nao_Critico` saltou de 20% para 48% dos DGs entre janeiro e o semestre?
 
 **Contexto:** Investigação de Obs 2.5 (16/05/2026) revelou mudança radical na composição dos DGs entre janeiro (80% `Critico` / 20% `Nao_Critico`, total 2.509 DGs) e o semestre completo (51,5% / 48,5%, total 19.962 DGs). Fev-jun acumulou 9.172 DGs `Nao_Critico` — média de 1.834/mês, **3,6× a taxa de janeiro**.
@@ -91,11 +120,13 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 **Risco:** `Is_Dont_Go` é gerado pelas regras CMA, não pela falha física real. Modelo aprende a antecipar a regra, não o evento de campo.
 
-**Monitorar:** Treinar Isolation Forest SEM o label e ver se recupera os DGs. Se sim, há sinal estrutural além da regra. Se não, modelo está limitado ao escopo da regra.
+**Reforço empírico (16/05/2026):** O achado de Q4 (12,65% dos DGs em estado `Manutenção`) é a **primeira evidência direta** do viés do label. Se a investigação da Obs 2.7 confirmar a Hipótese 2 (falsos positivos de bancada), teremos quantificação concreta: "X% do label é viesado por testes de diagnóstico". O Risco 3.3 deixaria de ser preocupação teórica e passaria a ter número associado.
 
-**Mitigação se acontecer:** Sanity check honesto no relatório (W7-W8), CM 6.1.
+**Monitorar:** Treinar Isolation Forest SEM o label e ver se recupera os DGs. Se sim, há sinal estrutural além da regra. Se não, modelo está limitado ao escopo da regra. **Complementarmente:** o resultado da Obs 2.7 dirá quanto do label é claramente viesado antes mesmo do IF rodar.
 
-**Onde resolver:** W6 (Isolation Forest diagnóstico).
+**Mitigação se acontecer:** Sanity check honesto no relatório (W7-W8), CM 6.1. Se Obs 2.7 confirmar viés significativo, considerar criar variante `Is_Dont_Go_producao` (excluindo eventos em Manutenção) para comparar modelos.
+
+**Onde resolver:** W6 (Isolation Forest diagnóstico) + W7 (análise "o que a regra não vê").
 
 ---
 
@@ -113,6 +144,7 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
   - Obs 2.2: `Informacional` = 0 DGs no semestre (36,6M eventos) → filtro habilitado em W3
   - Obs 2.1: Top 5 alarmes concentra 87,3% dos DGs (vs 88% jan); só 19 alarmes geram DG no semestre todo
   - Obs 2.5: `Nao_Critico` saltou de 20% para 48% dos DGs entre jan e semestre — rolling windows validadas como feature dominante; nova obs 2.6 gerada para investigar o salto
+  - **Q4 (via join temporal):** distribuição completa Frota × Tipo × Estado operacional; achado novo: **12,65% dos DGs ocorrem em estado Manutenção** — gerou obs 2.7 e reforçou Risco 3.3 com evidência empírica; 4ª aparição independente da frota LeTourneau L 1850 (taxa de DG/equipamento ~22× menor que caminhões)
 
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 

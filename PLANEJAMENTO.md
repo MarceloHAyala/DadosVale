@@ -454,22 +454,22 @@ Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — 
 **Figuras obrigatórias do Estudo Guiado (numeração segue o guia):**
 
 - [ ] **Fig 1** — Diagrama do fluxo operacional: ciclo de apontamento → telemetria → alerta (CM 1.1)
-- [ ] **Fig 2** — Distribuição temporal dos registros de apontamentos (volume por dia/hora) (CM 2.1)
-- [ ] **Fig 3** — Distribuição de alertas por TIPO × NÍVEL de criticidade (CM 2.2)
-- [ ] **Fig 4** — Série temporal: frequência de alertas DG ao longo do período (CM 2.2)
-- [ ] **Fig 5** — Heatmap de correlação entre features numéricas (CM 2.3)
-- [ ] **Fig 6** — Taxa de alertas por hora do dia e dia da semana (CM 2.3) → responde **Q5**
+- [X] **Fig 2** — Distribuição temporal dos registros de apontamentos (volume por dia/hora) (CM 2.1) — `fig02_distribuicao_temporal_apontamentos.png`
+- [X] **Fig 3** — Distribuição de alertas por TIPO × NÍVEL de criticidade (CM 2.2) — `fig03_tipo_x_criticidade.png` (stacked bar Tipo de equipamento × Criticidade, Informacional filtrado)
+- [X] **Fig 4** — Série temporal: frequência de alertas DG ao longo do período (CM 2.2) — `fig04_serie_temporal_dgs.png` (2 subplots: total + split Crítico/Não-Crítico, MA 7d)
+- [X] **Fig 5** — Heatmap de correlação entre features numéricas (CM 2.3) — `fig05_heatmap_correlacao.png`
+- [X] **Fig 6** — Taxa de alertas por hora do dia e dia da semana (CM 2.3) → responde **Q5** — `fig06_heatmap_hora_dia.png`
 
 **Figuras extras (agregam valor — fazer se tempo permitir, senão vão para anexo):**
 
 - [ ] Extra A — Sobrevivência empírica por frota: P(novo DG > t)
-- [ ] **Extra B — Pareto top-10 alarmes precursores** *(promovido a obrigatório — alimenta diretamente a análise "o que a regra não vê" do W7, parte do diagnóstico K via Isolation Forest)*
+- [X] **Extra B — Pareto top-10 alarmes precursores** *(promovido a obrigatório — alimenta diretamente a análise "o que a regra não vê" do W7, parte do diagnóstico K via Isolation Forest)* — `figExB_pareto_alarmes.png` confirma visualmente 87,3% do top 5
 - [ ] Extra C — Cadeia de eventos no caso CA65924 (do `desenvolver_dontgo.xlsx`)
 
 **Outros entregáveis da semana:**
 
-- [ ] Análise da distribuição por **Frota / Tipo / Classe** → responde **Q4**
-- [ ] **Distribuição de alertas por TAG de equipamento** (Pareto/bar plot) — CM 2.2 pede explicitamente
+- [X] Análise da distribuição por **Frota / Tipo / Classe** → responde **Q4** — `dgs_por_frota_tipo_classe.csv` via **join temporal `join_asof`** (achado: 12,65% dos DGs ocorrem em estado `Manutenção`, gerou obs 2.7)
+- [X] **Distribuição de alertas por TAG de equipamento** (Pareto/bar plot) — CM 2.2 pede explicitamente — `figExG_pareto_tags.png` (top-15 de 35 TAGs com telemetria)
 - [ ] **Tabela `eventos_muito_alto.csv`** listando eventos da CMA com NIVEL "Muito Alto" (CM 1.1) — colunas: TIPO / EVENTO / SITUACAO / QTD / TEMPO / NIVEL
 - [ ] Escrever em `Projeto/relatorio/rascunho.md` seção EDA + achados de Q4 e Q5
 - [ ] **`Projeto/relatorio/hipoteses_eda.md`** — registrar TODAS as hipóteses levantadas (confirmadas e não confirmadas) com 1 parágrafo cada
@@ -572,6 +572,77 @@ Cruzando os 3 achados, o desenho da próxima semana fica claro:
 3. **Priorizar rolling windows 1h/4h/24h** (Obs 2.5) — captura os 48% de DGs por acumulação
 
 Nova observação pendente gerada nesta investigação: **distribuição mensal dos DGs `Nao_Critico`** para entender se o salto 20% → 48% é tendência ou pico — registrada em `observacoes_importantes.md` (item 2.6).
+
+---
+
+##### 4. Q4 — Perfil dos equipamentos com DGs (via join temporal apontamentos × telemetria)
+
+<details>
+<summary><b>Script usado para investigar</b></summary>
+
+Função `tabela_q4()` em [`Projeto/codigo/04_eda.py`](Projeto/codigo/04_eda.py). Usa `join_asof` por TAG entre `telemetria.Data_Evento` e `apontamentos.Inicio` (`strategy="backward"`), seguido de filtro `Data_Evento <= Fim` para garantir que o ciclo de apontamento estava ativo no momento do DG. Cast `ns → μs` em apontamentos para alinhar tipos. DGs sem match seriam marcados como `SEM_APONTAMENTO` — mas no semestre completo isso não aconteceu.
+
+Para reproduzir:
+```powershell
+uv run python Projeto/codigo/04_eda.py
+```
+
+Saída em [`Projeto/relatorio/tabelas/dgs_por_frota_tipo_classe.csv`](Projeto/relatorio/tabelas/dgs_por_frota_tipo_classe.csv) (17 linhas).
+
+</details>
+
+**Qualidade do casamento temporal:** **100% dos 19.962 DGs** encontraram um ciclo de apontamento válido. A pipeline de apontamentos da Vale entrega cobertura temporal completa, sem gaps — pré-condição para usar `estado_operacional_no_DG` como feature em W4.
+
+**Distribuição por Frota / Tipo:**
+
+| Frota | Tipo | DGs | % do total | n_TAGs |
+|---|---|---:|---:|---:|
+| **793-D 5S** | Caminhão | 9.341 | **46,79%** | 13 |
+| **793-D 4S** | Caminhão | 7.405 | **37,10%** | 8 |
+| 793-D 2S | Caminhão | 1.699 | 8,51% | 4 |
+| 793-D 3S | Caminhão | 1.350 | 6,76% | 3 |
+| **LeTourneau L 1850** | Escavadeira | 167 | **0,84%** | 5 |
+
+- 2 frotas (5S + 4S) concentram **83,89%** dos DGs
+- 100% dos DGs vêm de caminhões 793-D ou escavadeiras LeTourneau
+- Caminhões 793-D 5S: ~720 DGs/equipamento médio. Escavadeiras LeTourneau: **~33 DGs/equipamento** (~22× menos por unidade)
+
+**Distribuição por estado operacional no momento do DG (achado central):**
+
+| Estado (Classe) | DGs | % | Interpretação esperada |
+|---|---:|---:|---|
+| **Operando** | 16.122 | **80,76%** | esperado — DG de produção |
+| **Manutenção** | **2.525** | **12,65%** | ⚠️ **surpreendente — esperaria ~0** |
+| Parado | 1.184 | 5,93% | aceitável — sensores ativos com equipamento ocioso |
+| Hibernando | 131 | 0,66% | anômalo — equipamento "dormindo" gerou alerta |
+
+**Achado surpreendente: 1 em cada 8 DGs ocorre com o equipamento em estado `Manutenção`.** Três hipóteses precisam ser diferenciadas em W3-W4:
+
+1. **DG → transição de estado** (mais provável): o evento `Data_Evento` foi escrito enquanto o ciclo ainda estava em "Operando", mas o registro do apontamento atualizou para "Manutenção" pouco depois — o DG **causou** a transição. Se confirmada, vira feature poderosa em W4: `transicao_estado_pos_DG` correlacionaria com severidade real do DG.
+2. **Falsos positivos de bancada** (preocupante): em diagnósticos de manutenção, sistemas elétricos são energizados sem produção real → alarmes disparam por testes. Se confirmada, esses 2.525 DGs são **viés do label CMA** (reforça Risco 3.3) e deveriam ser excluídos do target.
+3. **Bug de pipeline CMA** (menos provável): geração de DGs sem checagem de estado.
+
+**Como diferenciar as 3 hipóteses em W3-W4:** para cada DG em estado "Manutenção", calcular a **posição relativa** de `Data_Evento` dentro de `[Inicio, Fim]`:
+- Massa concentrada perto de `Inicio` (≤ 10% do intervalo) → hipótese 1 (DG causou transição, vira feature)
+- Distribuição uniforme no intervalo → hipótese 2 (falsos positivos de bancada, vira filtro de limpeza)
+- Concentração em alarmes específicos de bancada → hipótese 3 (bug, vira recomendação para a Vale)
+
+**Insight para CM 6.1 (Insights não óbvios):** o conceito de "Don't Go" **não é binário em relação ao estado operacional** — 12,65% dos DGs ocorrem fora de produção real. Recomendação para Vale (Trabalhos Futuros): separar DGs por estado operacional no painel do dispatcher para evitar fadiga de alerta — um DG durante manutenção não tem o mesmo peso que um DG em equipamento operando.
+
+**4ª aparição independente da frota LeTourneau L 1850 (extensão do padrão emergente de W1):**
+
+A frota LeTourneau agora aparece em **4 achados independentes**:
+1. (W1) 5 equipamentos sem telemetria
+2. (W1) 95% dos bypasses do operador
+3. (W1) 88% dos erros de medição de peso
+4. **(W2) Taxa de DG por equipamento ~22× menor que caminhões 793-D**
+
+Três interpretações possíveis para o achado 4:
+- **Genuíno**: escavadeiras realmente têm menos falhas (são ferramentas estacionárias com menos componentes em movimento contínuo vs caminhões)
+- **Viés da regra CMA**: limiares/regras de acumulação calibrados para caminhões, mal adaptados a escavadeiras
+- **Subreporte**: combinado com achados 1-3 sugere que **a instrumentação da frota é problemática** — DGs podem estar ocorrendo mas não sendo capturados
+
+**Recomendação metodológica para W7:** análise estratificada por **Caminhão vs Escavadeira** como subgrupos separados — métricas (Precision, Recall, AUC-PR) reportadas em cada um. Já está previsto no Profundidade C do PLANEJAMENTO (W7), mas agora há base empírica forte pra justificar.
 
 ---
 

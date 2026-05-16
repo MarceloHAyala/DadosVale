@@ -1,0 +1,18 @@
+Frota,Tipo,Classe,n_tags,total_DGs,pct_DGs
+793-D 5S,Caminhao,Operando,13,7238,36.26
+793-D 4S,Caminhao,Operando,8,6292,31.52
+793-D 5S,Caminhao,Manutenção,13,1510,7.56
+793-D 2S,Caminhao,Operando,4,1479,7.41
+793-D 3S,Caminhao,Operando,3,970,4.86
+793-D 4S,Caminhao,Manutenção,7,662,3.32
+793-D 5S,Caminhao,Parado,13,593,2.97
+793-D 4S,Caminhao,Parado,7,446,2.23
+793-D 3S,Caminhao,Manutenção,3,200,1.0
+LeTourneau L 1850,Escavadeira,Operando,3,143,0.72
+793-D 2S,Caminhao,Manutenção,3,142,0.71
+793-D 3S,Caminhao,Hibernando,2,126,0.63
+793-D 2S,Caminhao,Parado,2,78,0.39
+793-D 3S,Caminhao,Parado,3,54,0.27
+LeTourneau L 1850,Escavadeira,Parado,2,13,0.07
+LeTourneau L 1850,Escavadeira,Manutenção,4,11,0.06
+793-D 4S,Caminhao,Hibernando,1,5,0.03
