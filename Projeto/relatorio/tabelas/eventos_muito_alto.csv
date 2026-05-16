@@ -1,0 +1,83 @@
+TIPO,EVENTO,SITUACAO,QTD,TEMPO,NIVEL
+ALARME OEM,Low Transmission Oil Level,Mediante alarme nível 3,2,360,Muito Alto
+ALARME OEM,Low Transmission Oil Level,Mediante cinco alarmes nivel 2 consecutivos.,5,360,Muito Alto
+ALARME OEM,Transmission Oil Level - Active,Mediante alarme nível 3,2,360,Muito Alto
+ALARME OEM,Engine Coolant Level - Active,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Low Engine Coolant Level,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Engine Coolant Level Low,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Coolant Level - Data Erratic - Ce (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Coolant Level - Valid But Low - Most Severe - P (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Coolant Level - Valid But Low - Most Severe - Ce (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Very Low Hydraulic Oil Level,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Coolant Flow - Active,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Coolant Temperature - Active,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Engine Coolant Temperature - Active,Após três alarmes nível 2 ,3,360,Muito Alto
+ALARME OEM,High Engine Coolant Temperature,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,High Engine Coolant Temperature,Após três alarmes nível 2 ,3,360,Muito Alto
+ALARME OEM,Engine Overheat/Engine Coolant or Water Overheat,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,High Engine Oil Temperature,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,High Engine Oil Temperature,Após três alarmes nível 2 ,3,360,Muito Alto
+ALARME OEM,Coolant Temp Above Normal,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Coolant Temp Above Normal,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Coolant Temp - Valid But High - Least Severe - P (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Coolant Temp - Valid But High - Mod Severe - P (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Coolant Temp Above Normal (Mod Svr Lvl),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,High Left Turbo Turbine Inlet Temperature,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,High Right Turbo Turbine Inlet Temperature,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,High Right Turbo Turbine Inlet Temperature,Mediante três alarmes nivel 2 consecutivos.,3,360,Muito Alto
+ALARME OEM,Engine Oil Level - Active,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Low Engine Oil Level,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Oil Level Add Mark,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Oil Level Low Mark,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Engine Oil Level 1 Low Critical (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Oil Level - Data Erratic - Ce (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Oil Level - Valid But Low - Least Severe - Ce (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Oil Level - Valid But Low - Most Severe - Ce (Active),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Oil Pressure Low,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Low Oil Pressure - Active,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Low Engine Oil Pressure - Active,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Low Engine Oil Pressure,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Engine Oil Pressure Low - Critical,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Very Low Engine Oil Rifle Pressure - Most Severe Level,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Left Exhaust Temperature - Active,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,Right Exhaust Temperature - Active,Mediante alarme nível 3,1,0,Muito Alto
+ALARME OEM,High Left Exhaust Temperature,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,High Right Exhaust Temperature,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Low Steering Oil Level,Mediante cinco alarmes consecutivos.,5,720,Muito Alto
+ALARME OEM,Left Front Brake Temperature - Active,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,Left Rear Brake Temperature - Active,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,Right Front Brake Temperature - Active,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,Right Rear Brake Temperature - Active,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,High Left Front Brake Oil Temperature,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,High Right Front Brake Oil Temperature,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,High Left Rear Brake Oil Temperature,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,High Right Rear Brake Oil Temperature,Em qualquer situação,2,360,Muito Alto
+ALARME OEM,Brake Pump Pressure Not Responding To Command,"Mediante cinco alarmes nível 3 consecutivos,",5,720,Muito Alto
+ALARME OEM,[036.04] Grid blower fault / Gy19 Grid Blower Failure - Blower 2 Open,Em qualquer situação,1,0,Muito Alto
+ALARME OEM,[036.03] Grid blower fault / Gy19 Grid Blower Failure - Blower 1 Open,Em qualquer situação,1,0,Muito Alto
+TENDÊNCIA,MC - Tendência baixa pressão do óleo motor <250KPA,Mediante dois alarmes de tendência,2,360,Muito Alto
+TENDÊNCIA,MC - Tendênica baixa pressão do óleo motor <200KPA,Mediante dois alarmes de tendência,2,360,Muito Alto
+TENDÊNCIA,MC - Tendência baixa pressão do óleo motor <150KPA,Mediante dois alarmes de tendência,2,360,Muito Alto
+SISTEMA,MEMS não comunica,Manutenção previamente avisada e não comunica acima de 40 minutos,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1150),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1150_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1250_Gen2X),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1350),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1350_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1850),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-1850_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-2350),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-2350_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-950),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,Hydraulic Reservoir Oil Temperature Critically High (L-950_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1250_Gen2X),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-2350),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-950_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1350_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1850_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1350),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-950),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1150_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-2350_Gen2),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1150),Em qualquer situação,1,0,Muito Alto
+ALARME OEM,HPD Gearbox Oil Pressure Critically Low (L-1850),Em qualquer situação,1,0,Muito Alto

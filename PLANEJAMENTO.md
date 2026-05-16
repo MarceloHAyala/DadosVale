@@ -462,17 +462,17 @@ Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — 
 
 **Figuras extras (agregam valor — fazer se tempo permitir, senão vão para anexo):**
 
-- [ ] Extra A — Sobrevivência empírica por frota: P(novo DG > t)
+- ~~Extra A — Sobrevivência empírica por frota: P(novo DG > t)~~ — **MOVIDA para W6** (saída natural do `08_sobrevivencia.py` com `lifelines.KaplanMeierFitter`)
 - [X] **Extra B — Pareto top-10 alarmes precursores** *(promovido a obrigatório — alimenta diretamente a análise "o que a regra não vê" do W7, parte do diagnóstico K via Isolation Forest)* — `figExB_pareto_alarmes.png` confirma visualmente 87,3% do top 5
-- [ ] Extra C — Cadeia de eventos no caso CA65924 (do `desenvolver_dontgo.xlsx`)
+- ~~Extra C — Cadeia de eventos no caso CA65924 (do `desenvolver_dontgo.xlsx`)~~ — **MOVIDA para W4** (parte natural da investigação da Obs 2.3 — "padrão CA65924 é universal?")
 
 **Outros entregáveis da semana:**
 
 - [X] Análise da distribuição por **Frota / Tipo / Classe** → responde **Q4** — `dgs_por_frota_tipo_classe.csv` via **join temporal `join_asof`** (achado: 12,65% dos DGs ocorrem em estado `Manutenção`, gerou obs 2.7)
 - [X] **Distribuição de alertas por TAG de equipamento** (Pareto/bar plot) — CM 2.2 pede explicitamente — `figExG_pareto_tags.png` (top-15 de 35 TAGs com telemetria)
-- [ ] **Tabela `eventos_muito_alto.csv`** listando eventos da CMA com NIVEL "Muito Alto" (CM 1.1) — colunas: TIPO / EVENTO / SITUACAO / QTD / TEMPO / NIVEL
+- [X] **Tabela `eventos_muito_alto.csv`** listando eventos da CMA com NIVEL "Muito Alto" (CM 1.1) — colunas: TIPO / EVENTO / SITUACAO / QTD / TEMPO / NIVEL — **82 eventos** (76 'Muito Alto' + 6 'Muito alto' normalizados — ver `controle_alteracoes.md`). **Achado lateral:** 95,12% vêm de `ALARME OEM`, 3,66% de TENDÊNCIA, 1,22% de SISTEMA — reforça empiricamente o Risco 3.3 (label CMA é majoritariamente herdado dos alarmes do fabricante, não análise autônoma da Vale)
 - [ ] Escrever em `Projeto/relatorio/rascunho.md` seção EDA + achados de Q4 e Q5
-- [ ] **`Projeto/relatorio/hipoteses_eda.md`** — registrar TODAS as hipóteses levantadas (confirmadas e não confirmadas) com 1 parágrafo cada
+- [X] **`Projeto/relatorio/hipoteses_eda.md`** — registrar TODAS as hipóteses levantadas (confirmadas e não confirmadas) com 1 parágrafo cada — **13 hipóteses indexadas em 6 temas** (2 ✅ confirmadas, 4 ❌ refutadas, 2 🟡 refutadas com reinterpretação, 5 🔄 pendentes para W3-W7)
 
 **Entregável:** 6 figuras obrigatórias + extras desejáveis + hipoteses_eda.md + eventos_muito_alto.csv + rascunho EDA.
 
@@ -646,6 +646,182 @@ Três interpretações possíveis para o achado 4:
 
 ---
 
+##### 5. Obs 2.6 — Padrão temporal dos DGs: 3 regimes distintos, NÃO drift linear
+
+<details>
+<summary><b>Scripts e funções usadas</b></summary>
+
+Funções `obs_2_6_nao_critico_mensal()` e `obs_2_6_extensao_critico_junho()` em [`Projeto/codigo/exploracao_w2_obs.py`](Projeto/codigo/exploracao_w2_obs.py). Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w2_obs.py
+```
+
+</details>
+
+A hipótese inicial era que o salto 20% → 48% Não-Crítico fosse drift linear ou pico isolado. A investigação revelou algo bem mais rico: **três regimes temporais distintos com DUAS anomalias completamente diferentes em alarmes diferentes**.
+
+**Distribuição mensal de DGs:**
+
+| Mês | Crítico | Não-Crítico | Total | %NC | Regime |
+|---|---:|---:|---:|---:|---|
+| Jan | 2.077 | 504 | 2.581 | 19,5% | Baseline normal |
+| Fev | 1.071 | **3.422** | 4.493 | 76,2% | ⚠️ **Anomalia A** (Engine Coolant NC) |
+| Mar | 771 | **3.452** | 4.223 | 81,7% | ⚠️ **Anomalia A** (pico) |
+| Abr | 837 | 1.322 | 2.159 | 61,2% | Recuperação |
+| Mai | 685 | 595 | 1.280 | 46,5% | Quase-normal |
+| Jun | **4.845** | 381 | 5.226 | 7,3% | ⚠️ **Anomalia B** (Right Front Brake C) |
+
+**O "salto" 20% → 48% era uma média mentirosa**: a média semestre nivela 2 anomalias opostas — nunca houve um mês com 48% de fato.
+
+### Anomalia A — Engine Coolant Level Active (Fev-Mar) — Não-Crítico
+
+| Mês | Não-Crítico | vs Jan |
+|---|---:|---:|
+| Jan | 259 | 1× |
+| Fev | 2.414 | **9,3×** |
+| Mar | 2.741 | **10,6×** |
+| Abr | 1.261 | 4,9× |
+| Mai | 538 | 2,1× |
+| Jun | 292 | 1,1× |
+
+### Achado bônus inesperado: a Anomalia A é também uma RECLASSIFICAÇÃO de severidade
+
+Olhando totais combinados (Crítico + Não-Crítico) do **mesmo alarme**:
+
+| Mês | Crítico | Não-Crítico | Total | Mix Crítico |
+|---|---:|---:|---:|---:|
+| Jan | 1.246 | 259 | 1.505 | **83%** |
+| Fev | 276 | 2.414 | 2.690 | **10%** |
+| Mar | 177 | 2.741 | 2.918 | **6%** |
+| Abr | 186 | 1.261 | 1.447 | 13% |
+| Mai | 152 | 538 | 690 | 22% |
+| Jun | 73 | 292 | 365 | 20% |
+
+**Duas coisas aconteceram simultaneamente em fevereiro:**
+1. O volume total do alarme quase dobrou (1.505 → 2.690, +79%)
+2. A severidade migrou massivamente de Crítico para Não-Crítico (83% → 10% Crítico)
+
+Hipótese mais provável: **recalibração de threshold ou regra CMA em fevereiro** que rebaixou a severidade dos eventos Engine Coolant Level. A reversão parcial em maio-junho (20% Crítico) sugere ajuste posterior. Registrado como **Obs 2.8** em `observacoes_importantes.md` para auditoria interna na Vale.
+
+### Anomalia B — Right Front Brake Temperature (Junho) — Crítico
+
+Um único alarme explica **87,7% dos 4.845 DGs Crítico de junho** (4.247 ocorrências):
+
+| Mês | Right Front Brake Crítico | Δ vs média Jan-Mai |
+|---|---:|---:|
+| Jan | 67 | — |
+| Fev | 60 | — |
+| Mar | 4 | — |
+| Abr | 3 | — |
+| Mai | 6 | — |
+| Jun | **4.247** | **+151,7×** |
+
+**Não é gradiente — é um evento estrutural pontual.** 4.247 ocorrências de um alarme que tinha entre 3 e 67 ocorrências nos meses anteriores. Hipóteses (registradas como **Obs 2.9** em `observacoes_importantes.md`):
+- Recapagem em massa de pneus afetando termoregulação dos freios
+- Sazonalidade térmica (final de outono / início inverno em Itabira)
+- Mudança de turno operacional ou recalibração de sensor
+
+### Implicação 1: Confirmação empírica e quantificada do Risco 3.2 (drift temporal)
+
+- **Treino jan-abr** contém Anomalia A (Engine Coolant Não-Crítico)
+- **Teste jun** contém Anomalia B (Right Front Brake Crítico)
+- Right Front Brake Crítico tem **4 ocorrências em março, 3 em abril, 6 em maio** — estatisticamente invisível para o treino
+- **O modelo provavelmente não aprenderá a antecipar o alarme dominante do teste**
+
+Decisão metodológica atual (16/05/2026): **manter split fixo jan-abr/mai/jun** e tratar o drift como **tema central** de W7 (análise de erro mensal) e W8 (seção Limitações). Decisão final será registrada em `controle_alteracoes.md` quando W4 implementar o split.
+
+### Implicação 2: Família nova de features para W4 — não substitui, agrega ao plano
+
+Os achados validam uma família de features que não estava prevista no plano original de W4:
+
+- **Razão vs baseline histórico do próprio alarme:** para cada alarme X, `count_X_ultimos_7d / baseline_X_30d_anterior`. Captura "este alarme está disparando muito mais que o normal pra ele" → Right Front Brake teria sinal forte em junho mesmo sem dados históricos do alarme no treino
+- **Desvio do regime de criticidade:** features como `razao_Critico_Nao_Critico_ultimos_14d / baseline_60d`. Captura a inversão Engine Coolant Fev-Mar
+
+Rolling windows simples (já planejadas) **permanecem**; essa família **adiciona** dimensão regimal.
+
+### Implicação 3: Narrativa central para o relatório (W7-W8)
+
+> *"A análise mensal revelou que o semestre não é estatisticamente homogêneo. Três regimes distintos foram identificados: (i) baseline em janeiro; (ii) anomalia Engine Coolant Não-Crítico em fevereiro-março, combinando aumento de volume (+79%) com reclassificação massiva de severidade (83% → 6% Crítico); (iii) anomalia Right Front Brake Temperature Crítico em junho (151,7× a média histórica do alarme). O modelo enfrenta non-stationarity REAL na operação, não simulada. Métricas serão reportadas mês a mês na avaliação para expor o impacto do drift. Recomendações operacionais incluem auditoria da regra CMA entre janeiro e fevereiro (causa provável da inversão Engine Coolant) e investigação do evento operacional de junho que disparou o pico Right Front Brake."*
+
+---
+
+##### 6. Obs 2.7 — DGs em Manutenção: 3 hipóteses testadas, H2 reinterpretada
+
+<details>
+<summary><b>Script e função usada</b></summary>
+
+Função `obs_2_7_manutencao_posicao_relativa()` em [`Projeto/codigo/exploracao_w2_obs.py`](Projeto/codigo/exploracao_w2_obs.py). Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w2_obs.py
+```
+
+</details>
+
+Os 2.525 DGs em Manutenção foram analisados via **posição relativa** de `Data_Evento` em `[Inicio, Fim]` do ciclo de apontamento ativo. Resultados de 4 sinais diagnósticos:
+
+**Sinal 1 — Estatísticas:** mediana = **38,6%**, média = 42,2%, p10 = 6,5%, p90 = 83,9%. Já elimina H1 como dominante (esperaria mediana próxima de 0).
+
+**Sinal 2 — Histograma (10 buckets de 10%):**
+
+| Bucket | n | % | vs Uniforme |
+|---|---:|---:|---|
+| 0-10% | 385 | **15,3%** | +5,3pp (viés inicial) |
+| 10-20% | 348 | 13,8% | +3,8pp |
+| 20-30% | 304 | 12,0% | +2,0pp |
+| 30-40% | 265 | 10,5% | +0,5pp |
+| 40-50% | 232 | 9,2% | -0,8pp |
+| 50-60% | 251 | 9,9% | -0,1pp |
+| 60-70% | 206 | 8,2% | -1,8pp |
+| 70-80% | 207 | 8,2% | -1,8pp |
+| 80-90% | 168 | 6,7% | -3,3pp |
+| 90-100% | 159 | 6,3% | -3,7pp |
+
+Distribuição **quase-uniforme com viés monotônico decrescente**. H1 esperaria > 40% no bucket 0-10%; temos só 15,3% — excesso de ~125 casos = **H1 contribui marginalmente (~5%)**.
+
+**Sinal 3 — Top 10 alarmes em Manutenção:**
+
+| Alarme | n | % |
+|---|---:|---:|
+| Engine Coolant Level | 1.409 | 55,8% |
+| Aftercooler Level | 332 | 13,2% |
+| Transmission Oil Level | 216 | 8,6% |
+| Right Front Brake Temp | 158 | 6,3% |
+| Parking Brake | 115 | 4,6% |
+
+**São EXATAMENTE os top 5 alarmes de produção do semestre.** Zero alarmes de diagnóstico/bypass no top 10. H3 (bug CMA) rejeitada.
+
+**Sinal 4 — Distribuição por contexto:** 86,1% dos 2.525 DGs vêm de alarmes do top 5 produção; 13,9% de outros alarmes (mas ainda alarmes operacionais legítimos).
+
+### Veredito sobre as 3 hipóteses
+
+| Hipótese | Status | Evidência |
+|---|---|---|
+| **H1** — DG causou transição | **Rejeitada como dominante**, contribui ~5% | Bucket 0-10% tem 15,3% (esperaria > 40% se dominante) |
+| **H2** — Falsos positivos de bancada | **Distribuição correta, NOME errado** | Uniforme confirmado, mas reinterpretação necessária ↓ |
+| **H3** — Bug CMA / alarmes de diagnóstico | **Rejeitada empiricamente** | 86,1% vêm de alarmes de produção; 0 alarmes de bypass no top 10 |
+
+### Reinterpretação central da H2 (achado importante)
+
+**Os 2.525 DGs em Manutenção NÃO são "falsos positivos de bancada"** (alarmes artificiais disparados por testes irreais). **São DGs LEGÍTIMOS ocorrendo durante ciclos de manutenção quando o equipamento é re-ativado para testes operacionais.**
+
+Evidência decisiva: os top alarmes são Engine Coolant Level, Aftercooler Level, Brake Temperatures — alarmes que **dependem do equipamento estar OPERANDO** para serem detectáveis. Um sensor de coolant não dispara com motor desligado. Um termômetro de freio não acusa temperatura alta sem o equipamento estar em movimento.
+
+**Cenário real reconstruído:** ciclos longos de Manutenção (que duram horas a dias) têm múltiplos episódios de ativação para teste operacional; cada teste é uma oportunidade de DG real. A distribuição quase-uniforme reflete os momentos arbitrários dos testes dentro do ciclo.
+
+### Implicação para o target
+
+Esses 2.525 DGs **NÃO são lixo a filtrar** — são DGs legítimos. Mas o **contexto operacional é diferente** do DG de produção: representam "condição anormal detectada em teste de manutenção", não "falha iminente em equipamento produzindo".
+
+Para a pergunta **Q1 estrita** ("DG nas próximas 4h em equipamento OPERANDO"), esses 12,65% são **ruído contextual leve**: não invalidam o label, mas diluem o sinal de "DG operacional próximo".
+
+### Implicação para o Risco 3.3 (viés do label CMA)
+
+O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manutenção **não** eram a "primeira evidência direta" de viés do label como inicialmente registrado — eles são DGs reais. O Risco 3.3 continua existindo (a regra CMA define o positivo, não a falha física), mas **perde essa quantificação fácil**. A validação empírica do viés do label CMA agora depende exclusivamente do **Isolation Forest diagnóstico em W6**.
+
+---
+
 ### W3 (27/05-02/06) — Limpeza + features básicas
 
 **Objetivo:** matriz v1 com 10-15 features documentadas.
@@ -685,6 +861,11 @@ Três interpretações possíveis para o achado 4:
 - [ ] Features de recência: `horas_desde_ultimo_DG`, `horas_desde_ultimo_critico`
 - [ ] Features de operador: `taxa_DG_operador_30d` → base para **Q3**
 - [ ] Features de regra de negócio: `qtd_alarmes_nivel_muito_alto_360min`
+- [ ] **[Novo após Obs 2.7]** Feature `estado_pre_evento`: estado operacional do equipamento ~1h antes de cada evento (via `join_asof` com apontamentos). Captura se evento ocorreu durante Operando vs Manutenção, base para análise estratificada em W7.
+- [ ] **[Novo após Obs 2.6]** Família de features regimais (resposta empírica à anomalia Right Front Brake em junho):
+  - `count_{alarme}_ultimos_7d / baseline_{alarme}_30d_anterior` — razão vs baseline histórico do próprio alarme; sinal forte para alarmes que explodem do nada (RFB jun)
+  - `razao_Critico_NaoCritico_ultimos_14d / baseline_60d` — captura inversões de severidade (Engine Coolant fev-mar)
+- [ ] **Fig Extra C — Cadeia de eventos no caso CA65924** *(originalmente em W2, movida)* — visualização dos 147 eventos consecutivos do caminhão CA65924 culminando em DG (do `desenvolver_dontgo.xlsx`). Faz parte da investigação da Obs 2.3 ("padrão calmaria→acúmulo→disparo é universal?"): plotar a linha do tempo dos eventos com o DG marcado + replicar a mesma análise para amostra aleatória de outros DGs para confronto visual
 - [ ] **Finalizar `documentacao_features.csv`** com fórmula+motivação de TODAS as features (CM 3.2 nota)
 - [ ] Construir target: `y = 1` se houver evento DG na janela de +0 a +4h do equipamento (CM 3.3)
 - [ ] **[Profundidade 1] Análise de sensibilidade da janela de predição** (~2h): gerar targets paralelos para janelas de **2h, 4h e 8h**; treinar LightGBM com parâmetros default em cada um e comparar AUC-PR/Recall no conjunto de validação. Tabela `sensibilidade_janela.csv` → justificar empiricamente a escolha de 4h em vez de só argumentar com motivos operacionais. Registrar conclusão em `controle_alteracoes.md`
@@ -712,6 +893,7 @@ Três interpretações possíveis para o achado 4:
 - [ ] `Projeto/codigo/07_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default
 - [ ] **Documentar pré-processamento específico do baseline e do LightGBM** (CM 4.3): baseline usa só `Criticidade` e `TAG`; LightGBM usa matriz completa v2
 - [ ] Comparar com baseline
+- [ ] **[Novo após Obs 2.7]** Treinar **variante `Is_Dont_Go_producao`** (filtra os 2.525 DGs em Manutenção) com os mesmos hiperparâmetros e comparar AUC-PR contra o target original. Se variante "produção" for substancialmente melhor (>5pp AUC-PR), confirma que o contexto Manutenção introduz ruído treinável; registrar decisão em `controle_alteracoes.md`.
 - [ ] 🚦 **GATE MARCO 1: LightGBM bate baseline em AUC-PR?**
   - SIM → avança para W6
   - NÃO → pare. Reveja features antes de tunar parâmetros
@@ -737,6 +919,7 @@ Três interpretações possíveis para o achado 4:
   - [ ] **Pré-processamento específico de sobrevivência** (CM 4.3): mesma matriz numérica v2, mas exclui features com colinearidade > 0.9 (Cox/Weibull são sensíveis); StandardScaler em features contínuas
   - [ ] Converter saída em probabilidade-em-4h: `P(T ≤ 4h | X)` → comparável com LightGBM em AUC-PR
   - [ ] **Interpretação via hazard ratios**: tabela top-10 features com HR e IC 95% — interpretação direta sem SHAP
+  - [ ] **Fig Extra A — Sobrevivência empírica por frota** *(originalmente em W2, movida)* — curva Kaplan-Meier `P(novo DG > t)` por Frota (793-D 5S, 4S, 3S, 2S, LeTourneau L 1850) usando `lifelines.KaplanMeierFitter`. Saída natural do mesmo script já planejado (`08_sobrevivencia.py`); alimenta narrativa de Q4 e da H4.1 (LeTourneau tem perfil distinto)
 - [ ] **Fig 9** — Curvas ROC + Precision-Recall comparando baseline × LightGBM × Sobrevivência (CM 5.1)
 - [ ] **Fig 11** — SHAP summary plot do LightGBM (CM 5.3)
 - [ ] **Fig 12** — SHAP waterfall de 1 predição individual (CM 5.3)
@@ -775,6 +958,7 @@ Três interpretações possíveis para o achado 4:
   - [ ] **Fig 10** — Matriz de confusão do modelo escolhido com anotações de impacto operacional (CM 5.2)
   - [ ] Análise dos falsos negativos: que TAGs/frotas/operadores escapam?
   - [ ] **[Qualidade C] Análise de erro estratificada**: matriz de confusão e métricas por **frota** e por **tipo** (Caminhão vs. Escavadeira) — modelo não pode falhar mais em uma frota
+  - [ ] **[Novo após Obs 2.7]** Métricas estratificadas por **estado operacional do DG** (Operando / Manutenção / Parado / Hibernando) — separa "DG operacional" (alvo principal) de "DG em teste de manutenção" (ruído contextual). Reportar Precision/Recall em cada subgrupo.
   - [ ] Drift mensal: AUC-PR mês a mês no teste
   - [ ] Tabela custo-benefício: FN × FP × limiar ótimo
 - [ ] **Fig 13** — Comparação visual de performance: baseline vs. modelos desenvolvidos (CM 6.1)

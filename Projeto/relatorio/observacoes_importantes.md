@@ -45,50 +45,47 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ---
 
-### - [ ] 2.7 Diferenciar as 3 hipóteses para os 12,65% de DGs em estado `Manutenção`
+### - [ ] 2.8 Houve recalibração de threshold ou regra CMA no Engine Coolant Level em fevereiro de 2025?
 
-**Contexto:** Investigação de Q4 via join temporal (16/05/2026, `Projeto/codigo/04_eda.py` função `tabela_q4()`) revelou que **2.525 dos 19.962 DGs (12,65%) ocorreram com o equipamento em estado `Manutenção`** segundo o ciclo de apontamento ativo no momento. Esperaria-se ~0 (equipamento não está produzindo durante manutenção).
+**Contexto:** Investigação Obs 2.6 (16/05/2026) revelou que o alarme `Engine Coolant Level - Active` teve em fevereiro:
+- Aumento de volume total: 1.505 (jan) → 2.690 (fev) → 2.918 (mar) — +94% em 2 meses
+- **Inversão massiva da severidade**: 83% Crítico em janeiro → 10% em fevereiro → 6% em março (depois reverteu parcialmente para 20% em mai-jun)
 
-**Por que importa — as 3 hipóteses têm consequências analíticas distintas:**
+A combinação volume + inversão simultânea aponta para **mudança de regra CMA / threshold em fevereiro de 2025**, não um evento operacional puro (que afetaria volume mas não a proporção entre Crítico e Não-Crítico).
 
-1. **Hipótese 1 — DG → transição de estado:** o evento foi registrado enquanto o ciclo ainda era "Operando", mas o apontamento atualizou para "Manutenção" pouco depois. O DG **causou** a transição. **Consequência:** vira feature útil em W4 (`transicao_estado_pos_DG`) — correlacionaria com severidade real do DG.
-2. **Hipótese 2 — Falsos positivos de bancada:** em diagnósticos de manutenção, sistemas elétricos são energizados sem produção real → testes disparam alarmes. **Consequência:** esses 2.525 DGs deveriam ser **excluídos do target** em W3 (limpeza). Evidência **direta** do Risco 3.3 (viés inerente do label CMA) — não mais hipotética.
-3. **Hipótese 3 — Bug de pipeline CMA:** geração de DGs sem checagem de estado. **Consequência:** recomendação para Vale + filtro defensivo.
+**Por que importa:**
+- Se confirmado, é uma **decisão da Vale (CMA)** que altera o significado da variável `Criticidade` ao longo do tempo — afeta interpretação de qualquer modelo que use essa coluna como feature ou que trate as séries temporais como estacionárias.
+- Vira **recomendação concreta no relatório**: "padronizar threshold por janela móvel" ou "documentar mudanças de regra CMA em metadado".
+- Se NÃO foi mudança de regra, então o equipamento físico mudou — também útil saber.
 
 **Investigar:**
+- Sem acesso a registros de mudança da CMA (fora do escopo), este item provavelmente vira **Trabalhos Futuros / Recomendação para Vale**.
+- Como mitigação dentro do escopo: comparar a distribuição de `Valor` (numérica) do mesmo alarme entre jan e fev-mar. Se a distribuição de Valor é a mesma mas a Criticidade mudou, é confirmação indireta de mudança de regra.
 
-Para cada um dos 2.525 DGs em estado Manutenção, calcular a **posição relativa** de `Data_Evento` dentro do intervalo `[Inicio, Fim]`:
-
-```python
-posicao = (Data_Evento - Inicio) / (Fim - Inicio)
-```
-
-Distribuição esperada por hipótese:
-- **Massa concentrada perto de 0** (≤ 10% do intervalo) → hipótese 1 confirmada (DG ocorreu logo após transição, possivelmente causou)
-- **Distribuição uniforme** (mediana ~ 0,5) → hipótese 2 (testes de bancada distribuídos no tempo)
-- **Concentração em alarmes específicos de bancada** (não os top 5 de produção, ex: "Channel Forced", "Limits Bypassed") → hipótese 3 (bug)
-
-**Cruzar adicionalmente com Alarme:** os 2.525 vêm dos mesmos top 5 alarmes que respondem por 87,3% dos DGs (Engine Coolant, brake temperatures, etc) ou de alarmes de diagnóstico (`Channel Forced`, `Limits Bypassed` — que já apareceram em Id_Criticidade=4 no achado W1)?
-
-**Onde resolver:** W3 (limpeza — decidir se filtrar) ou W4 (criação da feature `transicao_estado_pos_DG`).
+**Onde resolver:** W7 (Limitações e Recomendações) / W8 (Trabalhos Futuros). Investigação técnica auxiliar pode ocorrer em W2-W3 se sobrar tempo.
 
 ---
 
-### - [ ] 2.6 Por que `Nao_Critico` saltou de 20% para 48% dos DGs entre janeiro e o semestre?
+### - [ ] 2.9 Qual evento operacional disparou o pico de Right Front Brake Temperature em junho?
 
-**Contexto:** Investigação de Obs 2.5 (16/05/2026) revelou mudança radical na composição dos DGs entre janeiro (80% `Critico` / 20% `Nao_Critico`, total 2.509 DGs) e o semestre completo (51,5% / 48,5%, total 19.962 DGs). Fev-jun acumulou 9.172 DGs `Nao_Critico` — média de 1.834/mês, **3,6× a taxa de janeiro**.
+**Contexto:** Investigação Obs 2.6 extensão (16/05/2026) revelou que `Right Front Brake Temperature - Active` teve em junho:
+- 4.247 ocorrências (87,7% de todos os DGs Crítico de junho)
+- Média jan-mai: 28 ocorrências/mês
+- **Salto de 151,7×** — não é gradiente, é evento estrutural pontual
 
 **Por que importa:**
-- Se for crescimento mensal sustentado, indica **mudança estrutural** (mais equipamentos, mudança de regra CMA, deriva operacional) que afeta diretamente a generalização do modelo treinado em jan-abr para o teste em jun.
-- Se for picos isolados em meses específicos, indica eventos pontuais (ex: 1 frota em ramp-up, 1 problema sazonal) — modelo precisa lidar com não estacionariedade.
-- Conecta com risco 3.2 (drift temporal): se a distribuição dos DGs muda mês a mês, validação por split temporal precisa ser interpretada com cautela.
+- O alarme era **estatisticamente invisível** no período de treino (3-67 ocorrências/mês de jan a mai). O modelo dificilmente vai antecipá-lo no teste de junho — efeito direto do drift estrutural (Risco 3.2).
+- Se foi recapagem em massa, sazonalidade térmica ou troca de sensor, vira contexto importante para o relatório e para a recomendação operacional.
 
 **Investigar:**
-- Distribuição mensal de DGs `Nao_Critico` (jan, fev, mar, abr, mai, jun) — tendência linear, exponencial ou picos?
-- Quebrar por **frota / tipo / alarme**: o salto vem de toda a operação ou de subgrupo específico?
-- Cruzar com calendário operacional da Vale se possível (não disponível neste escopo)
+- Distribuição dos 4.247 DGs por **TAG**: foi concentrado em poucos equipamentos (sugere troca de sensor/falha localizada) ou difuso (sugere sazonalidade/política operacional)?
+- Distribuição dentro de junho: foi um dia específico (evento único) ou difuso ao longo do mês?
+- Cruzar com `Tag_Frota`: foi só frota 793-D 5S/4S ou difuso?
+- Cruzar com `Operador`: foi turno/operador específico?
 
-**Onde resolver:** W2 (EDA visual — alimenta Fig 4 do guia: série temporal de DGs).
+**Sem registros de manutenção/operação da Vale**, parte dessa investigação vira Limitação. O que dá pra fazer com os dados existentes alimenta narrativa do relatório.
+
+**Onde resolver:** W2 (EDA — alimenta a Fig Extra C — Cadeia de eventos) ou W7 (análise de erro estratificada e narrativa de drift).
 
 ---
 
@@ -102,17 +99,29 @@ Distribuição esperada por hipótese:
 
 ---
 
-### - [ ] 3.2 Drift temporal do modelo (jan-abr → jun)
+### - [ ] 3.2 Drift temporal do modelo (jan-abr → jun) — RISCO CONFIRMADO E QUANTIFICADO
 
 **Risco:** Operação de mineração tem sazonalidade (chuva, troca de equipamentos, recapagem de pneus). Modelo treinado em jan-abr pode degradar em jun.
 
-**Reforço (16/05/2026):** Obs 2.5 já mostrou mudança radical na composição dos DGs entre janeiro e o semestre — o risco de drift **não é teórico**, é empiricamente provável. Investigação 2.6 vai quantificar.
+**Quantificação completa (16/05/2026 — Obs 2.6 e extensão):** O drift **não é hipotético — está medido**. A análise mensal identificou **3 regimes distintos** com 2 anomalias em alarmes diferentes:
 
-**Monitorar:** Análise de drift mensal (AUC-PR por mês no teste de junho).
+- **Jan:** baseline normal (19,5% Não-Crítico)
+- **Fev-Mar:** Anomalia A — Engine Coolant Level Não-Crítico explode (9,3-10,6× baseline), com inversão simultânea de severidade (volume +79%, mix Crítico 83% → 6%)
+- **Jun:** Anomalia B — Right Front Brake Temperature Crítico explode (4.247 ocorrências vs média 28/mês jan-mai = 151,7× baseline)
 
-**Mitigação se acontecer:** Discussão honesta no relatório (W8) + recomendação de retraining mensal nos Trabalhos Futuros.
+**Impacto direto no split planejado (jan-abr / mai / jun):**
+- Treino contém Anomalia A
+- Teste contém Anomalia B
+- Right Front Brake Temperature Crítico tem 3-67 ocorrências/mês no treino → estatisticamente invisível para o modelo
+- O alarme dominante do teste é praticamente desconhecido no treino
 
-**Onde resolver:** W7.
+**Decisão metodológica de hoje (16/05/2026):** manter split fixo jan-abr/mai/jun e tratar o drift como tema central em W7 (análise de erro mensal) e W8 (Limitações). Decisão final entrará em `controle_alteracoes.md` quando W4 implementar o split.
+
+**Monitorar:** Análise de drift mensal (AUC-PR por mês no teste de junho) — agora com **expectativa empírica clara** de que o desempenho cairá no alarme Right Front Brake Temperature.
+
+**Mitigação se acontecer:** (i) Reportar métricas mês a mês obrigatoriamente em W7; (ii) Discussão honesta no relatório (W8) sobre o impacto dos 2 regimes; (iii) Recomendação de retraining mensal nos Trabalhos Futuros; (iv) Família nova de features regimais em W4 (`razao_vs_baseline_proprio_alarme`) que pode mitigar parcialmente.
+
+**Onde resolver:** W7 (análise) + W8 (escrita).
 
 ---
 
@@ -120,13 +129,22 @@ Distribuição esperada por hipótese:
 
 **Risco:** `Is_Dont_Go` é gerado pelas regras CMA, não pela falha física real. Modelo aprende a antecipar a regra, não o evento de campo.
 
-**Reforço empírico (16/05/2026):** O achado de Q4 (12,65% dos DGs em estado `Manutenção`) é a **primeira evidência direta** do viés do label. Se a investigação da Obs 2.7 confirmar a Hipótese 2 (falsos positivos de bancada), teremos quantificação concreta: "X% do label é viesado por testes de diagnóstico". O Risco 3.3 deixaria de ser preocupação teórica e passaria a ter número associado.
+**Atualização (16/05/2026 — pós-Obs 2.7):** A hipótese inicial de que os 2.525 DGs em estado `Manutenção` (12,65%) eram "primeira evidência direta" do viés foi **PARCIALMENTE REFUTADA pela investigação Obs 2.7**:
+- Distribuição quase-uniforme com viés ligeiro inicial (não concentrada em 0-10% como H1 esperaria)
+- Top 10 alarmes em Manutenção = top 5 produção do semestre (Engine Coolant, Brake Temps...) — 86,1% vêm de alarmes operacionais legítimos
+- Zero alarmes de diagnóstico/bypass no top 10
 
-**Monitorar:** Treinar Isolation Forest SEM o label e ver se recupera os DGs. Se sim, há sinal estrutural além da regra. Se não, modelo está limitado ao escopo da regra. **Complementarmente:** o resultado da Obs 2.7 dirá quanto do label é claramente viesado antes mesmo do IF rodar.
+**Reinterpretação:** os 2.525 DGs em Manutenção são DGs REAIS ocorrendo durante re-ativações de teste no ciclo de manutenção (Engine Coolant e termos de freio só disparam com equipamento operando). Não são falsos positivos de bancada.
 
-**Mitigação se acontecer:** Sanity check honesto no relatório (W7-W8), CM 6.1. Se Obs 2.7 confirmar viés significativo, considerar criar variante `Is_Dont_Go_producao` (excluindo eventos em Manutenção) para comparar modelos.
+**O Risco 3.3 continua existindo** (a regra CMA define o positivo, não a falha física real), mas **perde essa quantificação fácil**. A validação empírica do viés agora depende exclusivamente do diagnóstico do **Isolation Forest** em W6 — se o IF treinado sem `Is_Dont_Go` recupera os mesmos DGs, há sinal estrutural além da regra; se não, modelo está limitado ao escopo da regra.
 
-**Onde resolver:** W6 (Isolation Forest diagnóstico) + W7 (análise "o que a regra não vê").
+**Reforço lateral (extração `eventos_muito_alto.csv`, 16/05/2026):** Dos 82 eventos CMA com nível "Muito Alto", **95,12% vêm de `ALARME OEM`** (alarmes nativos do fabricante — Caterpillar, etc), só 3,66% de `TENDÊNCIA` (análise sobreposta) e 1,22% de `SISTEMA`. Isso significa que a CMA é majoritariamente um **wrapper sobre o sistema de alarmes do fabricante** — o "viés inerente" do label não vem só das regras da Vale, mas também herda toda a calibração de fábrica, que foi otimizada para garantia/proteção do equipamento, não para manutenção preditiva. Reforça a importância do IF como teste de viés (se IF não recupera os DGs, modelo está aprendendo a previsão de regra OEM + regra Vale, não falha física).
+
+**Monitorar:** Isolation Forest em W6 — agora é o ÚNICO teste empírico planejado para esse risco. Se IF performar mal sem o label, o Risco 3.3 ganha evidência. Se performar bem, o Risco 3.3 é majoritariamente refutado.
+
+**Mitigação se acontecer:** Sanity check honesto no relatório (W7-W8), CM 6.1. Discussão honesta da natureza do label como artefato regulatório (CMA define o que é DG, não falha física).
+
+**Onde resolver:** W6 (Isolation Forest diagnóstico — agora teste único) + W7 (análise "o que a regra não vê") + W8 (Limitações).
 
 ---
 
@@ -145,6 +163,8 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
   - Obs 2.1: Top 5 alarmes concentra 87,3% dos DGs (vs 88% jan); só 19 alarmes geram DG no semestre todo
   - Obs 2.5: `Nao_Critico` saltou de 20% para 48% dos DGs entre jan e semestre — rolling windows validadas como feature dominante; nova obs 2.6 gerada para investigar o salto
   - **Q4 (via join temporal):** distribuição completa Frota × Tipo × Estado operacional; achado novo: **12,65% dos DGs ocorrem em estado Manutenção** — gerou obs 2.7 e reforçou Risco 3.3 com evidência empírica; 4ª aparição independente da frota LeTourneau L 1850 (taxa de DG/equipamento ~22× menor que caminhões)
+  - **Obs 2.6 (resolvida):** o salto 20%→48% Não-Crítico era média mentirosa que escondia **3 regimes distintos**: baseline (jan), anomalia Engine Coolant Não-Crítico em fev-mar (+ inversão de severidade 83%→6% Crítico), anomalia Right Front Brake Crítico em junho (151,7× baseline). Quantificou e CONFIRMOU o Risco 3.2 (drift). Gerou Obs 2.8 (mudança regra CMA fev?) e Obs 2.9 (contexto operacional jun?), além de identificar família nova de features para W4 (razão vs baseline do próprio alarme).
+  - **Obs 2.7 (resolvida):** 12,65% DGs em Manutenção — analisados via posição relativa em [Inicio, Fim]. H1 (DG causou transição) contribui ~5%, H3 (bug CMA) rejeitada empiricamente. **H2 (uniforme) confirmada estatisticamente mas REINTERPRETADA**: não são falsos positivos de bancada — são DGs legítimos durante re-ativações de teste no ciclo de manutenção (Engine Coolant e termos de freio só disparam com equipamento operando). **Risco 3.3 parcialmente refutado** (perde a "primeira evidência direta"); validação do viés agora depende exclusivamente do Isolation Forest em W6. Geradas 3 tasks em W4 (`estado_pre_evento`), W5/W6 (variante `Is_Dont_Go_producao` para comparação) e W7 (métricas estratificadas por estado operacional).
 
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 
