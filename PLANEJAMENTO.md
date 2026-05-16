@@ -175,6 +175,276 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** parquet consolidado + script reproduzível + tabela estatísticas + controle_alteracoes iniciado.
 
+
+#### Comandos Python de exploração (W1)
+
+Registro dos comandos `uv run python -c` executados ad-hoc no terminal durante a W1, com o que estava sendo investigado em cada um. Tarefas implementadas como scripts (`01_ingestao.py`, `02_correcao_tipos.py`, `03_limpeza.py`) embutem a lógica diretamente e não aparecem aqui — para essas, basta rodar o `.py` correspondente.
+
+<details>
+<summary><b>1. Validar imports das libs principais</b> (após instalar VC++ Redistributable)</summary>
+
+**O que eu estava explorando:** confirmar que polars / pandas / lightgbm / shap / lifelines / optuna importam sem erro de DLL e capturar as versões. Primeira tentativa quebrou com `FileNotFoundError: lib_lightgbm.dll` — diagnosticado como VC++ Redistributable ausente. Após instalar `vc_redist.x64.exe`, repeti o mesmo comando.
+
+```powershell
+uv run python -c "import polars, pandas, lightgbm, shap, lifelines, optuna, matplotlib, seaborn, numba; print('OK -', polars.__version__, pandas.__version__, lightgbm.__version__, shap.__version__, lifelines.__version__)"
+```
+
+**Resultado:** `OK - 1.40.1 2.3.3 4.6.0 0.51.0 0.30.3`
+
+</details>
+
+<details>
+<summary><b>2. Inspecionar schema pós-ingestão</b> (descoberta de campos String que deveriam ser Datetime/Float)</summary>
+
+**O que eu estava explorando:** confirmar shape (37M linhas, 18 colunas) do `telemetria_consolidado.parquet` recém-criado por `01_ingestao.py` e verificar os tipos brutos. **Achado:** `Inicio_Turno`, `Fim_Turno` e `Valor` vieram do parquet como `String` — motivou a criação do `02_correcao_tipos.py`.
+
+```powershell
+uv run python -c "import polars as pl; df = pl.read_parquet('Projeto/dados/intermediarios/telemetria_consolidado.parquet'); print('shape:', df.shape, '| schema:', pl.read_parquet_schema('Projeto/dados/intermediarios/telemetria_consolidado.parquet'))"
+```
+
+**Resultado:** `shape: (37164054, 18)` + schema mostrando `Inicio_Turno: String, Fim_Turno: String, Valor: String`.
+
+</details>
+
+<details>
+<summary><b>3. Inspecionar formato de <code>Inicio_Turno</code> e top categorias de <code>Valor</code></b></summary>
+
+**O que eu estava explorando:** descobrir o formato exato do datetime (achei `"2024-12-31 18:00:00.000"` com milissegundos — informou o `FORMATO_DATETIME = "%Y-%m-%d %H:%M:%S%.f"` do script 02) e ver a distribuição de `Valor`. **Achado crítico:** a string literal `"NULL"` aparece **237.443** vezes no top 15 — motivou o tratamento `pl.when(Valor == "NULL").then(None)` no `02_correcao_tipos.py`.
+
+```powershell
+uv run python -c "import polars as pl; df = pl.read_parquet('Projeto/dados/intermediarios/telemetria_consolidado.parquet'); print('Inicio_Turno samples:'); print(df.select('Inicio_Turno').head(10)); print('\nValor unique top:'); print(df.group_by('Valor').len().sort('len', descending=True).head(15))"
+```
+
+**Resultado:** top de `Valor` dominado por `"0"` (34,4M), `"1"`, `"2"`, `"3"`... + `"NULL"` em posição alta com 237.443 ocorrências.
+
+</details>
+
+<details>
+<summary><b>4. Diagnosticar 821k strings que falharam no cast para Float64</b> (descoberta da vírgula decimal BR)</summary>
+
+**O que eu estava explorando:** a asserção do `02_correcao_tipos.py` falhou — esperava 237.443 nulls (só os `"NULL"`), obteve 1.059.292. Diferença de 821.849 = strings que passaram pelo regex de validação mas falharam no `cast(Float64)`. Precisava saber QUAIS strings. **Achado:** 821.849 valores usam **vírgula decimal brasileira** (ex: `"46,2569999694824"`) — o regex `^-?[0-9]+([.,][0-9]+)?$` aceita ambos, mas o `Polars.cast(Float64)` só aceita ponto. **Fix posterior:** adicionar `.str.replace(",", ".")` antes do cast.
+
+```powershell
+uv run python -c "import polars as pl; df = pl.read_parquet('Projeto/dados/intermediarios/telemetria_consolidado.parquet'); problem = df.filter((pl.col('Valor') != 'NULL') & (pl.col('Valor').cast(pl.Float64, strict=False).is_null())); print('Total problematicos:', problem.height); print('\nTop 30 valores que falham no cast:'); print(problem.group_by('Valor').len().sort('len', descending=True).head(30))"
+```
+
+**Resultado:** `Total problematicos: 821849` — top valores `"46,2569999694824"` (10.813×), `"45,3499984741211"` (10.695×), `"48,0709991455078"` (10.621×)... todos com vírgula.
+
+**Lição metodológica registrada em `controle_alteracoes.md`:** regex de validação aceita formato que o cast rejeita — só a asserção de contagem de nulls expôs o problema. Reforça o padrão de **asserções defensivas** em todos os scripts.
+
+</details>
+
+<details>
+<summary><b>Nota — Itens sem comando ad-hoc separado</b> (lógica embutida em <code>03_limpeza.py</code>)</summary>
+
+As seguintes verificações **não foram rodadas via `uv run python -c`** — toda a lógica está embutida em `03_limpeza.py` como funções defensivas e gera artefatos quando o script roda:
+
+| Task | Função em `03_limpeza.py` | Artefato gerado |
+|---|---|---|
+| Descoberta das 5 variantes de Criticidade | `normalizar_criticidade()` com `raise ValueError` ao encontrar valor não mapeado | log no terminal + `telemetria_limpa.parquet` |
+| Verificação de duplicados (CM 2.1) | `contar_duplicados()` (chave: `Id_Eventos_Telemetria` / `Id`) | log no terminal |
+| Frequência média de registros (CM 2.1) | `frequencia_media()` | `inspecao_inicial.md` |
+| Tabela de estatísticas descritivas (CM 2.1) | `estatisticas_descritivas()` | `tabelas/estatisticas_descritivas.csv` |
+
+Para reproduzir, basta:
+
+```powershell
+uv run python Projeto/codigo/03_limpeza.py
+```
+
+A descoberta das **2 variantes de Criticidade com encoding parcial** (`"N??o Crítico"` e `"Não Cr??tico"`) veio justamente da defesa do `raise ValueError` na 1ª execução do script — o `CRITICIDADE_MAPEAMENTO` original tinha 3 variantes, o `raise` listou as 5 reais, e o dicionário foi atualizado antes da 2ª execução bem-sucedida.
+
+</details>
+
+
+#### Observações e Conclusões (W1)
+
+##### 1. Diferença de cobertura: 35 TAGs em telemetria vs 47 em apontamentos
+
+<details>
+<summary><b>Comando Python usado para investigar</b></summary>
+
+```python
+import polars as pl
+
+apo = pl.read_parquet('Projeto/Alterado/Base de Dados/datasets/apontamentos/desenvolver_apontamentos.parquet')
+tel = pl.read_parquet('Projeto/dados/intermediarios/telemetria_limpa.parquet')
+
+tags_apo = set(apo['Tag'].unique().to_list())
+tags_tel = set(tel['TAG'].unique().to_list())
+
+print('=== TAGs em apontamentos MAS NAO em telemetria ===')
+ausentes = sorted(tags_apo - tags_tel)
+print(f'Total: {len(ausentes)}')
+print(ausentes)
+
+print('\n=== Perfil desses TAGs ausentes (frota + tipo) ===')
+print(
+    apo.filter(pl.col('Tag').is_in(ausentes))
+       .group_by(['Frota', 'Tipo'])
+       .agg(
+           pl.len().alias('n_apontamentos'),
+           pl.col('Tag').n_unique().alias('n_tags'),
+       )
+)
+
+print('\n=== TAGs em telemetria MAS NAO em apontamentos ===')
+extras = sorted(tags_tel - tags_apo)
+print(f'Total: {len(extras)}')
+print(extras)
+```
+
+Executar com:
+```powershell
+uv run python -c "<colar o codigo acima em uma linha>"
+```
+ou salvar como `Projeto/codigo/exploracao_tags.py` e rodar `uv run python Projeto/codigo/exploracao_tags.py`.
+
+</details>
+
+Apontamentos têm **12 equipamentos a mais** que telemetria, distribuídos em **4 frotas distintas**:
+
+| Frota | Tipo | TAGs sem telemetria | Registros em apontamentos |
+|---|---|---|---|
+| **LeTourneau L 1850** | Escavadeira | **5** (PE3782-3785, PE3788) | 17.640 |
+| 793-D 4S | Caminhão | 3 (CA65918-CA65920 inferido) | 13.032 |
+| 793-D 3S | Caminhão | 3 (CA65901, CA65905, CA65911) | 4.872 |
+| 793-D 5S | Caminhão | 1 (`CA0000` — suspeito) | 3.330 |
+
+- A frota mais afetada é a de escavadeiras LeTourneau L 1850 — **5 de cada 13** equipamentos da frota não têm telemetria contínua (gap de ~38%).
+- `CA0000` é suspeito: nome "todos zeros" sugere placeholder ou erro de cadastro no sistema fonte.
+- 0 TAGs em telemetria sem apontamentos — telemetria é subconjunto perfeito (sanidade do pipeline).
+
+**Implicação para modelagem:** O modelo principal só pode prever DGs para as **35 TAGs com telemetria**. Os 12 sem telemetria precisariam de baseline alternativo (heurística baseada em apontamentos), **fora do escopo deste estudo**.
+
+**Insight para CM 6.1 (Insights não óbvios):** ~25% da frota total não tem instrumentação contínua. **Recomendação para Vale (Trabalhos Futuros):** completar cobertura de telemetria, especialmente nas escavadeiras LeTourneau L 1850.
+
+---
+
+##### 2. `Id_Criticidade=4` — descoberta de eventos de bypass manual do operador
+
+<details>
+<summary><b>Comando Python usado para investigar</b></summary>
+
+```python
+import polars as pl
+
+tel = pl.read_parquet('Projeto/dados/intermediarios/telemetria_limpa.parquet')
+
+print('=== Mapeamento Id_Criticidade x Criticidade ===')
+print(
+    tel.group_by(['Id_Criticidade', 'Criticidade'])
+       .len()
+       .sort(['Id_Criticidade', 'Criticidade'])
+)
+
+print('\n=== Registros com Id_Criticidade = 4 ===')
+n4 = tel.filter(pl.col('Id_Criticidade') == 4)
+print(f'Total: {n4.height:,}')
+print(
+    n4.group_by(['Id_Criticidade', 'Criticidade', 'Alarme'])
+      .len()
+      .sort('len', descending=True)
+      .head(10)
+)
+```
+
+</details>
+
+`Id_Criticidade=4` mapeia para `Criticidade=Informacional` (mesmo grupo que `Id=3`). São **3.119 registros (0,008% do total)**. Mapeamento completo:
+
+| Id_Criticidade | Criticidade | Quantidade |
+|---|---|---|
+| 1 | `Critico` | 83.020 |
+| 2 | `Nao_Critico` | 461.865 |
+| 3 | `Informacional` | 36.616.050 |
+| **4** | `Informacional` | **3.119** |
+
+**Achado central:** Esses 3.119 registros **não são alertas de falha** — são **eventos de bypass manual / override do operador**, com 87% concentrados em 1 alarme:
+
+| Alarme | Quantidade | % |
+|---|---|---|
+| **Channel Forced (L-1850)** | 2.733 | 87,6% |
+| Hoist And Bucket Limits Bypassed | 151 | 4,8% |
+| Steering Limits Bypassed (L-1850) | 107 | 3,4% |
+| Steering Limits Bypassed By User | 107 | 3,4% |
+| Channel Forced | 17 | 0,5% |
+| High Voltage Cabinet Door Open | 3 | 0,1% |
+
+**Insight forte para CM 6.1 (Insights não óbvios) — candidato a feature explicativa:** `Id_Criticidade=4` é um **sinal de comportamento operacional**, não de falha de equipamento. **Operadores que fazem bypass com frequência podem ser preditores de DG futuro** — comportamento de risco ou pressão operacional excessiva. Criar feature `n_bypasses_operador_7d` para o modelo (W4).
+
+**Conexão notável:** 95% dos bypasses são específicos da frota **LeTourneau L 1850** (mesma frota com gap de telemetria do achado 1). Pode haver problema operacional sistêmico nessa frota — destacar no relatório.
+
+---
+
+##### 3. `Valor` max=4347 — peso de carga com provável erro de unidade
+
+<details>
+<summary><b>Comando Python usado para investigar</b></summary>
+
+```python
+import polars as pl
+
+tel = pl.read_parquet('Projeto/dados/intermediarios/telemetria_limpa.parquet')
+
+high = tel.filter(pl.col('Valor') > 1000)
+print(f'=== Registros com Valor > 1000: {high.height:,} ===')
+
+print('\n=== Top 15 alarmes que geram Valor > 1000 ===')
+print(
+    high.group_by('Alarme')
+        .agg(
+            pl.len().alias('n'),
+            pl.col('Valor').min().alias('val_min'),
+            pl.col('Valor').max().alias('val_max'),
+            pl.col('Valor').mean().round(2).alias('val_mean'),
+            pl.col('Is_Dont_Go').sum().alias('n_DG'),
+        )
+        .sort('n', descending=True)
+        .head(15)
+)
+
+print('\n=== Registros com max=4347 ===')
+print(
+    tel.filter(pl.col('Valor') == 4347)
+       .select(['TAG', 'Alarme', 'Criticidade', 'Is_Dont_Go', 'Data_Evento'])
+       .head(5)
+)
+```
+
+</details>
+
+Apenas **118 registros (0,0003% do total)** têm `Valor > 1000`. **100% vêm de 2 alarmes relacionados**, ambos sobre peso de carga:
+
+| Alarme | n | Valor mín | Valor max | Valor médio | DGs |
+|---|---|---|---|---|---|
+| **Truck Load Weight (L-1850)** | 104 | 1002 | **4347** | 1.347 | **0** |
+| Truck Load Weight | 14 | 1005 | 2592 | 1.506 | **0** |
+
+- **100% são `Criticidade=Informacional` e `Is_Dont_Go=0`** — nenhum é alerta crítico.
+- São **medições de peso de carga** sendo registradas como eventos.
+- O registro com Valor=4347 é da TAG `PE3798` (escavadeira), em 2025-03-30 14:55:48.733.
+
+**4347 é fisicamente impossível** para um caminhão (capacidade 793-D ≈ 240t). Causas prováveis: erro de unidade (kg em vez de toneladas?), acumulação de cargas múltiplas no mesmo timestamp, ou bug do sensor registrando overflow.
+
+**Implicação para W3 (limpeza):** Como os outliers **não contaminam o target** (zero DGs entre eles), o tratamento é de **baixo risco**. Três opções:
+1. **Manter com flag** (`is_outlier_valor_peso`) — recomendado, preserva informação
+2. **Cap em 300** (acima da capacidade física máxima)
+3. **Remover** os 118 registros (0,0003%, desprezível)
+
+**Insight para CM 6.1 (Insights não óbvios):** Esses 118 registros revelam **problema de qualidade de dados na medição de peso de carga** — sistema fonte aparentemente mistura unidades. Recomendação para Vale (Trabalhos Futuros): padronizar unidade do sensor de peso e auditar overflow.
+
+---
+
+##### Padrão emergente: frota LeTourneau L 1850
+
+A frota **LeTourneau L 1850** aparece em **3 achados independentes** de W1:
+1. 5 equipamentos sem telemetria (achado 1)
+2. 95% dos bypasses do operador (achado 2)
+3. 88% dos erros de medição de peso (achado 3)
+
+Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — sugere que essa frota tem problemas operacionais e/ou de instrumentação sistêmicos que merecem destaque na Conclusão e Trabalhos Futuros.
+
 ---
 
 ### W2 (20-26/05) — EDA visual
@@ -206,6 +476,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** 6 figuras obrigatórias + extras desejáveis + hipoteses_eda.md + eventos_muito_alto.csv + rascunho EDA.
 
+#### Observações e Conclusões (W2)
+
+*(A preencher quando observações de W2 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+
 ---
 
 ### W3 (27/05-02/06) — Limpeza + features básicas
@@ -233,6 +507,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** matriz v1 + tabela ANTES/DEPOIS + documentacao_features.csv iniciado.
 
+#### Observações e Conclusões (W3)
+
+*(A preencher quando observações de W3 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+
 ---
 
 ### W4 (03-09/06) — Features avançadas + definição do target + split
@@ -255,6 +533,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** matriz v2 + documentacao_features.csv completa + Fig 7 + Fig 8.
 
+#### Observações e Conclusões (W4)
+
+*(A preencher quando observações de W4 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+
 ---
 
 ### W5 (10-16/06) — Baseline + LightGBM v1 → MARCO 1
@@ -271,6 +553,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
   - NÃO → pare. Reveja features antes de tunar parâmetros
 
 **Entregável:** tabela comparativa baseline×LightGBM + modelos serializados em `Projeto/modelos/` + pré-processamento documentado.
+
+#### Observações e Conclusões (W5)
+
+*(A preencher quando observações de W5 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
 
 ---
 
@@ -311,6 +597,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** 3 modelos supervisionados/sobrevivência (baseline + LightGBM + Sobrevivência) + Isolation Forest como diagnóstico complementar + Fig 9, Fig 11, Fig 12 + ablation_grupos.csv + calibração + tabela de hazard ratios + tabela IF (AUC-PR / Recall@K).
 
+#### Observações e Conclusões (W6)
+
+*(A preencher quando observações de W6 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+
 ---
 
 ### W7 (24-30/06) — Análise final + respostas Q3/Q6/Q7 → MARCO 2
@@ -342,6 +632,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** todas as 6 perguntas respondidas + Fig 10 + Fig 13 + Fig Extra F + análise estratificada + distribuição de antecipação + análise "o que a regra não vê" + seção de insights.
 
+#### Observações e Conclusões (W7)
+
+*(A preencher quando observações de W7 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+
 ---
 
 ### W8 (01-07/07) — Escrita do relatório → MARCO 3
@@ -365,6 +659,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** `rascunho.md` ~25 páginas equivalentes.
 
+#### Observações e Conclusões (W8)
+
+*(A preencher com observações que emergem da própria escrita do relatório — frequentemente o ato de escrever revela buracos analíticos.)*
+
 ---
 
 ### W9 (08-14/07) — Migração para template + revisão
@@ -381,6 +679,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 
 **Entregável:** `Projeto/relatorio/relatorio_final.docx`.
 
+#### Observações e Conclusões (W9)
+
+*(A preencher com observações da revisão crítica — inconsistências, contradições, ou pontos que precisam de ajuste final.)*
+
 ---
 
 ### W10 (15-20/07) — Buffer + entrega
@@ -394,6 +696,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
 - [ ] Salvar confirmação de envio
 
 **Entregável:** e-mail enviado.
+
+#### Observações e Conclusões (W10)
+
+*(A preencher com retrospectiva final — o que aprendi, o que faria diferente, lições para próximos projetos.)*
 
 ---
 

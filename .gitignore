@@ -23,6 +23,9 @@ desktop.ini
 *.swp
 *~
 
+# Configuracao local do Claude Code (permissoes aprovadas, hooks locais)
+.claude/
+
 # Dados intermediarios e features (reproduziveis via Projeto/codigo/01-04)
 # Os parquets brutos em Projeto/Alterado/ continuam versionados
 Projeto/dados/intermediarios/*.parquet

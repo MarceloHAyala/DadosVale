@@ -12,58 +12,7 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ## 1. Observações sobre os dados
 
-### - [ ] 1.1 Diferença de cobertura: 35 TAGs em telemetria vs 47 em apontamentos
-
-**Descoberta (W1, 2026-05-13):** Apontamentos cobrem **12 equipamentos a mais** que telemetria.
-
-**Hipóteses:**
-- Equipamentos offline/em manutenção pelo período inteiro
-- Sensores de telemetria desligados ou quebrados
-- Frota legada sem sensores
-- Equipamento "auxiliar" registrado em apontamentos mas sem monitoramento contínuo
-
-**Investigar:**
-- Listar os 12 TAGs ausentes em telemetria
-- Cruzar com Frota/Tipo dos apontamentos
-- Verificar se concentram-se em uma frota específica
-
-**Onde resolver:** W2 (EDA).
-
----
-
-### - [ ] 1.2 `Id_Criticidade` tem max=4 mas só 3 categorias em `Criticidade`
-
-**Descoberta (W1, 2026-05-13):** Após normalizar `Criticidade` para 3 valores (`Critico`, `Nao_Critico`, `Informacional`), `Id_Criticidade` tem valor máximo = 4.
-
-**Hipóteses:**
-- 4 = nível especial usado raramente (ex: "Emergência")
-- 4 = código administrativo (alarme cancelado, override do operador)
-- 4 = erro de pipeline
-
-**Investigar:**
-- Listar todas as combinações `Id_Criticidade × Criticidade`
-- Quantos registros têm `Id_Criticidade = 4`?
-- Que alarmes aparecem nesse nível?
-
-**Onde resolver:** W2 (EDA).
-
----
-
-### - [ ] 1.3 `Valor` max = 4347 — outlier de magnitude
-
-**Descoberta (W1, 2026-05-13):** Distribuição muito skewed (mean=4.57, median=0, std=28.5, max=4347). 92% dos valores são 0.
-
-**Hipóteses:**
-- 4347 = leitura de temperatura/pressão extrema (sensor crítico real)
-- 4347 = unidade enganosa (ex: décimos de RPM)
-- 4347 = código de erro do firmware do sensor
-
-**Investigar:**
-- Quais alarmes geram `Valor > 1000`?
-- Esses outliers concentram-se em TAGs/frotas específicas?
-- Correlacionam com `Is_Dont_Go=1`?
-
-**Onde resolver:** W2 (EDA) e W3 (decisão de tratamento — manter/cap/remover).
+*(Sem itens pendentes — ver Histórico na seção 4.)*
 
 ---
 
@@ -175,12 +124,18 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ---
 
-## 4. Histórico de itens resolvidos
+## 4. Onde encontrar observações já resolvidas
 
-> Conforme cada item acima vira `[x]`, mover para esta seção com a conclusão observada.
+Conforme observações são investigadas e concluídas, elas são **movidas para o `PLANEJAMENTO.md`** na seção da semana em que foram resolvidas, sob o tópico **"Observações e Conclusões (W*)"** ao final de cada semana.
 
-<!-- (vazio por enquanto — atualizar conforme investigamos) -->
+- **W1 (13-19/05/2026):** ver `PLANEJAMENTO.md` → seção W1 → "Observações e Conclusões (W1)"
+  - Diferença de cobertura: 35 TAGs em telemetria vs 47 em apontamentos
+  - `Id_Criticidade=4` = eventos de bypass manual do operador
+  - `Valor` max=4347 = peso de carga com erro de unidade
+  - Padrão emergente: frota LeTourneau L 1850 aparece em 3 achados independentes
+
+Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 
 ---
 
-**Última atualização:** 2026-05-15
+**Última atualização:** 2026-05-16
