@@ -831,11 +831,13 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 
 **Objetivo:** matriz v1 com 10-15 features documentadas.
 
-- [ ] `Projeto/codigo/03_limpeza.py`: tratar outliers em `Valor` (IQR + flag, manter linhas)
+> **Nota arquitetural (decisão 2026-05-17 — Opção 1):** o script `03_limpeza.py` **já existe** (criado em W1) com as etapas básicas: normalização de Criticidade, verificação de duplicados, frequência de registros, estatísticas descritivas. As etapas de limpeza avançada de W3 (outliers em `Valor`, missing values por coluna, registros com `Inicio > Fim`, sobreposições de ciclo, aplicação do filtro de `Informacional`) serão **adicionadas ao mesmo script** como etapas 7+ — **não** em um novo `03b_limpeza_avancada.py`. Razão: pipeline mais simples (um único script de limpeza), evita carga dupla do parquet, e mantém o `telemetria_limpa.parquet` como artefato único e canônico de saída da fase de limpeza. A decisão também será registrada em `controle_alteracoes.md` quando a primeira etapa de extensão for implementada.
+
+- [ ] **Estender `Projeto/codigo/03_limpeza.py`** com tratamento de outliers em `Valor` (IQR + flag, manter linhas)
 - [ ] **Estratégia de missing values por coluna** (CM 3.1): para cada coluna com nulos, decidir e justificar — remoção de linhas, imputação por mediana/moda, forward-fill (séries temporais) ou flag de ausência. Registrar tabela coluna×estratégia em `controle_alteracoes.md`
 - [ ] Tratar registros com `Inicio > Fim` nos apontamentos
 - [ ] **Detecção de sobreposições de ciclo** (CM 3.1): identificar registros onde ciclos do mesmo TAG se sobrepõem no tempo; reportar quantidade e decisão (manter / merge / descartar com justificativa)
-- [ ] Filtrar `Criticidade = "Informacional"` (não tem positivos, economiza ~80% do volume)
+- [ ] **Aplicar filtro `Criticidade = "Informacional"` no `03_limpeza.py`** (decisão já registrada em `controle_alteracoes.md` 2026-05-16; até agora o filtro só roda em runtime dentro do `04_eda.py`)
 - [ ] Tabela ANTES/DEPOIS em `Projeto/relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa
 - [ ] `Projeto/codigo/05_features.py` — features básicas:
   - [ ] `hora_dia`, `dia_semana`, `turno`, `mes`
