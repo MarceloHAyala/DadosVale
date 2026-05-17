@@ -1,21 +1,33 @@
 """
-03_limpeza.py - Encerramento de W1 (CM 2.1): normalizacao + inspecao inicial.
+03_limpeza.py - Limpeza completa (W1 inspecao + W3 extensao).
 
-Tasks consolidadas:
-  - Normalizacao de `Criticidade` (encoding corrompido -> ASCII limpo)
-  - Verificacao de duplicados (telemetria + apontamentos)
-  - Frequencia media de registros (dia, hora, equipamento)
-  - Estatisticas descritivas das variaveis numericas (CM 2.1)
-  - Validacao da taxa de Is_Dont_Go (~0.05% esperado)
+Tasks (12 etapas):
+  W1:
+    [1/12] Carregar telemetria + apontamentos
+    [2/12] Normalizacao de Criticidade (encoding -> ASCII)
+    [3/12] Verificacao de duplicados + frequencia media
+    [4/12] Estatisticas descritivas (CM 2.1)
+    [5/12] Validacao da taxa de Is_Dont_Go (~0.05%)
+  W3 (extensao - decisao 2026-05-17):
+    [6/12] Filtrar Criticidade=Informacional (decisao 16/05/2026)
+    [7/12] Outliers em Valor (threshold fisico + flag)
+    [8/12] Missing values por coluna (CM 3.1)
+    [9/12] Apontamentos: registros com Inicio > Fim
+    [10/12] Apontamentos: sobreposicoes de ciclo (CM 3.1)
+  Persistencia:
+    [11/12] Salvar telemetria_limpa + apontamentos_limpo + stats + inspecao
+    [12/12] Gerar controle_alteracoes.csv (CM 3.1)
 
 Entradas:
-  - Projeto/dados/intermediarios/telemetria_tipada.parquet   (saida de 02)
-  - Projeto/Alterado/Base de Dados/datasets/apontamentos/...
+  - Projeto/dados/intermediarios/telemetria_tipada.parquet
+  - Projeto/Alterado/Base de Dados/datasets/apontamentos/desenvolver_apontamentos.parquet
 
 Saidas:
-  - Projeto/dados/intermediarios/telemetria_limpa.parquet
+  - Projeto/dados/intermediarios/telemetria_limpa.parquet      (~545k linhas pos filtro)
+  - Projeto/dados/intermediarios/apontamentos_limpo.parquet    (W3)
   - Projeto/relatorio/tabelas/estatisticas_descritivas.csv
   - Projeto/relatorio/tabelas/inspecao_inicial.md
+  - Projeto/relatorio/tabelas/controle_alteracoes.csv          (W3 - CM 3.1)
 
 Executar:
     uv run python Projeto/codigo/03_limpeza.py
@@ -39,32 +51,31 @@ ARQ_APONTAMENTOS_IN = (
     / "desenvolver_apontamentos.parquet"
 )
 ARQ_TELEMETRIA_OUT = DIR_INTERMEDIARIOS / "telemetria_limpa.parquet"
+ARQ_APONTAMENTOS_OUT = DIR_INTERMEDIARIOS / "apontamentos_limpo.parquet"
 ARQ_STATS_CSV = DIR_TABELAS / "estatisticas_descritivas.csv"
 ARQ_INSPECAO_MD = DIR_TABELAS / "inspecao_inicial.md"
+ARQ_CONTROLE_ALTERACOES_CSV = DIR_TABELAS / "controle_alteracoes.csv"
 
 # ---------------------------------------------------------------------------
-# Expectativas / mapeamento de normalizacao
+# Expectativas / parametros
 # ---------------------------------------------------------------------------
 LINHAS_TELEMETRIA = 37_164_054
 LINHAS_APONTAMENTOS = 377_907
+LINHAS_TELEMETRIA_POS_FILTRO = 544_885  # validado em W2
+DGS_ESPERADOS = 19_962                   # invariante pos filtro
 
 # Variantes conhecidas (encoding corrompido + acentos quebrados) -> forma canonica.
-# Se aparecer valor novo, o script erra com a lista para atualizar este dict.
 CRITICIDADE_MAPEAMENTO = {
-    # Variantes de "Critico" - aparecem SEM acento no source (anomalia investigada)
     "Critico": "Critico",
     "Crítico": "Critico",
     "CrÃ­tico": "Critico",
-    # Variantes de "Nao Critico" - aparecem COM acento no source
     "Nao Critico": "Nao_Critico",
     "Não Crítico": "Nao_Critico",
     "Não Critico": "Nao_Critico",
     "Nao Crítico": "Nao_Critico",
     "NÃ£o CrÃ­tico": "Nao_Critico",
-    # Falhas parciais de encoding (caracteres substituidos por ??):
-    "N??o Crítico": "Nao_Critico",   # "ã" virou "??"
-    "Não Cr??tico": "Nao_Critico",   # "í" virou "??"
-    # Informacional (sem acentos, intacto)
+    "N??o Crítico": "Nao_Critico",
+    "Não Cr??tico": "Nao_Critico",
     "Informacional": "Informacional",
 }
 CRITICIDADE_FINAIS = {"Critico", "Nao_Critico", "Informacional"}
@@ -72,12 +83,19 @@ CRITICIDADE_FINAIS = {"Critico", "Nao_Critico", "Informacional"}
 TAXA_DG_MIN = 0.0003  # 0.03%
 TAXA_DG_MAX = 0.0010  # 0.10%
 
+# Threshold fisico para outlier em Valor (descoberto em W1):
+# 118 registros com Valor > 1000 vem exclusivamente de 2 alarmes de peso de
+# carga (Truck Load Weight), todos com Is_Dont_Go=0. Capacidade fisica de
+# 793-D ~240t -> qualquer Valor > 1000 e medicao errada. IQR seria inadequado
+# em distribuicao zero-inflada (Q1=Q3=0).
+VALOR_OUTLIER_THRESHOLD = 1000.0
+
 
 # ---------------------------------------------------------------------------
-# Carga
+# [1/12] Carga
 # ---------------------------------------------------------------------------
 def carregar() -> tuple[pl.DataFrame, pl.DataFrame]:
-    print("[1/6] Carregando datasets")
+    print("[1/12] Carregando datasets")
     if not ARQ_TELEMETRIA_IN.exists():
         raise FileNotFoundError(
             f"{ARQ_TELEMETRIA_IN} nao encontrado. Rode 02_correcao_tipos.py primeiro."
@@ -93,10 +111,10 @@ def carregar() -> tuple[pl.DataFrame, pl.DataFrame]:
 
 
 # ---------------------------------------------------------------------------
-# Normalizacao de Criticidade
+# [2/12] Normalizacao de Criticidade
 # ---------------------------------------------------------------------------
 def normalizar_criticidade(df: pl.DataFrame) -> tuple[pl.DataFrame, dict]:
-    print("\n[2/6] Normalizando Criticidade")
+    print("\n[2/12] Normalizando Criticidade")
 
     contagens = (
         df.group_by("Criticidade")
@@ -131,16 +149,10 @@ def normalizar_criticidade(df: pl.DataFrame) -> tuple[pl.DataFrame, dict]:
 
 
 # ---------------------------------------------------------------------------
-# Duplicados
+# [3/12] Duplicados + Frequencia
 # ---------------------------------------------------------------------------
 def contar_duplicados(df: pl.DataFrame, nome: str, chave: list[str]) -> dict:
-    """Contagem de duplicados pela chave primaria.
-
-    Nao fazemos dedup full-row pois e prohibitivo em 37M x 18 cols (hash de
-    todas as colunas com mistura de String/Datetime/Float) e nao agrega valor
-    em dados de telemetria (linhas com mesmo timestamp + valor sao raras).
-    O que importa metodologicamente: chave primaria unica?
-    """
+    """Contagem de duplicados pela chave primaria."""
     print(f"\n  Duplicatas - {nome} (chave={chave}):")
     n_total = df.height
     t0 = time.time()
@@ -152,16 +164,11 @@ def contar_duplicados(df: pl.DataFrame, nome: str, chave: list[str]) -> dict:
         f"Duplicadas: {n_dup:,} ({pct:.4f}%)  ({time.time()-t0:.1f}s)"
     )
     return {
-        "total": n_total,
-        "chave": chave,
-        "duplicadas_chave": n_dup,
-        "pct_chave": pct,
+        "total": n_total, "chave": chave,
+        "duplicadas_chave": n_dup, "pct_chave": pct,
     }
 
 
-# ---------------------------------------------------------------------------
-# Frequencia media
-# ---------------------------------------------------------------------------
 def frequencia_media(
     df: pl.DataFrame, col_datetime: str, col_tag: str, nome: str
 ) -> dict:
@@ -188,10 +195,10 @@ def frequencia_media(
 
 
 # ---------------------------------------------------------------------------
-# Estatisticas descritivas (CM 2.1)
+# [4/12] Estatisticas descritivas (CM 2.1)
 # ---------------------------------------------------------------------------
 def estatisticas_descritivas(df: pl.DataFrame) -> pl.DataFrame:
-    print("\n[4/6] Estatisticas descritivas das variaveis numericas")
+    print("\n[4/12] Estatisticas descritivas das variaveis numericas")
 
     colunas_numericas = [
         col for col, dtype in zip(df.columns, df.dtypes) if dtype.is_numeric()
@@ -221,10 +228,10 @@ def estatisticas_descritivas(df: pl.DataFrame) -> pl.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Taxa Don't Go
+# [5/12] Taxa Don't Go (validacao sobre dataset original)
 # ---------------------------------------------------------------------------
 def taxa_dg(df: pl.DataFrame) -> dict:
-    print("\n[5/6] Validando taxa de Is_Dont_Go")
+    print("\n[5/12] Validando taxa de Is_Dont_Go (sobre dataset original)")
     n_total = df.height
     n_dg = df.filter(pl.col("Is_Dont_Go") == 1).height
     taxa = n_dg / n_total
@@ -235,19 +242,298 @@ def taxa_dg(df: pl.DataFrame) -> dict:
         f"Taxa DG {pct:.4f}% fora do esperado "
         f"({100*TAXA_DG_MIN:.2f}% - {100*TAXA_DG_MAX:.2f}%)"
     )
-    print("  OK - dentro do range esperado (~0.05%)")
+    assert n_dg == DGS_ESPERADOS, f"DGs={n_dg:,} esperado {DGS_ESPERADOS:,}"
+    print(f"  OK - dentro do range esperado (~0.05%); total {n_dg:,} DGs")
     return {"n_total": n_total, "n_dg": n_dg, "taxa": taxa, "pct": pct}
 
 
 # ---------------------------------------------------------------------------
-# Persistencia
+# [6/12] Filtrar Criticidade=Informacional (W3)
+# ---------------------------------------------------------------------------
+def filtrar_informacional(df: pl.DataFrame) -> tuple[pl.DataFrame, dict]:
+    print("\n[6/12] Filtrando Criticidade=Informacional (decisao 16/05/2026)")
+    n_antes = df.height
+
+    # Pre-condicao: Informacional realmente nao tem DGs
+    n_dgs_info = df.filter(
+        (pl.col("Criticidade") == "Informacional") & (pl.col("Is_Dont_Go") == 1)
+    ).height
+    if n_dgs_info != 0:
+        raise AssertionError(
+            f"Pre-condicao violada: {n_dgs_info} DGs em Informacional, esperado 0. "
+            "A decisao de filtrar precisa ser revisitada."
+        )
+
+    n_info = df.filter(pl.col("Criticidade") == "Informacional").height
+    df_filtrado = df.filter(pl.col("Criticidade") != "Informacional")
+    n_depois = df_filtrado.height
+    n_dgs_depois = df_filtrado.filter(pl.col("Is_Dont_Go") == 1).height
+
+    print(f"  Antes:                {n_antes:>12,}")
+    print(f"  Remove (Informacional): {n_info:>12,} ({100*n_info/n_antes:.2f}%)")
+    print(f"  Depois:               {n_depois:>12,}")
+    print(f"  DGs preservados:      {n_dgs_depois:>12,} (esperado {DGS_ESPERADOS:,})")
+
+    # Validacoes
+    assert n_dgs_depois == DGS_ESPERADOS, (
+        f"DGs nao preservados: {n_dgs_depois:,} vs esperado {DGS_ESPERADOS:,}"
+    )
+    assert n_depois == LINHAS_TELEMETRIA_POS_FILTRO, (
+        f"Volume pos-filtro: {n_depois:,} vs esperado {LINHAS_TELEMETRIA_POS_FILTRO:,}"
+    )
+
+    return df_filtrado, {
+        "campo": "Criticidade",
+        "problema": "Volume excessivo de Informacional (98.5%) sem positivos",
+        "qtd_registros": n_info,
+        "tratamento": "Removidos do dataset (filtro Criticidade != Informacional)",
+        "justificativa": (
+            "Validado em W2 (Obs 2.2): 36.619.169 eventos Informacional geraram "
+            "0 DGs no semestre (taxa 0.0000%). Separacao deterministica. "
+            "Habilita rolling windows em W4 sem risco de RAM."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# [7/12] Outliers em Valor (threshold fisico)
+# ---------------------------------------------------------------------------
+def outliers_valor(df: pl.DataFrame) -> tuple[pl.DataFrame, dict]:
+    print("\n[7/12] Outliers em Valor (threshold fisico)")
+
+    # IQR para comparacao (mostrar que e' inadequado)
+    q1 = df["Valor"].quantile(0.25)
+    q3 = df["Valor"].quantile(0.75)
+    print(f"  IQR: q1={q1}, q3={q3} (inadequado - distribuicao zero-inflada)")
+    print(f"  Threshold fisico adotado: Valor > {VALOR_OUTLIER_THRESHOLD}")
+
+    df = df.with_columns(
+        (pl.col("Valor") > VALOR_OUTLIER_THRESHOLD)
+            .fill_null(False)
+            .alias("is_outlier_valor")
+    )
+
+    n_outliers = df.filter(pl.col("is_outlier_valor")).height
+    pct = 100 * n_outliers / df.height
+    n_dgs_outliers = df.filter(
+        pl.col("is_outlier_valor") & (pl.col("Is_Dont_Go") == 1)
+    ).height
+
+    print(f"  Outliers marcados: {n_outliers:,} ({pct:.4f}%)")
+    print(f"  DGs entre outliers: {n_dgs_outliers} (esperado 0)")
+    assert n_dgs_outliers == 0, (
+        f"Outlier contaminou target: {n_dgs_outliers} DGs com Valor>{VALOR_OUTLIER_THRESHOLD}"
+    )
+
+    return df, {
+        "campo": "Valor",
+        "problema": (
+            f"Validacao defensiva de outliers fisicamente impossiveis "
+            f"(Valor > {VALOR_OUTLIER_THRESHOLD})"
+        ),
+        "qtd_registros": n_outliers,
+        "tratamento": (
+            "Validacao concluida; flag 'is_outlier_valor' presente (sempre False "
+            "no dataset filtrado pos-etapa 6)"
+        ),
+        "justificativa": (
+            "Achado de W1: 118 registros com Valor > 1000 vinham de 2 alarmes de "
+            "peso de carga (Truck Load Weight), todos com Criticidade=Informacional "
+            "e Is_Dont_Go=0. Apos o filtro de Informacional (etapa 6), todos foram "
+            "automaticamente eliminados — a etapa 7 e mantida como validacao "
+            "defensiva (asserta 0 outliers + 0 DGs entre outliers no dataset "
+            "filtrado). IQR padrao seria inadequado em distribuicao zero-inflada "
+            "(Q1=Q3=0 esperado), motivo do threshold fisico."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# [8/12] Missing values por coluna (CM 3.1)
+# ---------------------------------------------------------------------------
+def missing_values(
+    telemetria: pl.DataFrame, apontamentos: pl.DataFrame
+) -> list[dict]:
+    print("\n[8/12] Missing values por coluna (CM 3.1)")
+
+    registros = []
+
+    for nome, df in [("telemetria", telemetria), ("apontamentos", apontamentos)]:
+        n_total = df.height
+        colunas_com_null = []
+        for col in df.columns:
+            nulls = df[col].null_count()
+            if nulls > 0:
+                colunas_com_null.append((col, nulls))
+
+        if not colunas_com_null:
+            print(f"  {nome}: 0 nulls em qualquer coluna ({df.shape[1]} colunas)")
+            continue
+
+        print(f"  {nome}: {len(colunas_com_null)} coluna(s) com nulls:")
+        for col, nulls in colunas_com_null:
+            pct = 100 * nulls / n_total
+            print(f"    {col:<30} {nulls:>10,} ({pct:.4f}%)")
+
+            # Decisao por coluna
+            if nome == "telemetria" and col == "Valor":
+                tratamento = "Manter null (LightGBM aceita NaN diretamente)"
+                justif = (
+                    "237.443 strings 'NULL' originais ja convertidas para null real "
+                    "em W1 (02_correcao_tipos.py). Imputacao por mediana inadequada: "
+                    "cada alarme tem distribuicao propria. LightGBM trata NaN como "
+                    "categoria propria nas arvores."
+                )
+            else:
+                tratamento = "Manter null - decisao especifica deferida para W4"
+                justif = (
+                    "Coluna com nulls fora do esperado. Decisao especifica sera "
+                    "tomada quando for usada como feature em W4 (encoding "
+                    "categorico ou tratamento numerico)."
+                )
+
+            registros.append({
+                "campo": f"{nome}.{col}",
+                "problema": f"{nulls:,} nulls ({pct:.4f}%)",
+                "qtd_registros": nulls,
+                "tratamento": tratamento,
+                "justificativa": justif,
+            })
+
+    return registros
+
+
+# ---------------------------------------------------------------------------
+# [9/12] Apontamentos: Inicio > Fim
+# ---------------------------------------------------------------------------
+def inicio_fim_apontamentos(
+    apontamentos: pl.DataFrame,
+) -> tuple[pl.DataFrame, dict]:
+    print("\n[9/12] Apontamentos - registros com Inicio > Fim")
+
+    n_total = apontamentos.height
+    invalidos = apontamentos.filter(pl.col("Inicio") > pl.col("Fim"))
+    n_invalidos = invalidos.height
+    pct = 100 * n_invalidos / n_total
+
+    print(f"  Total apontamentos: {n_total:,}")
+    print(f"  Inicio > Fim: {n_invalidos:,} ({pct:.4f}%)")
+
+    if n_invalidos == 0:
+        print("  Validacao OK - nenhum tratamento necessario.")
+        return apontamentos, {
+            "campo": "apontamentos.Inicio/Fim",
+            "problema": "Validacao: registros com Inicio > Fim (intervalo invalido)",
+            "qtd_registros": 0,
+            "tratamento": "Nenhum",
+            "justificativa": "Validacao confirmou 0 registros invalidos",
+        }
+
+    if pct < 0.01:
+        apontamentos = apontamentos.filter(pl.col("Inicio") <= pl.col("Fim"))
+        print(f"  Removidos {n_invalidos} (pct {pct:.4f}% < 0.01%).")
+        return apontamentos, {
+            "campo": "apontamentos.Inicio/Fim",
+            "problema": "Registros com Inicio > Fim",
+            "qtd_registros": n_invalidos,
+            "tratamento": "Removidos do dataset",
+            "justificativa": f"Volume desprezivel ({pct:.4f}% < 0.01%); descarte direto.",
+        }
+
+    apontamentos = apontamentos.with_columns(
+        (pl.col("Inicio") > pl.col("Fim")).alias("is_intervalo_invalido")
+    )
+    print(f"  Adicionada flag 'is_intervalo_invalido' ({n_invalidos}).")
+    return apontamentos, {
+        "campo": "apontamentos.Inicio/Fim",
+        "problema": "Registros com Inicio > Fim",
+        "qtd_registros": n_invalidos,
+        "tratamento": "Flag 'is_intervalo_invalido' adicionada; linhas mantidas",
+        "justificativa": (
+            f"Volume nao desprezivel ({pct:.4f}%); flag permite analise. "
+            "Possivel causa: fuso horario, midnight crossing ou erro do sistema fonte."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# [10/12] Apontamentos: sobreposicoes de ciclo (CM 3.1)
+# ---------------------------------------------------------------------------
+def sobreposicoes_ciclo(
+    apontamentos: pl.DataFrame,
+) -> tuple[pl.DataFrame, dict]:
+    print("\n[10/12] Apontamentos - sobreposicoes de ciclo (mesmo TAG)")
+
+    n_total = apontamentos.height
+    apo_sorted = apontamentos.sort(["Tag", "Inicio"])
+
+    apo_with_flag = apo_sorted.with_columns(
+        pl.col("Fim").shift(1).over("Tag").alias("Fim_anterior")
+    ).with_columns(
+        (pl.col("Inicio") < pl.col("Fim_anterior"))
+            .fill_null(False)
+            .alias("is_sobreposicao")
+    )
+
+    n_sobrepoe = apo_with_flag.filter(pl.col("is_sobreposicao")).height
+    pct = 100 * n_sobrepoe / n_total
+    print(f"  Total: {n_total:,}")
+    print(f"  Sobreposicoes: {n_sobrepoe:,} ({pct:.4f}%)")
+
+    if n_sobrepoe == 0:
+        print("  Validacao OK - nenhum tratamento necessario.")
+        return apontamentos, {
+            "campo": "apontamentos.(Tag, Inicio, Fim)",
+            "problema": "Validacao: sobreposicoes temporais de ciclos do mesmo TAG",
+            "qtd_registros": 0,
+            "tratamento": "Nenhum",
+            "justificativa": "Validacao confirmou 0 sobreposicoes",
+        }
+
+    if pct < 0.01:
+        mantem = (
+            apo_with_flag.filter(~pl.col("is_sobreposicao"))
+                        .select(apontamentos.columns)
+        )
+        print(f"  Removidas {n_sobrepoe} sobreposicoes ({pct:.4f}% < 0.01%).")
+        return mantem, {
+            "campo": "apontamentos.(Tag, Inicio, Fim)",
+            "problema": "Sobreposicoes temporais de ciclos",
+            "qtd_registros": n_sobrepoe,
+            "tratamento": "Removida a linha com Inicio mais recente em cada par sobreposto",
+            "justificativa": f"Volume desprezivel ({pct:.4f}% < 0.01%); descarte direto.",
+        }
+
+    cols_out = apontamentos.columns + ["is_sobreposicao"]
+    flag_df = apo_with_flag.select(cols_out)
+    print(f"  Adicionada flag 'is_sobreposicao' ({n_sobrepoe}).")
+    return flag_df, {
+        "campo": "apontamentos.(Tag, Inicio, Fim)",
+        "problema": "Sobreposicoes temporais de ciclos",
+        "qtd_registros": n_sobrepoe,
+        "tratamento": "Flag 'is_sobreposicao' adicionada; linhas mantidas",
+        "justificativa": (
+            f"Volume nao desprezivel ({pct:.4f}%); flag permite analise. "
+            "Sobreposicao pode ser legitima em troca de turno ou bug do sistema fonte."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# [11/12] Persistencia
 # ---------------------------------------------------------------------------
 def salvar_telemetria(df: pl.DataFrame) -> None:
-    print(f"\n[6/6] Salvando outputs")
     t0 = time.time()
     df.write_parquet(ARQ_TELEMETRIA_OUT, compression="snappy")
     mb = ARQ_TELEMETRIA_OUT.stat().st_size / 1024 / 1024
     print(f"  {ARQ_TELEMETRIA_OUT.relative_to(ROOT)}  ({mb:,.0f} MB, {time.time()-t0:.1f}s)")
+
+
+def salvar_apontamentos(df: pl.DataFrame) -> None:
+    t0 = time.time()
+    df.write_parquet(ARQ_APONTAMENTOS_OUT, compression="snappy")
+    mb = ARQ_APONTAMENTOS_OUT.stat().st_size / 1024 / 1024
+    print(f"  {ARQ_APONTAMENTOS_OUT.relative_to(ROOT)}  ({mb:,.1f} MB, {time.time()-t0:.1f}s)")
 
 
 def salvar_stats(stats_df: pl.DataFrame) -> None:
@@ -327,41 +613,92 @@ praticamente impossiveis em telemetria por causa dos timestamps).
 
 
 # ---------------------------------------------------------------------------
+# [12/12] controle_alteracoes.csv (CM 3.1)
+# ---------------------------------------------------------------------------
+def gerar_controle_alteracoes_csv(registros: list[dict]) -> None:
+    print("\n[12/12] Gerando controle_alteracoes.csv (CM 3.1)")
+
+    if not registros:
+        print("  Nenhuma alteracao para registrar (caso improvavel).")
+        return
+
+    DIR_TABELAS.mkdir(parents=True, exist_ok=True)
+    df = pl.DataFrame(registros).select([
+        "campo", "problema", "qtd_registros", "tratamento", "justificativa"
+    ]).rename({
+        "campo": "Campo",
+        "problema": "Problema Identificado",
+        "qtd_registros": "Qtd. Registros",
+        "tratamento": "Tratamento Aplicado",
+        "justificativa": "Justificativa",
+    })
+    df.write_csv(ARQ_CONTROLE_ALTERACOES_CSV)
+    print(f"  {ARQ_CONTROLE_ALTERACOES_CSV.relative_to(ROOT)} ({df.height} linhas)")
+    with pl.Config(tbl_rows=20, fmt_str_lengths=50):
+        print(df)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    print("=== Limpeza + Inspecao Inicial (W1 / CM 2.1) ===\n")
+    print("=== Limpeza extendida (W1 inspecao + W3 cleaning) ===\n")
 
+    # --- Fase 1: Carga e validacao
     telemetria, apontamentos = carregar()
-    assert telemetria.shape[0] == LINHAS_TELEMETRIA
-    assert apontamentos.shape[0] == LINHAS_APONTAMENTOS
+    assert telemetria.shape[0] == LINHAS_TELEMETRIA, (
+        f"Telemetria esperada {LINHAS_TELEMETRIA:,}, obtido {telemetria.shape[0]:,}"
+    )
+    assert apontamentos.shape[0] == LINHAS_APONTAMENTOS, (
+        f"Apontamentos esperado {LINHAS_APONTAMENTOS:,}, obtido {apontamentos.shape[0]:,}"
+    )
 
+    # --- Fase 2: Inspecao do dataset original (W1, CM 2.1)
     telemetria, valores_criticidade = normalizar_criticidade(telemetria)
 
-    print("\n[3/6] Duplicados e frequencia de registros")
-    # Duplicatas - usando Id como chave natural se existir
-    dup_tel = contar_duplicados(
-        telemetria, "Telemetria",
-        chave=["Id_Eventos_Telemetria"],
-    )
-    dup_apo = contar_duplicados(
-        apontamentos, "Apontamentos",
-        chave=["Id"],
-    )
-    # Frequencia
+    print("\n[3/12] Duplicados e frequencia de registros")
+    dup_tel = contar_duplicados(telemetria, "Telemetria", ["Id_Eventos_Telemetria"])
+    dup_apo = contar_duplicados(apontamentos, "Apontamentos", ["Id"])
     freq_tel = frequencia_media(telemetria, "Data_Evento", "TAG", "Telemetria")
     freq_apo = frequencia_media(apontamentos, "Inicio", "Tag", "Apontamentos")
 
     stats_df = estatisticas_descritivas(telemetria)
     dg = taxa_dg(telemetria)
 
-    salvar_telemetria(telemetria)
-    salvar_stats(stats_df)
-    salvar_inspecao_md(valores_criticidade, dup_tel, dup_apo, freq_tel, freq_apo, dg)
+    # --- Fase 3: Cleaning (W3 - CM 3.1)
+    registros_csv = []
 
-    print("\n[OK] Limpeza + inspecao concluidas.")
-    print("\nLembrete: adicionar entrada de normalizacao de Criticidade em")
-    print("  Projeto/relatorio/controle_alteracoes.md")
+    telemetria, reg = filtrar_informacional(telemetria)
+    registros_csv.append(reg)
+
+    telemetria, reg = outliers_valor(telemetria)
+    registros_csv.append(reg)
+
+    registros_csv.extend(missing_values(telemetria, apontamentos))
+
+    apontamentos, reg = inicio_fim_apontamentos(apontamentos)
+    registros_csv.append(reg)
+
+    apontamentos, reg = sobreposicoes_ciclo(apontamentos)
+    registros_csv.append(reg)
+
+    # --- Fase 4: Persistencia
+    print("\n[11/12] Salvando outputs")
+    salvar_telemetria(telemetria)
+    salvar_apontamentos(apontamentos)
+    salvar_stats(stats_df)
+    salvar_inspecao_md(
+        valores_criticidade, dup_tel, dup_apo, freq_tel, freq_apo, dg
+    )
+
+    # --- Fase 5: Audit log (CM 3.1)
+    gerar_controle_alteracoes_csv(registros_csv)
+
+    print("\n[OK] Limpeza extendida concluida.")
+    print("\nProximos lembretes:")
+    print("  - Registrar entrada em controle_alteracoes.md sobre a extensao W3")
+    print("  - Re-rodar 04_eda.py e exploracao_w2_obs.py para confirmar idempotencia")
+    print("  - Iniciar 05_features.py em W4 a partir de telemetria_limpa.parquet")
 
 
 if __name__ == "__main__":

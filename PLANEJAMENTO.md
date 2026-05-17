@@ -833,12 +833,12 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 
 > **Nota arquitetural (decisão 2026-05-17 — Opção 1):** o script `03_limpeza.py` **já existe** (criado em W1) com as etapas básicas: normalização de Criticidade, verificação de duplicados, frequência de registros, estatísticas descritivas. As etapas de limpeza avançada de W3 (outliers em `Valor`, missing values por coluna, registros com `Inicio > Fim`, sobreposições de ciclo, aplicação do filtro de `Informacional`) serão **adicionadas ao mesmo script** como etapas 7+ — **não** em um novo `03b_limpeza_avancada.py`. Razão: pipeline mais simples (um único script de limpeza), evita carga dupla do parquet, e mantém o `telemetria_limpa.parquet` como artefato único e canônico de saída da fase de limpeza. A decisão também será registrada em `controle_alteracoes.md` quando a primeira etapa de extensão for implementada.
 
-- [ ] **Estender `Projeto/codigo/03_limpeza.py`** com tratamento de outliers em `Valor` (IQR + flag, manter linhas)
-- [ ] **Estratégia de missing values por coluna** (CM 3.1): para cada coluna com nulos, decidir e justificar — remoção de linhas, imputação por mediana/moda, forward-fill (séries temporais) ou flag de ausência. Registrar tabela coluna×estratégia em `controle_alteracoes.md`
-- [ ] Tratar registros com `Inicio > Fim` nos apontamentos
-- [ ] **Detecção de sobreposições de ciclo** (CM 3.1): identificar registros onde ciclos do mesmo TAG se sobrepõem no tempo; reportar quantidade e decisão (manter / merge / descartar com justificativa)
-- [ ] **Aplicar filtro `Criticidade = "Informacional"` no `03_limpeza.py`** (decisão já registrada em `controle_alteracoes.md` 2026-05-16; até agora o filtro só roda em runtime dentro do `04_eda.py`)
-- [ ] Tabela ANTES/DEPOIS em `Projeto/relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa
+- [X] **Estender `Projeto/codigo/03_limpeza.py`** com tratamento de outliers em `Valor` — **adotado threshold físico `Valor > 1000` em vez de IQR** (distribuição zero-inflada). **Achado:** 0 outliers no dataset filtrado (todos os 118 do W1 eram `Informacional`, eliminados na etapa 6). Etapa mantida como validação defensiva.
+- [X] **Estratégia de missing values por coluna** (CM 3.1): **Achado:** apenas `telemetria.Valor` tem nulls (237.443, 43,58% do dataset filtrado); apontamentos com 0 nulls. Decisão: manter null (LightGBM aceita NaN); avaliar feature `valor_disponivel = Valor IS NOT NULL` em W4. Registrado em `controle_alteracoes.csv` e `controle_alteracoes.md`.
+- [X] Tratar registros com `Inicio > Fim` nos apontamentos — **Achado:** 0 registros inválidos.
+- [X] **Detecção de sobreposições de ciclo** (CM 3.1): **Achado novo (não previsto):** 340 sobreposições (0,09%) em apontamentos. Adicionada flag `is_sobreposicao`; investigação de concentração por Frota/TAG fica como follow-up.
+- [X] **Aplicar filtro `Criticidade = "Informacional"` no `03_limpeza.py`** — 36.619.169 linhas removidas; 19.962 DGs preservados (asserção). `telemetria_limpa.parquet` agora persiste filtrado (7 MB vs 435 MB antes).
+- [X] Tabela ANTES/DEPOIS em `Projeto/relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa — 5 entradas geradas.
 - [ ] `Projeto/codigo/05_features.py` — features básicas:
   - [ ] `hora_dia`, `dia_semana`, `turno`, `mes`
   - [ ] **Encoding categórico documentado para as 5 categorias** (CM 3.2) — decisão por cardinalidade:
@@ -850,13 +850,64 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
   - [ ] Registrar a justificativa de cada escolha em `documentacao_features.csv` (coluna Motivação)
 - [ ] Salvar `Projeto/dados/features/v1.parquet`
 - [ ] Iniciar **`Projeto/relatorio/tabelas/documentacao_features.csv`** (CM 3.2): para cada feature criada — nome, descrição, fórmula/lógica, motivação/hipótese
-- [ ] Registrar em `controle_alteracoes.md` decisões de limpeza (filtros, outliers, encoding)
+- [X] Registrar em `controle_alteracoes.md` decisões de limpeza (filtros, outliers, missing values, sobreposições) — entrada `2026-05-17` consolidando as 6 etapas da extensão
 
 **Entregável:** matriz v1 + tabela ANTES/DEPOIS + documentacao_features.csv iniciado.
 
 #### Observações e Conclusões (W3)
 
-*(A preencher quando observações de W3 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+##### 1. As 340 sobreposições de ciclo são bug pontual do equipamento CA65789
+
+<details>
+<summary><b>Script usado para investigar</b></summary>
+
+[`Projeto/codigo/exploracao_w3_sobreposicoes.py`](Projeto/codigo/exploracao_w3_sobreposicoes.py) — análise das 340 sobreposições flagadas por `03_limpeza.py` (etapa 10) decompondo por Frota, TAG, Tipo, Classe, mês e magnitude. Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w3_sobreposicoes.py
+```
+
+</details>
+
+A etapa 10 de `03_limpeza.py` detectou 340 sobreposições temporais de ciclos em apontamentos (0,09% do total). Como 0,09% está acima do threshold automático de remoção (0,01%) mas abaixo do threshold de impacto material, foi adicionada flag `is_sobreposicao` e o caso passou para investigação dedicada. O resultado foi dramaticamente concentrado:
+
+**Concentração por dimensão:**
+
+| Dimensão | Concentração |
+|---|---|
+| **Equipamento (TAG)** | **CA65789** sozinho = **100%** (1 de 47 TAGs) |
+| **Frota** | 793-D 2S = 100% (1 de 5 frotas) |
+| **Tipo** | Caminhão = 100% |
+| **Mês** | Jan/2025 = 90% (306); Abr = 5%; Jun = 5% |
+
+**Detalhamento do equipamento CA65789:**
+- 12.118 apontamentos totais no semestre (2,1% do dataset)
+- 2,81% dos apontamentos dele têm sobreposição (vs 0% em todos os outros 46 equipamentos)
+- Não está no top 15 de DGs (não é o CA65926 outlier de W2)
+
+**Magnitude dos overlaps:** mediana 60 min, máximo 60 min, mínimo 0,1 min. 55% dos overlaps têm 1-6h de duração, 35% têm 10-60 min. Nenhum > 24h.
+
+**Distribuição por estado operacional dos ciclos sobrepostos:**
+
+| Estado | n | % |
+|---|---:|---:|
+| Operando | 133 | 39,1% |
+| **Hibernando** | **119** | **35,0%** ⚠️ |
+| Parado | 72 | 21,2% |
+| Manutenção | 16 | 4,7% |
+
+**Diagnóstico:** **BUG PONTUAL no CA65789, NÃO padrão sistêmico.** Evidências:
+- 100% das sobreposições em 1 único equipamento (concentração máxima possível)
+- 90% concentradas em janeiro de 2025 (padrão temporal localizado)
+- 35% dos ciclos sobrepostos em estado **`Hibernando`** — fisicamente estranho (equipamento "dormindo" não deveria gerar dois ciclos simultâneos)
+
+**Recomendação operacional para Vale (CM 6.1):** auditar a *pipeline* de registro de apontamentos do CA65789 no período de janeiro de 2025 — provável bug específico no sistema fonte, possivelmente envolvendo dupla baixa do equipamento ao entrar em Hibernando.
+
+**Implicação para modelagem (W4-W7):** as 340 linhas flagadas vêm todas de um equipamento — não distorcem o dataset agregado. A flag `is_sobreposicao` pode ser usada como feature em W4 (mas tem cardinality muito baixa) ou simplesmente ser usada para diagnóstico estratificado em W7 (análise de CA65789 separadamente).
+
+**Follow-up gerado:** nova obs **2.10** em `observacoes_importantes.md` — verificar se CA65789 apresenta outras anomalias além das sobreposições (taxa de DG, distribuição de alarmes, padrão operacional). Pode ser que esse equipamento tenha um perfil completo de "outlier de qualidade de dados" análogo ao perfil de outlier de DGs do CA65926 (W2).
+
+**Nova hipótese registrada em `hipoteses_eda.md`:** **H1.4** — "Qualidade de dados de apontamento em CA65789 é localmente comprometida" (Confirmada por convergência de 4 evidências: 100% sobreposições, 90% em jan/2025, 35% em estado Hibernando, ausência de problema similar em outros 46 equipamentos).
 
 ---
 

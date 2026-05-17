@@ -183,4 +183,28 @@ Decisão tomada antes de iniciar W3, ao planejar a criação de `*_features.py`.
 
 ---
 
+### 2026-05-17 — Extensão do `03_limpeza.py` com fase de cleaning (W3 / CM 3.1)
+
+Aplicada por `Projeto/codigo/03_limpeza.py` (etapas 6-12), encerrando a fase de Preparação dos Dados. Arquitetura adotada: **Opção 1** (estender o script existente em vez de criar um `03b_limpeza_avancada.py` separado) — decisão registrada em `PLANEJAMENTO.md` → W3.
+
+- **ANTES:** O script `03_limpeza.py` (W1) executava apenas inspeção do dataset original: normalização de Criticidade, verificação de duplicados, frequência média, estatísticas descritivas. O parquet de saída (`telemetria_limpa.parquet`, 435 MB, 37,16M linhas) ainda continha todos os eventos `Informacional`. As decisões de limpeza tomadas em W2 (filtro Informacional registrado em 2026-05-16) viviam apenas como filtro de runtime dentro de `04_eda.py` e `exploracao_w2_obs.py`, e não estavam persistidas no parquet.
+- **DEPOIS:** Script estendido com **6 novas etapas (6-12)** de cleaning + audit log, gerando dataset limpo definitivo:
+  - **Etapa 6:** Filtro `Criticidade = Informacional` aplicado e persistido no parquet (decisão de 2026-05-16). 36.619.169 linhas removidas; **19.962 DGs preservados** (asserção defensiva).
+  - **Etapa 7:** Validação defensiva de outliers `Valor > 1000`. **Achado:** 0 outliers no dataset filtrado — os 118 outliers identificados em W1 eram todos `Informacional` e foram automaticamente eliminados pela etapa 6. A etapa permanece como validação defensiva (asserta 0 outliers + 0 DGs entre outliers).
+  - **Etapa 8:** Missing values por coluna (CM 3.1). Telemetria: `Valor` tem 237.443 nulls (**43,58% do dataset filtrado** — todos os nulls originais estavam em eventos `Critico`/`Nao_Critico`, nenhum em `Informacional`). Apontamentos: 0 nulls em qualquer coluna. Decisão: manter nulls (LightGBM aceita NaN diretamente); avaliar criação de feature derivada `valor_disponivel = Valor IS NOT NULL` em W4 para capturar o sinal binário "alarme com/sem medição numérica".
+  - **Etapa 9:** Validação de `Inicio > Fim` em apontamentos. **Achado:** 0 registros inválidos — qualidade temporal do dataset de apontamentos é alta.
+  - **Etapa 10:** Sobreposições de ciclo (Tag, Inicio, Fim). **Achado novo, não previsto:** 340 sobreposições (0,09%) — volume acima do threshold de 0,01%, abaixo do threshold de flag direta. Adicionada flag `is_sobreposicao`. **Investigação de concentração por Frota/TAG/mês fica pendente** (próxima ação proposta — pode revelar bug pontual em equipamento específico ou padrão sistêmico, candidato a insight CM 6.1).
+  - **Etapa 11:** Persistência. Saídas: `telemetria_limpa.parquet` (**7 MB**, redução de 98% vs antes do filtro) + `apontamentos_limpo.parquet` (**6,3 MB**, novo — substitui o consumo direto do parquet bruto pelos scripts downstream).
+  - **Etapa 12:** Geração de `Projeto/relatorio/tabelas/controle_alteracoes.csv` no formato CM 3.1 obrigatório (Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa). 5 linhas de registro, anexo direto do relatório final.
+- **Justificativa:** Consolida em um único passo executável a fase de Preparação dos Dados do CRISP-DM. Asserções defensivas em pontos críticos (DGs preservados, outliers sem contaminação do target, volume esperado pós-filtro) garantem que qualquer regressão futura é detectada imediatamente. Output minúsculo (~7 MB) torna trivial qualquer iteração downstream em W4-W7.
+- **Impacto:**
+  - **Pipeline canônico de limpeza fechado:** a partir de agora, todos os scripts downstream (W4+) lêem `telemetria_limpa.parquet` (filtrado, 545k linhas) e `apontamentos_limpo.parquet` (com flag `is_sobreposicao`).
+  - **`04_eda.py` e `exploracao_w2_obs.py` continuam funcionando** sem alteração: o `filter(Criticidade != Informacional)` interno deles vira no-op (filtra 0 linhas; asserções já existentes confirmam 19.962 DGs preservados).
+  - **Tamanho local cai drasticamente:** telemetria 435 MB → 7 MB. Pode-se opcionalmente deletar `telemetria_consolidado.parquet` (421 MB) e `telemetria_tipada.parquet` (435 MB) — ambos reproduzíveis em ~30s pelo pipeline.
+- **Achados secundários que merecem follow-up:**
+  1. **340 sobreposições de ciclo:** investigar concentração por Frota/TAG/mês — pode ser bug pontual em equipamento específico ou padrão sistêmico.
+  2. **43,58% de nulls em `Valor`:** validar em W4 se a feature derivada `valor_disponivel` adiciona sinal preditivo (provável correlação com tipo de alarme).
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

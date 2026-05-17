@@ -47,6 +47,21 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 
 **Implicação:** Tratamento de baixo risco em W3 (flag `is_outlier_valor_peso` + manter, ou cap em 300). Revela problema de qualidade de dados no sensor de peso da Vale (88% dos casos vem da frota LeTourneau L 1850 — 3ª evidência do padrão H4.1).
 
+**Atualização pós-W3:** confirmado que esses outliers eram TODOS de eventos `Criticidade=Informacional`. O filtro de Informacional aplicado em W3 (etapa 6 do `03_limpeza.py`) os eliminou automaticamente — a flag `is_outlier_valor` no dataset filtrado é sempre `False`. A etapa 7 do script permanece como validação defensiva.
+
+---
+
+### H1.4 — As 340 sobreposições de ciclo em apontamentos são padrão sistêmico distribuído entre equipamentos
+**Status:** ❌ Refutada com reinterpretação importante (W3 — Obs registrada em `PLANEJAMENTO.md` W3 conclusões)
+
+**Origem:** Etapa 10 do `03_limpeza.py` (W3) detectou 340 sobreposições temporais (0,09% dos apontamentos). Volume não desprezível motivou investigação dedicada (`exploracao_w3_sobreposicoes.py`) para distinguir bug pontual vs padrão sistêmico.
+
+**Evidência:** Decomposição por todas as dimensões mostrou **concentração máxima possível** — 100% das 340 sobreposições vêm de **um único equipamento** (CA65789, frota 793-D 2S), com 90% concentradas em janeiro de 2025. Nenhum outro dos 46 equipamentos restantes apresenta sobreposições. 35% dos ciclos sobrepostos ocorrem em estado `Hibernando` (fisicamente estranho — equipamento "dormindo" não deveria gerar dois ciclos simultâneos).
+
+**Reinterpretação:** Não é padrão sistêmico — é **bug pontual** no registro de apontamentos do CA65789 em janeiro de 2025. Provavelmente envolve dupla baixa do equipamento ao entrar em estado Hibernando, ou problema temporário no sistema fonte específico desse equipamento. A taxa de 2,81% de sobreposições dentro dos 12.118 apontamentos desse equipamento é localmente significativa, mas o efeito no dataset agregado é desprezível.
+
+**Implicação:** **Insight não óbvio para CM 6.1 do relatório** + **recomendação operacional concreta** para Vale (auditar pipeline de registro do CA65789 em jan/2025). Para modelagem em W4-W7, a flag `is_sobreposicao` tem cardinalidade muito baixa para ser feature útil; melhor usar para análise estratificada (excluir CA65789 da avaliação ou tratar como caso especial). Gerou nova obs pendente **2.10** em `observacoes_importantes.md` para investigar se o CA65789 apresenta outras anomalias (DGs, distribuição de alarmes, padrão operacional) — análogo ao perfil de outlier do CA65926 detectado em W2.
+
 ---
 
 ## 2. Concentração e distribuição dos DGs
@@ -175,20 +190,20 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 
 ---
 
-## Resumo quantitativo (status 2026-05-16)
+## Resumo quantitativo (status 2026-05-17)
 
 | Categoria | Total | ✅ Confirmadas | ❌ Refutadas | 🟡 Refutadas com reinterpretação | 🔄 Pendentes |
 |---|---:|---:|---:|---:|---:|
-| 1. Cobertura e qualidade dos dados | 3 | 0 | 2 | 1 | 0 |
+| 1. Cobertura e qualidade dos dados | **4** | 0 | 2 | **2** | 0 |
 | 2. Concentração de DGs | 2 | 1 | 1 | 0 | 0 |
 | 3. Regimes temporais e drift | 3 | 0 | 1 | 0 | 2 |
 | 4. Frota LeTourneau (emergente) | 1 | 1 | 0 | 0 | 0 |
 | 5. Estado operacional e contexto | 3 | 0 | 0 | 1 | 2 |
 | 6. Viés do label CMA | 1 | 0 | 0 | 0 | 1 |
-| **Total** | **13** | **2** | **4** | **2** | **5** |
+| **Total** | **14** | **2** | **4** | **3** | **5** |
 
-**Observação metodológica:** 6 das 8 hipóteses testadas em W1-W2 caíram (refutadas ou refutadas com reinterpretação). Isso é **sinal de qualidade da exploração** — a EDA está cumprindo o papel de testar premissas, não apenas confirmá-las. Hipóteses refutadas com reinterpretação (H1.2, H5.1) geraram achados mais ricos que a hipótese original previa.
+**Observação metodológica:** 7 das 9 hipóteses testadas em W1-W3 caíram (refutadas ou refutadas com reinterpretação). Isso é **sinal de qualidade da exploração** — a EDA está cumprindo o papel de testar premissas, não apenas confirmá-las. Hipóteses refutadas com reinterpretação (H1.2, H1.4, H5.1) geraram achados mais ricos que a hipótese original previa — em particular, H1.4 (W3) revelou bug pontual no CA65789 que vira recomendação operacional concreta para Vale (CM 6.1).
 
 ---
 
-**Última atualização:** 2026-05-16 (final de W2 antecipada)
+**Última atualização:** 2026-05-17 (W3 — investigação de sobreposições de apontamento)

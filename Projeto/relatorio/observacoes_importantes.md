@@ -66,6 +66,22 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 
 ---
 
+### - [ ] 2.10 O equipamento CA65789 apresenta outras anomalias além das sobreposições de apontamento?
+
+**Contexto:** Investigação W3 (`exploracao_w3_sobreposicoes.py`, 2026-05-17) revelou que **100% das 340 sobreposições de ciclo no semestre vêm de um único equipamento — CA65789** (frota 793-D 2S), com 90% concentradas em janeiro/2025 e 35% em estado `Hibernando`. Confirmado bug pontual no registro de apontamentos desse equipamento, não padrão sistêmico.
+
+**Por que importa:** O CA65789 acabou de ser identificado como "outlier de qualidade de dados de apontamento". É natural verificar se essa anomalia se estende para outras dimensões — pode haver um perfil completo de "equipamento problemático" análogo ao do CA65926 (W2, outlier de DGs). Se sim, vira recomendação operacional duplamente fundamentada.
+
+**Investigar:**
+- **Taxa de DG do CA65789** comparada com os outros 34 equipamentos com telemetria (lembrar: CA65789 está em apontamentos, mas verificar se tem telemetria — pode estar entre os 12 sem instrumentação)
+- **Distribuição de alarmes do CA65789** (se tiver telemetria): top alarmes, padrão temporal, comparação com os caminhões 793-D 2S restantes
+- **Comportamento dos operadores que rodaram CA65789** em jan/2025 (operadores específicos? mudança de turno problemática?)
+- **CA65789 está entre os 12 equipamentos sem telemetria contínua** (H1.1)? Se sim, é mais uma evidência de instrumentação problemática nesse equipamento.
+
+**Onde resolver:** W4 (ao construir features por TAG, naturalmente surge a comparação) ou W7 (análise estratificada por equipamento — Qualidade C).
+
+---
+
 ### - [ ] 2.9 Qual evento operacional disparou o pico de Right Front Brake Temperature em junho?
 
 **Contexto:** Investigação Obs 2.6 extensão (16/05/2026) revelou que `Right Front Brake Temperature - Active` teve em junho:
@@ -166,8 +182,11 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
   - **Obs 2.6 (resolvida):** o salto 20%→48% Não-Crítico era média mentirosa que escondia **3 regimes distintos**: baseline (jan), anomalia Engine Coolant Não-Crítico em fev-mar (+ inversão de severidade 83%→6% Crítico), anomalia Right Front Brake Crítico em junho (151,7× baseline). Quantificou e CONFIRMOU o Risco 3.2 (drift). Gerou Obs 2.8 (mudança regra CMA fev?) e Obs 2.9 (contexto operacional jun?), além de identificar família nova de features para W4 (razão vs baseline do próprio alarme).
   - **Obs 2.7 (resolvida):** 12,65% DGs em Manutenção — analisados via posição relativa em [Inicio, Fim]. H1 (DG causou transição) contribui ~5%, H3 (bug CMA) rejeitada empiricamente. **H2 (uniforme) confirmada estatisticamente mas REINTERPRETADA**: não são falsos positivos de bancada — são DGs legítimos durante re-ativações de teste no ciclo de manutenção (Engine Coolant e termos de freio só disparam com equipamento operando). **Risco 3.3 parcialmente refutado** (perde a "primeira evidência direta"); validação do viés agora depende exclusivamente do Isolation Forest em W6. Geradas 3 tasks em W4 (`estado_pre_evento`), W5/W6 (variante `Is_Dont_Go_producao` para comparação) e W7 (métricas estratificadas por estado operacional).
 
+- **W3 (17/05/2026 — investigado antecipadamente):** ver `PLANEJAMENTO.md` → seção W3 → "Observações e Conclusões (W3)"
+  - **Sobreposições de apontamento (W3 etapa 10):** 340 sobreposições temporais detectadas (0,09%). Investigação dedicada (`exploracao_w3_sobreposicoes.py`) revelou que **100% vêm de UM ÚNICO equipamento (CA65789, frota 793-D 2S)**, com 90% concentradas em janeiro/2025 e 35% em estado `Hibernando`. Diagnóstico: bug pontual no registro do CA65789, NÃO padrão sistêmico. Vira recomendação operacional concreta para Vale (auditar pipeline de apontamentos do CA65789 em jan/2025). Nova hipótese **H1.4** registrada em `hipoteses_eda.md` (refutada com reinterpretação — refuta "padrão sistêmico" mas confirma "bug localizado"). Gerou obs pendente **2.10** para investigar se CA65789 tem outras anomalias além das sobreposições.
+
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 
 ---
 
-**Última atualização:** 2026-05-16
+**Última atualização:** 2026-05-17 (W3 — investigação das sobreposições)
