@@ -1,3 +1,11 @@
+# Notas de Exploração Inicial dos Dados
+
+> **Documento de referência histórica** com as anotações feitas durante a fase de descoberta do dataset (11/05/2026), antes do início formal da W1. Material relevante para a redação da seção "Entendimento do Negócio" (CM 1.1) em W8 — contém a documentação do dicionário de dados, das regras CMA e a definição canônica de `Is_Dont_Go = 1`.
+>
+> **Histórico:** originalmente em `Projeto/Alterado/observações.md`. Movido para `Projeto/relatorio/notas_exploracao_inicial.md` em 17/05/2026 para juntar-se aos demais artefatos analíticos.
+
+---
+
 ## 📌 Prompt Inicial — 11/05/2026
 
 > O arquivo `C:\Users\marcelo.ayala\Desktop\DadosVale\Estudo Guiado - Análise Avançada de Dados.pdf` contém instruções do que é esperado, primeiramente a pasta `C:\Users\marcelo.ayala\Desktop\DadosVale\Base de Dados\datasets\apontamentos` tem um arquivo .xlsx e um arquivo .parquet, a pasta `C:\Users\marcelo.ayala\Desktop\DadosVale\Base de Dados\datasets\telemetria` tem um arquivo .xlsx e varios arquivos .parquet. Qual a diferença dos arquivos .xlsx e .parquet em relação aos dados dentro deles?

@@ -166,4 +166,21 @@ Aplicada por `Projeto/codigo/extrai_eventos_muito_alto.py` ao gerar `Projeto/rel
 
 ---
 
+### 2026-05-17 — Reconciliação da numeração dos scripts do pipeline (Opção B)
+
+Decisão tomada antes de iniciar W3, ao planejar a criação de `*_features.py`. Detalhe: o plano original previa `04_features.py` ocupando o slot 04, mas esse slot foi ocupado em W2 por `04_eda.py` (porque os slots 02 e 03 já estavam em uso por `02_correcao_tipos.py` e `03_limpeza.py`, ambos criados em W1).
+
+- **ANTES (plano original em `PLANEJAMENTO.md`, válido até 2026-05-17):** numeração assumia ordem lógica do pipeline, com EDA no slot 02 e features no slot 04. Estado planejado: `01_ingestao.py`, `02_eda.py`, `03_limpeza.py`, `04_features.py`, `05_split.py`, `06_baseline.py`, `07_lightgbm.py`, `08_sobrevivencia.py`, `09_evaluation.py`, `10_isolation_forest.py`.
+- **DEPOIS:** numeração reflete **ordem cronológica de criação**, não ordem lógica do pipeline. Estado final (implementados + planejados):
+  - **Implementados em W1-W2:** `01_ingestao.py`, `02_correcao_tipos.py`, `03_limpeza.py`, `04_eda.py` + scripts auxiliares (`exploracao_w2_obs.py`, `extrai_eventos_muito_alto.py`)
+  - **Planejados W3+ (deslocados em +1):** `05_features.py` (W3-W4), `06_split.py` (W4), `07_baseline.py` (W5), `08_lightgbm.py` (W5-W6), `09_sobrevivencia.py` (W6), `10_evaluation.py` (W7), `11_isolation_forest.py` (W6)
+- **Justificativa:** Opção B (próximo número livre) escolhida sobre Opção A (renomear `04_eda.py` → `05_eda.py` para liberar slot 04) por dois motivos: (i) **menor risco de quebra** — não modifica arquivo já implementado (`04_eda.py`) nem referências em commits anteriores; (ii) **menor esforço** — atualizar apenas o plano e referências em documentos analíticos (PLANEJAMENTO.md, rascunho.md, README.md), sem alterar código existente. Custo aceito: a numeração perde a propriedade de "refletir ordem lógica do pipeline" e passa a refletir ordem de criação, o que é coerente com a forma como o projeto evoluiu (correção de tipos descoberta apenas na execução, limpeza adiantada para W1, etc.).
+- **Impacto — arquivos atualizados nesta data:**
+  - `PLANEJAMENTO.md` — árvore de estrutura (seção 4) e 8 referências em tasks de W3-W7
+  - `Projeto/relatorio/rascunho.md` — tabela do Anexo A.2 e nota de reconciliação
+  - `README.md` — exemplos de comandos no passo 7
+- **Nota metodológica:** o desencontro entre numeração planejada e numeração real surgiu de duas decisões em W1 tomadas em resposta à exploração dos dados: (i) inserção de `02_correcao_tipos.py` por descoberta de inconsistências de tipo (vírgula decimal BR, strings "NULL", datetimes em texto); (ii) adiantamento de `03_limpeza.py` para W1 porque era pré-requisito para qualquer análise descritiva, mesmo simples. Essas decisões cronologicamente prévias quebraram a sequência prevista no slot 02, levando ao deslocamento subsequente. Padrão a esperar em projetos exploratórios: o plano de numeração inicial raramente sobrevive ao primeiro contato com os dados; vale formalizar a reconciliação assim que ela se torna inevitável.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

@@ -137,11 +137,11 @@ Tempo: ~35 segundos. Cria `Projeto/dados/intermediarios/telemetria_consolidado.p
 ```powershell
 uv run python Projeto/codigo/02_correcao_tipos.py    # próximo no pipeline
 uv run python Projeto/codigo/03_limpeza.py
-uv run python Projeto/codigo/04_features.py
-# ... seguir numeração até 10_isolation_forest.py
+uv run python Projeto/codigo/04_eda.py
+# ... seguir numeração até 11_isolation_forest.py (planejados em W3-W7)
 ```
 
-A ordem dos scripts segue a numeração (01_ → 10_).
+A ordem dos scripts segue a numeração (01_ → 11_). Detalhe completo dos scripts, semana de implementação e saídas em [`Projeto/relatorio/rascunho.md`](Projeto/relatorio/rascunho.md) (Anexo A — Reprodutibilidade).
 
 ---
 

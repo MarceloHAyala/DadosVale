@@ -103,17 +103,20 @@ AnaliseDadosVale/                            ← raiz do repositório Git
     │   ├── Estudo Guiado - Análise Avançada de Dados.pdf
     │   └── Desenvolver_Template.docx
     ├── codigo/
-    │   ├── 01_ingestao.py                   (W1)
-    │   ├── 02_eda.py                        (W2)
-    │   ├── 03_limpeza.py                    (W3)
-    │   ├── 04_features.py                   (W3-W4)
-    │   ├── 05_split.py                      (W4)
-    │   ├── 06_baseline.py                   (W5)
-    │   ├── 07_lightgbm.py                   (W5-W6)
-    │   ├── 08_sobrevivencia.py              (W6 — Weibull AFT / Cox)
-    │   ├── 09_evaluation.py                 (W7)
-    │   ├── 10_isolation_forest.py           (W6 — 3ª abordagem não supervisionada)
-    │   └── utils.py
+    │   ├── 01_ingestao.py                   (W1) ✅
+    │   ├── 02_correcao_tipos.py             (W1) ✅
+    │   ├── 03_limpeza.py                    (W1, adiantado de W3) ✅
+    │   ├── 04_eda.py                        (W2) ✅
+    │   ├── 05_features.py                   (W3-W4) — planejado
+    │   ├── 06_split.py                      (W4) — planejado
+    │   ├── 07_baseline.py                   (W5) — planejado
+    │   ├── 08_lightgbm.py                   (W5-W6) — planejado
+    │   ├── 09_sobrevivencia.py              (W6 — Weibull AFT / Cox) — planejado
+    │   ├── 10_evaluation.py                 (W7) — planejado
+    │   ├── 11_isolation_forest.py           (W6 — 3ª abordagem não supervisionada) — planejado
+    │   ├── exploracao_w2_obs.py             (W2, auxiliar — invest. de obs 2.1, 2.2, 2.5, 2.6, 2.7) ✅
+    │   ├── extrai_eventos_muito_alto.py     (W2, auxiliar — extrai eventos_muito_alto.csv) ✅
+    │   └── utils.py                         (planejado, se necessário)
     ├── dados/
     │   ├── intermediarios/                  (parquets pós-ingestão e limpeza — gitignored)
     │   └── features/                        (matriz pronta para modelo — gitignored)
@@ -123,6 +126,8 @@ AnaliseDadosVale/                            ← raiz do repositório Git
         ├── tabelas/                         (CSVs: estatisticas, features, controle_alteracoes)
         ├── controle_alteracoes.md           (ANTES/DEPOIS de toda decisão metodológica)
         ├── hipoteses_eda.md                 (hipóteses levantadas na EDA)
+        ├── observacoes_importantes.md      (checklist vivo de pendências e riscos)
+        ├── notas_exploracao_inicial.md     (notas iniciais 11/05 — dicionário + CMA + Is_Dont_Go; base para CM 1.1 em W8)
         ├── rascunho.md                      (escrita progressiva W2→W8)
         └── relatorio_final.docx             (W9)
 ```
@@ -462,7 +467,7 @@ Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — 
 
 **Figuras extras (agregam valor — fazer se tempo permitir, senão vão para anexo):**
 
-- ~~Extra A — Sobrevivência empírica por frota: P(novo DG > t)~~ — **MOVIDA para W6** (saída natural do `08_sobrevivencia.py` com `lifelines.KaplanMeierFitter`)
+- ~~Extra A — Sobrevivência empírica por frota: P(novo DG > t)~~ — **MOVIDA para W6** (saída natural do `09_sobrevivencia.py` com `lifelines.KaplanMeierFitter`)
 - [X] **Extra B — Pareto top-10 alarmes precursores** *(promovido a obrigatório — alimenta diretamente a análise "o que a regra não vê" do W7, parte do diagnóstico K via Isolation Forest)* — `figExB_pareto_alarmes.png` confirma visualmente 87,3% do top 5
 - ~~Extra C — Cadeia de eventos no caso CA65924 (do `desenvolver_dontgo.xlsx`)~~ — **MOVIDA para W4** (parte natural da investigação da Obs 2.3 — "padrão CA65924 é universal?")
 
@@ -832,7 +837,7 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 - [ ] **Detecção de sobreposições de ciclo** (CM 3.1): identificar registros onde ciclos do mesmo TAG se sobrepõem no tempo; reportar quantidade e decisão (manter / merge / descartar com justificativa)
 - [ ] Filtrar `Criticidade = "Informacional"` (não tem positivos, economiza ~80% do volume)
 - [ ] Tabela ANTES/DEPOIS em `Projeto/relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa
-- [ ] `Projeto/codigo/04_features.py` — features básicas:
+- [ ] `Projeto/codigo/05_features.py` — features básicas:
   - [ ] `hora_dia`, `dia_semana`, `turno`, `mes`
   - [ ] **Encoding categórico documentado para as 5 categorias** (CM 3.2) — decisão por cardinalidade:
     - `Tag` (alta cardinalidade, ~centenas de equipamentos) → **target encoding** com smoothing + KFold para evitar leakage
@@ -870,7 +875,7 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 - [ ] Construir target: `y = 1` se houver evento DG na janela de +0 a +4h do equipamento (CM 3.3)
 - [ ] **[Profundidade 1] Análise de sensibilidade da janela de predição** (~2h): gerar targets paralelos para janelas de **2h, 4h e 8h**; treinar LightGBM com parâmetros default em cada um e comparar AUC-PR/Recall no conjunto de validação. Tabela `sensibilidade_janela.csv` → justificar empiricamente a escolha de 4h em vez de só argumentar com motivos operacionais. Registrar conclusão em `controle_alteracoes.md`
 - [ ] **Fig 7** — Diagrama da janela de predição: instante de decisão → janela 4h → evento alvo (CM 3.3)
-- [ ] `Projeto/codigo/05_split.py` — split: treino jan-abr, val mai, teste jun
+- [ ] `Projeto/codigo/06_split.py` — split: treino jan-abr, val mai, teste jun
 - [ ] **Fig 8** — Diagrama da estratégia de validação temporal (CM 4.1)
 - [ ] Escrever justificativa explícita do porquê não usar k-fold aleatório (data leakage)
 - [ ] Salvar `Projeto/dados/features/v2.parquet`
@@ -888,9 +893,9 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 
 **Objetivo:** modelo principal funcionando, batendo o baseline.
 
-- [ ] `Projeto/codigo/06_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
+- [ ] `Projeto/codigo/07_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
 - [ ] Métricas baseline no teste de jun: Precision, Recall, F1, AUC-PR
-- [ ] `Projeto/codigo/07_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default
+- [ ] `Projeto/codigo/08_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default
 - [ ] **Documentar pré-processamento específico do baseline e do LightGBM** (CM 4.3): baseline usa só `Criticidade` e `TAG`; LightGBM usa matriz completa v2
 - [ ] Comparar com baseline
 - [ ] **[Novo após Obs 2.7]** Treinar **variante `Is_Dont_Go_producao`** (filtra os 2.525 DGs em Manutenção) com os mesmos hiperparâmetros e comparar AUC-PR contra o target original. Se variante "produção" for substancialmente melhor (>5pp AUC-PR), confirma que o contexto Manutenção introduz ruído treinável; registrar decisão em `controle_alteracoes.md`.
@@ -912,14 +917,14 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 
 - [ ] Optuna no LightGBM: 50 trials sobre validação (mai)
 - [ ] LightGBM v2 com melhores parâmetros, avaliar no teste
-- [ ] `Projeto/codigo/08_sobrevivencia.py` — **Modelo de Sobrevivência (Weibull AFT, fallback Cox PH)** com `lifelines`:
+- [ ] `Projeto/codigo/09_sobrevivencia.py` — **Modelo de Sobrevivência (Weibull AFT, fallback Cox PH)** com `lifelines`:
   - [ ] **Reformatar dados para análise de sobrevivência**: para cada equipamento (TAG), construir tuplas (T, E, X) onde T = tempo até o próximo DG (em horas), E = 1 se evento observado / 0 se censurado (fim da janela jan-jun sem DG), X = features no instante de referência
   - [ ] Treinar `WeibullAFTFitter` no treino (jan-abr), avaliar **C-index** em validação (mai) e teste (jun)
   - [ ] Se WeibullAFT não convergir ou C-index < 0.6 → fallback para `CoxPHFitter` (CM 4.3 nota: dois modelos bem feitos > cinco superficiais)
   - [ ] **Pré-processamento específico de sobrevivência** (CM 4.3): mesma matriz numérica v2, mas exclui features com colinearidade > 0.9 (Cox/Weibull são sensíveis); StandardScaler em features contínuas
   - [ ] Converter saída em probabilidade-em-4h: `P(T ≤ 4h | X)` → comparável com LightGBM em AUC-PR
   - [ ] **Interpretação via hazard ratios**: tabela top-10 features com HR e IC 95% — interpretação direta sem SHAP
-  - [ ] **Fig Extra A — Sobrevivência empírica por frota** *(originalmente em W2, movida)* — curva Kaplan-Meier `P(novo DG > t)` por Frota (793-D 5S, 4S, 3S, 2S, LeTourneau L 1850) usando `lifelines.KaplanMeierFitter`. Saída natural do mesmo script já planejado (`08_sobrevivencia.py`); alimenta narrativa de Q4 e da H4.1 (LeTourneau tem perfil distinto)
+  - [ ] **Fig Extra A — Sobrevivência empírica por frota** *(originalmente em W2, movida)* — curva Kaplan-Meier `P(novo DG > t)` por Frota (793-D 5S, 4S, 3S, 2S, LeTourneau L 1850) usando `lifelines.KaplanMeierFitter`. Saída natural do mesmo script já planejado (`09_sobrevivencia.py`); alimenta narrativa de Q4 e da H4.1 (LeTourneau tem perfil distinto)
 - [ ] **Fig 9** — Curvas ROC + Precision-Recall comparando baseline × LightGBM × Sobrevivência (CM 5.1)
 - [ ] **Fig 11** — SHAP summary plot do LightGBM (CM 5.3)
 - [ ] **Fig 12** — SHAP waterfall de 1 predição individual (CM 5.3)
@@ -933,7 +938,7 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
   - (G6) Categóricas codificadas (`Tag`, `Frota`, `Tipo`, `Classe`)
   - Tabela `ablation_grupos.csv` com ΔAUC-PR e ΔRecall por grupo. **Fig Extra E** — gráfico de barras. Vira insight de produto (qual sinal carrega o modelo)
 - [ ] **[Qualidade A] Calibração do modelo escolhido**: calibration plot + Brier score → Fig Extra D. Se descalibrado, aplicar Platt scaling
-- [ ] **[K — Isolation Forest, 3ª abordagem não supervisionada] (~3h)**: `Projeto/codigo/10_isolation_forest.py`
+- [ ] **[K — Isolation Forest, 3ª abordagem não supervisionada] (~3h)**: `Projeto/codigo/11_isolation_forest.py`
   - [ ] Treinar `IsolationForest(n_estimators=200, contamination=0.001)` em jan-abr **sem usar `Is_Dont_Go`** (matriz v2 — mesma feature engineering dos outros modelos)
   - [ ] Scoring em validação (mai) e teste (jun); converter anomaly score em ranking
   - [ ] AUC-PR e **Recall@K** (top 1%, 5%, 10%) usando `Is_Dont_Go` apenas como ground truth de validação (CM 4.3 — abordagem "label de anomalia")
@@ -954,7 +959,7 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 
 **Objetivo:** pipeline analítico fechado. A partir daqui só escrita.
 
-- [ ] `Projeto/codigo/09_evaluation.py`:
+- [ ] `Projeto/codigo/10_evaluation.py`:
   - [ ] **Fig 10** — Matriz de confusão do modelo escolhido com anotações de impacto operacional (CM 5.2)
   - [ ] Análise dos falsos negativos: que TAGs/frotas/operadores escapam?
   - [ ] **[Qualidade C] Análise de erro estratificada**: matriz de confusão e métricas por **frota** e por **tipo** (Caminhão vs. Escavadeira) — modelo não pode falhar mais em uma frota
@@ -1126,10 +1131,10 @@ Cortar na ordem abaixo (do menos crítico para o mais crítico):
 Toda **sexta-feira, 15 minutos**, preencher abaixo.
 
 ### Semana 1 (13-19/05)
-- Entregável feito? [ ]
-- Bloqueador:
-- Ajuste W+1:
-- Horas reais investidas:
+- Entregável feito? [X]
+- Bloqueador: primeira tentativa de uv falhou por timeout em lxml; fix com UV_HTTP_TIMEOUT=300 demorou 30min
+- Ajuste W+1: adiantar exploração de observações pendentes em W2
+- Horas reais investidas: 10
 
 ### Semana 2 (20-26/05)
 - Entregável feito? [ ]
@@ -1141,7 +1146,7 @@ Toda **sexta-feira, 15 minutos**, preencher abaixo.
 - Entregável feito? [ ]
 - Bloqueador:
 - Ajuste W+1:
-- Horas reais investidas:
+- Horas reais investidas: 
 
 ### Semana 4 (03-09/06)
 - Entregável feito? [ ]

@@ -2,7 +2,41 @@
 
 Documento de escrita progressiva que vai consolidando as seções do relatório final ao longo das semanas W2→W8. Será migrado para `Desenvolver_Template.docx` em W9.
 
-**Status atual:** seção de EDA (W2) preenchida com base nos achados consolidados em `PLANEJAMENTO.md`, `hipoteses_eda.md`, `controle_alteracoes.md` e nos artefatos gerados (figuras, tabelas).
+**Status atual:** seção de EDA (W2) preenchida com base nos achados consolidados em `PLANEJAMENTO.md`, `hipoteses_eda.md`, `controle_alteracoes.md` e nos artefatos gerados (figuras, tabelas). Adicionalmente, esqueleto preliminar das seções **Introdução** e **Entendimento do Negócio** (CM 1.1 + CM 1.2) — material a ser refinado em W8.
+
+---
+
+## Introdução
+
+Este relatório apresenta o desenvolvimento de um modelo preditivo para a antecipação de alertas Don't Go (DG) em frotas de equipamentos de mineração da Vale, na região de Itabira, no escopo do desafio de Análise Avançada de Dados do Programa Desenvolver 2026. O problema central consiste em prever, a partir do histórico recente de telemetria e do contexto operacional de cada equipamento, a probabilidade de ocorrência de um alerta DG nas próximas quatro horas — janela compatível com o tempo necessário para mobilização de peças e equipe de manutenção corretiva no ciclo operacional típico da região.
+
+O conjunto de dados disponibilizado cobre seis meses (janeiro a junho de 2025): aproximadamente **37,16 milhões de eventos de telemetria** distribuídos entre 35 equipamentos com instrumentação contínua, e cerca de **378 mil ciclos de apontamento operacional** sobre 47 equipamentos. A taxa observada de DGs no semestre é de aproximadamente **0,054%** (19.962 ocorrências em 37,16 milhões de eventos), caracterizando um problema de classificação extremamente desbalanceado. O presente trabalho segue a metodologia CRISP-DM e estrutura-se nas seções de Entendimento do Negócio, Exploração de Dados (Metodologia, Parte 1), Preparação dos Dados, Modelagem, Avaliação e Resultados, e Conclusão.
+
+---
+
+## Entendimento do Negócio
+
+### Contexto operacional e o fluxo Don't Go (CM 1.1)
+
+A Figura 1 sintetiza o fluxo operacional que gera os dados deste estudo e localiza visualmente o ponto em que o modelo preditivo proposto se encaixa, com o objetivo de converter parada não planejada em inspeção preventiva.
+
+[Figura 1 — Diagrama do fluxo operacional](figuras/fig01_fluxo_de_apontamentos.png)
+
+O ciclo operacional começa quando o operador da Vale inicia um **ciclo de apontamento** (bloco A da figura), registrando o instante inicial (`Inicio`) e identificando o estado em que o equipamento se encontra dentre quatro possibilidades — Operando, Parado, Manutenção ou Hibernando. Cada ciclo é unicamente identificado e encerrado por um instante final (`Fim`), formando a base do conjunto `desenvolver_apontamentos.parquet` (377.907 ciclos no semestre). Detalhes do dicionário de campos estão consolidados em [`notas_exploracao_inicial.md`](notas_exploracao_inicial.md).
+
+Durante o ciclo, os sensores do equipamento geram **telemetria contínua** (bloco B): aproximadamente 206.000 eventos por dia distribuídos entre as 35 TAGs com instrumentação, registrando variáveis como temperatura, pressão, vazão, nível de fluidos, peso de carga e velocidade. Cada evento é classificado em tempo real pela **Central de Monitoramento de Ativos (CMA)** da Vale (bloco C) em três níveis de criticidade — `Informacional`, `Não-Crítico` ou `Crítico` — segundo regras de negócio que combinam o tipo do alarme, o seu valor numérico e o padrão observado nos minutos anteriores. Eventos `Informacional` representam aproximadamente 98,5% do volume e não geram alertas operacionais; as cerca de 1,5% restantes são candidatos a virar Don't Go (detalhamento na Seção de Caracterização dos Dados).
+
+O **catálogo de regras "Muito Alto" da CMA** (bloco D) — consolidado em [`tabelas/eventos_muito_alto.csv`](tabelas/eventos_muito_alto.csv), com 82 regras catalogadas — define exatamente quando um alarme dispara um alerta DG. Duas modalidades coexistem: **(i) disparo imediato** — uma única ocorrência do alarme em nível mais severo é suficiente (`QTD = 1`, `TEMPO = 0`); **(ii) disparo por acumulação** — `N` ocorrências do alarme dentro de uma janela `T` em minutos (por exemplo, "cinco alarmes Nível 2 consecutivos em 360 minutos"). Aproximadamente 95% das regras catalogadas são *wrappers* sobre alarmes nativos do fabricante (`TIPO = ALARME OEM`, principalmente Caterpillar para os caminhões 793-D), 4% derivam de análises de tendência criadas pela própria Vale, e 1% são regras de sistema. Essa proporção tem implicação metodológica relevante e será retomada na seção de Limitações: o *label* `Is_Dont_Go` herda majoritariamente a calibração de fábrica dos sensores, não uma definição operacional autônoma da Vale, o que torna a discussão de viés do *label* uma preocupação concreta a ser empiricamente testada pelo *Isolation Forest* em W6.
+
+Quando alguma das 82 regras é satisfeita pela telemetria observada, o evento recebe a flag **`Is_Dont_Go = 1`** (bloco E), sinalizando que o equipamento **não deve sair da mina ou continuar operando** até que o problema seja resolvido. A **ação operacional** correspondente (bloco F) é então acionada pelo *dispatcher* responsável, que comanda a parada e dispara inspeção, intervenção ou manutenção corretiva. Tipicamente, o equipamento entra em um novo ciclo de apontamento com estado `Manutenção`, fechando o *loop* operacional. No semestre analisado, esse mecanismo gerou **19.962 ocorrências de DG**, distribuídas de forma fortemente desigual entre alarmes, frotas, estados operacionais e meses do semestre — assimetria detalhada nas seções de Caracterização e Análise temporal mais adiante.
+
+### Cenário de aplicação operacional do modelo (CM 1.2)
+
+O modelo proposto neste estudo encaixa-se **lateralmente** ao fluxo operacional descrito acima (bloco G da Figura 1) — não substitui a regra CMA, mas a **antecipa**. Ao consumir continuamente a telemetria recente (rolling windows de 1, 4 e 24 horas) junto com o estado operacional corrente, o histórico recente do operador e o histórico próprio do alarme, o modelo produz a cada instante uma estimativa de `P(DG nas próximas 4 horas)` para cada TAG instrumentada. A janela de 4 horas foi escolhida por três motivos convergentes: **(i) operacional** — compatível com o tempo médio de mobilização de peças e equipe de manutenção em Itabira; **(ii) preditivo** — curta o bastante para que o estado atual dos sensores ainda tenha valor informativo; **(iii) metodológico** — análise de sensibilidade prevista para W4 testa janelas alternativas (2h e 8h) para validar empiricamente a escolha em vez de fundamentá-la apenas em argumento operacional.
+
+O cenário de aplicação proposto opera da seguinte forma. A cada início de turno operacional (cadência típica de 6h-18h e 18h-6h, ou alternativamente em cadência horária se a infraestrutura suportar), o modelo recalcula a probabilidade de DG das próximas 4h para cada uma das 35 TAGs com telemetria contínua. As TAGs cuja probabilidade ultrapassa um limiar de operação calibrado em W7 — definido pela curva *precision-recall* e por análise de custo-benefício explícita entre falsos positivos (inspeções desnecessárias) e falsos negativos (paradas não planejadas) — aparecem no painel do *dispatcher* como **fila priorizada de inspeção preventiva**, ranqueada pelo score do modelo. O *dispatcher* aciona a manutenção, que mobiliza peça e equipe enquanto o equipamento ainda opera, evitando a parada não planejada caso o DG real efetivamente venha a ocorrer quatro horas depois — ou, no melhor cenário, evitando o DG por completo via intervenção precoce no problema subjacente.
+
+O ganho operacional esperado é a conversão de uma fração das paradas não planejadas (reativas, custo alto, equipamento desativado sem aviso) em inspeções preventivas (planejadas, custo baixo, executadas em janelas de operação ociosa ou em troca de turno). A magnitude desse ganho será quantificada em W7-W8 a partir das métricas finais do modelo escolhido — Recall sobre DG e tempo médio de antecipação — traduzidas em horas de parada evitadas e estimativa de custo evitado por equipamento e por frota.
 
 ---
 
@@ -212,20 +246,20 @@ A versão do Python (3.13) está fixada em `.python-version`. Todas as dependên
 | 4 | `Projeto/codigo/04_eda.py` | W2 | ✅ | 7 figuras em `relatorio/figuras/` (fig02-fig06 + figExB + figExG) + `relatorio/tabelas/dgs_por_frota_tipo_classe.csv` |
 | 5 | `Projeto/codigo/exploracao_w2_obs.py` | W2 | ✅ | Análises ad-hoc impressas no terminal — investigações das observações 2.1, 2.2, 2.5, 2.6 e 2.7 |
 | 6 | `Projeto/codigo/extrai_eventos_muito_alto.py` | W2 | ✅ | `relatorio/tabelas/eventos_muito_alto.csv` (82 regras CMA com nível "Muito Alto") |
-| 7 | `Projeto/codigo/04_features.py` | W3-W4 | 🔄 planejado | `dados/features/v1.parquet` + `dados/features/v2.parquet` + `relatorio/tabelas/documentacao_features.csv` |
-| 8 | `Projeto/codigo/05_split.py` | W4 | 🔄 planejado | partição temporal treino (jan-abr) / validação (mai) / teste (jun) |
-| 9 | `Projeto/codigo/06_baseline.py` | W5 | 🔄 planejado | modelo baseline heurístico + métricas |
-| 10 | `Projeto/codigo/07_lightgbm.py` | W5-W6 | 🔄 planejado | LightGBM v1 (defaults) + v2 (após Optuna, 50 trials) — `modelos/lightgbm_v2.lgb` |
-| 11 | `Projeto/codigo/08_sobrevivencia.py` | W6 | 🔄 planejado | Weibull AFT (fallback Cox PH) — `modelos/sobrevivencia.joblib` + tabela hazard ratios + Fig Extra A (curva K-M) |
-| 12 | `Projeto/codigo/10_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico (teste empírico do viés do label CMA) — `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv` |
-| 13 | `Projeto/codigo/09_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas + figuras 9, 10, 11, 12, 13 + análise de erro por mês/frota/estado |
+| 7 | `Projeto/codigo/05_features.py` | W3-W4 | 🔄 planejado | `dados/features/v1.parquet` + `dados/features/v2.parquet` + `relatorio/tabelas/documentacao_features.csv` |
+| 8 | `Projeto/codigo/06_split.py` | W4 | 🔄 planejado | partição temporal treino (jan-abr) / validação (mai) / teste (jun) |
+| 9 | `Projeto/codigo/07_baseline.py` | W5 | 🔄 planejado | modelo baseline heurístico + métricas |
+| 10 | `Projeto/codigo/08_lightgbm.py` | W5-W6 | 🔄 planejado | LightGBM v1 (defaults) + v2 (após Optuna, 50 trials) — `modelos/lightgbm_v2.lgb` |
+| 11 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Weibull AFT (fallback Cox PH) — `modelos/sobrevivencia.joblib` + tabela hazard ratios + Fig Extra A (curva K-M) |
+| 12 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico (teste empírico do viés do label CMA) — `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv` |
+| 13 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas + figuras 9, 10, 11, 12, 13 + análise de erro por mês/frota/estado |
 
 **Comando de execução padrão:**
 ```powershell
 uv run python Projeto/codigo/<nome_do_script>.py
 ```
 
-**Nota de numeração:** a numeração 04-10 dos scripts planejados pode passar por reconciliação quando forem implementados (atualmente `04_eda.py` ocupa a posição originalmente prevista para `04_features.py`). A reconciliação será registrada em `controle_alteracoes.md` quando ocorrer.
+**Nota de numeração (reconciliada em 2026-05-17):** o plano original previa `04_features.py`, mas o slot 04 acabou ocupado por `04_eda.py` (criado em W2) porque os slots 02 e 03 já estavam em uso (`02_correcao_tipos.py` e `03_limpeza.py`, ambos criados em W1). A reconciliação adotada (Opção B) mantém `04_eda.py` no slot 04 e desloca todos os scripts subsequentes do plano em +1: `05_features.py`, `06_split.py`, `07_baseline.py`, `08_lightgbm.py`, `09_sobrevivencia.py`, `10_evaluation.py`, `11_isolation_forest.py`. Decisão registrada formalmente em `controle_alteracoes.md` (2026-05-17).
 
 ### A.3. Convenções de código
 
