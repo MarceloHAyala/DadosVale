@@ -105,9 +105,9 @@ AnaliseDadosVale/                            ← raiz do repositório Git
     ├── codigo/
     │   ├── 01_ingestao.py                   (W1) ✅
     │   ├── 02_correcao_tipos.py             (W1) ✅
-    │   ├── 03_limpeza.py                    (W1, adiantado de W3) ✅
+    │   ├── 03_limpeza.py                    (W1 inspeção + W3 cleaning estendido — 12 etapas) ✅
     │   ├── 04_eda.py                        (W2) ✅
-    │   ├── 05_features.py                   (W3-W4) — planejado
+    │   ├── 05_features.py                   (W3 básicas ✅ / W4 avançadas 🔄)
     │   ├── 06_split.py                      (W4) — planejado
     │   ├── 07_baseline.py                   (W5) — planejado
     │   ├── 08_lightgbm.py                   (W5-W6) — planejado
@@ -115,6 +115,7 @@ AnaliseDadosVale/                            ← raiz do repositório Git
     │   ├── 10_evaluation.py                 (W7) — planejado
     │   ├── 11_isolation_forest.py           (W6 — 3ª abordagem não supervisionada) — planejado
     │   ├── exploracao_w2_obs.py             (W2, auxiliar — invest. de obs 2.1, 2.2, 2.5, 2.6, 2.7) ✅
+    │   ├── exploracao_w3_sobreposicoes.py   (W3, auxiliar — invest. das 340 sobreposições → CA65789 / H1.4) ✅
     │   ├── extrai_eventos_muito_alto.py     (W2, auxiliar — extrai eventos_muito_alto.csv) ✅
     │   └── utils.py                         (planejado, se necessário)
     ├── dados/
@@ -839,8 +840,8 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
 - [X] **Detecção de sobreposições de ciclo** (CM 3.1): **Achado novo (não previsto):** 340 sobreposições (0,09%) em apontamentos. Adicionada flag `is_sobreposicao`; investigação de concentração por Frota/TAG fica como follow-up.
 - [X] **Aplicar filtro `Criticidade = "Informacional"` no `03_limpeza.py`** — 36.619.169 linhas removidas; 19.962 DGs preservados (asserção). `telemetria_limpa.parquet` agora persiste filtrado (7 MB vs 435 MB antes).
 - [X] Tabela ANTES/DEPOIS em `Projeto/relatorio/tabelas/controle_alteracoes.csv` com **colunas exatas do CM 3.1**: Campo / Problema Identificado / Qtd. Registros / Tratamento Aplicado / Justificativa — 5 entradas geradas.
-- [ ] `Projeto/codigo/05_features.py` — features básicas:
-  - [ ] `hora_dia`, `dia_semana`, `turno`, `mes`
+- [X] `Projeto/codigo/05_features.py` — features básicas (concluído 2026-05-17):
+  - [X] `hora_dia`, `dia_semana`, `turno`, `mes` + `valor_disponivel` (5 features no total) — ver `documentacao_features.csv`
   - [ ] **Encoding categórico documentado para as 5 categorias** (CM 3.2) — decisão por cardinalidade:
     - `Tag` (alta cardinalidade, ~centenas de equipamentos) → **target encoding** com smoothing + KFold para evitar leakage
     - `Frota` (média cardinalidade) → **target encoding**
@@ -848,8 +849,8 @@ O Risco 3.3 é **PARCIALMENTE REFUTADO** nesta análise: os 2.525 DGs em Manuten
     - `Classe` (baixa-média cardinalidade) → **one-hot** ou **frequency encoding** conforme contagem distinta
     - `Operador` (alta cardinalidade, anonimizado) → **frequency encoding** + feature derivada `taxa_DG_operador_30d` (semântica útil sem one-hot explodindo dimensão)
   - [ ] Registrar a justificativa de cada escolha em `documentacao_features.csv` (coluna Motivação)
-- [ ] Salvar `Projeto/dados/features/v1.parquet`
-- [ ] Iniciar **`Projeto/relatorio/tabelas/documentacao_features.csv`** (CM 3.2): para cada feature criada — nome, descrição, fórmula/lógica, motivação/hipótese
+- [X] Salvar `Projeto/dados/features/v1.parquet` — 544.885 linhas × 24 colunas (19 originais + 5 features), 6,9 MB
+- [X] Iniciar **`Projeto/relatorio/tabelas/documentacao_features.csv`** (CM 3.2): 5 features documentadas com nome / tipo / descrição / fórmula / motivação / semana_criada
 - [X] Registrar em `controle_alteracoes.md` decisões de limpeza (filtros, outliers, missing values, sobreposições) — entrada `2026-05-17` consolidando as 6 etapas da extensão
 
 **Entregável:** matriz v1 + tabela ANTES/DEPOIS + documentacao_features.csv iniciado.
@@ -908,6 +909,73 @@ A etapa 10 de `03_limpeza.py` detectou 340 sobreposições temporais de ciclos e
 **Follow-up gerado:** nova obs **2.10** em `observacoes_importantes.md` — verificar se CA65789 apresenta outras anomalias além das sobreposições (taxa de DG, distribuição de alarmes, padrão operacional). Pode ser que esse equipamento tenha um perfil completo de "outlier de qualidade de dados" análogo ao perfil de outlier de DGs do CA65926 (W2).
 
 **Nova hipótese registrada em `hipoteses_eda.md`:** **H1.4** — "Qualidade de dados de apontamento em CA65789 é localmente comprometida" (Confirmada por convergência de 4 evidências: 100% sobreposições, 90% em jan/2025, 35% em estado Hibernando, ausência de problema similar em outros 46 equipamentos).
+
+---
+
+##### 2. Extensão da limpeza (03_limpeza.py etapas 6-12) — encerramento da fase de Preparação dos Dados
+
+<details>
+<summary><b>Comando executado</b></summary>
+
+```powershell
+uv run python Projeto/codigo/03_limpeza.py
+```
+
+Script reescrito como pipeline de 12 etapas: 1-5 inspeção (W1), 6-10 cleaning (W3), 11-12 persistência + audit log. Detalhe completo em `controle_alteracoes.md` (entrada 2026-05-17).
+
+</details>
+
+Achados quantitativos das 5 etapas novas:
+
+| Etapa | Achado | Decisão |
+|---|---|---|
+| 6 — Filtrar `Informacional` | 36.619.169 linhas removidas; 19.962 DGs preservados | Persistido no parquet (era no-op de runtime antes) |
+| 7 — Outliers em `Valor` | **0 outliers** no dataset filtrado — os 118 do W1 eram todos `Informacional` | Etapa mantida como validação defensiva |
+| 8 — Missing values | `Valor`: 43,58% de nulls (todos em eventos Crítico/Não-Crítico); apontamentos: 0 nulls | Manter null (LightGBM aceita); criar feature derivada `valor_disponivel` em W3 (etapa abaixo) |
+| 9 — `Inicio > Fim` apontamentos | 0 registros inválidos | Sem tratamento |
+| 10 — Sobreposições | 340 (0,09%) — todas do CA65789 (ver subseção 1) | Flag `is_sobreposicao` + investigação dedicada |
+
+**Impacto:** `telemetria_limpa.parquet` cai de 435 MB → 7 MB (98% redução). Pipeline downstream agora consome dataset já filtrado e flagado.
+
+---
+
+##### 3. Features básicas criadas (05_features.py) — 5 features em v1.parquet
+
+<details>
+<summary><b>Comando executado</b></summary>
+
+```powershell
+uv run python Projeto/codigo/05_features.py
+```
+
+Script `05_features.py` (W3): 5 etapas — carga → temporais (4) → valor_disponivel (1) → validação (7 asserções) → persistência (v1.parquet + documentacao_features.csv).
+
+</details>
+
+5 features básicas adicionadas à matriz (passou de 19 para 24 colunas em 544.885 linhas):
+
+| Feature | Tipo | Fórmula | Motivação (achado de origem) |
+|---|---|---|---|
+| `hora_dia` | Int8 (0-23) | `Data_Evento.dt.hour()` | Q5 — pico segunda 23h (Fig 6) |
+| `dia_semana` | Int8 (1-7) | `Data_Evento.dt.weekday()` | Q5 — segunda-feira é pior dia |
+| `turno` | String | "Diurno" se `Inicio_Turno.hour()==6`, senão "Noturno" | Operação 24×7 em turnos de 12h |
+| `mes` | Int8 (1-6) | `Data_Evento.dt.month()` | 3 regimes temporais (Anomalias A e B — H3.1) |
+| `valor_disponivel` | Bool | `Valor.is_not_null()` | Achado W3: 43,58% dos eventos não têm Valor numérico — sinal binário "alarme com medição" |
+
+**Achado lateral (sanity check via distribuição):** mesmo após filtrar `Informacional`, a distribuição mensal de eventos relevantes ainda reflete os 3 regimes (Anomalia A em fev-mar gera 80% mais eventos que junho — 128k vs 71k). Confirma H3.1 visualmente por uma terceira via:
+
+| Mês | Eventos | % |
+|---|---:|---:|
+| Jan | 80.955 | 14,9% |
+| **Fev** | **102.677** | 18,8% |
+| **Mar** | **128.011** | **23,5%** (pico) |
+| Abr | 83.328 | 15,3% |
+| Mai | 78.825 | 14,5% |
+| Jun | 71.089 | 13,0% |
+
+**Saídas:** `dados/features/v1.parquet` (6,9 MB) + `relatorio/tabelas/documentacao_features.csv` (CM 3.2 com 5 entradas).
+
+**Pendente para W4:** encoding categórico (5 categorias: Tag/Frota/Tipo/Classe/Operador), rolling windows 1h/4h/24h, features de recência, `taxa_DG_operador_30d`, `estado_pre_evento` (join_asof com apontamentos), família regimal (razão vs baseline próprio).
 
 ---
 
@@ -1189,17 +1257,17 @@ Toda **sexta-feira, 15 minutos**, preencher abaixo.
 - Ajuste W+1: adiantar exploração de observações pendentes em W2
 - Horas reais investidas: 10
 
-### Semana 2 (20-26/05)
-- Entregável feito? [ ]
-- Bloqueador:
-- Ajuste W+1:
-- Horas reais investidas:
+### Semana 2 (20-26/05) — antecipada (concluída em 16-17/05, antes do início oficial)
+- Entregável feito? [X] (concluída antes do cronograma)
+- Bloqueador: nenhum técnico significativo; pequenos ajustes em runtime (Polars `read_excel` exigia `fastexcel` → resolvido com `engine="openpyxl"`; encoding cp1252 do PowerShell em pipes → resolvido com `PYTHONIOENCODING=utf-8`); bug em `tabela_q4` (join cartesiano por interpretar `Classe` errado) → corrigido com `join_asof` temporal.
+- Ajuste W+1: aproveitar a folga ganha para antecipar W3 (limpeza estendida + features básicas) e investigar sobreposições de ciclo descobertas em apontamentos.
+- Horas reais investidas: 5H
 
-### Semana 3 (27/05-02/06)
-- Entregável feito? [ ]
-- Bloqueador:
-- Ajuste W+1:
-- Horas reais investidas: 
+### Semana 3 (27/05-02/06) — antecipada parcialmente (limpeza estendida + features básicas concluídas em 17/05)
+- Entregável feito? [X] limpeza estendida (`03_limpeza.py` etapas 6-12) + features básicas (`05_features.py` em `v1.parquet`) + `controle_alteracoes.csv` (CM 3.1) + `documentacao_features.csv` (CM 3.2). Features avançadas naturalmente continuam para W4.
+- Bloqueador: nenhum. Achado novo durante a execução: 340 sobreposições de ciclo (etapa 10) — investigação dedicada identificou bug pontual no CA65789 (H1.4). Decisão arquitetural Opção 1 (estender `03_limpeza.py` em vez de criar `03b_*.py`) registrada em `controle_alteracoes.md`.
+- Ajuste W+1: começar W4 com a familia regimal de features (após Obs 2.6) + `estado_pre_evento` (após Obs 2.7) — duas famílias que surgiram empiricamente em W2 e devem ter prioridade alta na matriz v2.
+- Horas reais investidas: 10H 
 
 ### Semana 4 (03-09/06)
 - Entregável feito? [ ]

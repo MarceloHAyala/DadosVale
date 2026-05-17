@@ -134,14 +134,24 @@ Tempo: ~35 segundos. Cria `Projeto/dados/intermediarios/telemetria_consolidado.p
 
 ### Passo 7 — Rodar os próximos scripts em ordem
 
+**Pipeline principal (rodar em ordem):**
 ```powershell
-uv run python Projeto/codigo/02_correcao_tipos.py    # próximo no pipeline
-uv run python Projeto/codigo/03_limpeza.py
-uv run python Projeto/codigo/04_eda.py
-# ... seguir numeração até 11_isolation_forest.py (planejados em W3-W7)
+uv run python Projeto/codigo/01_ingestao.py          # W1 - ingestão + consolida 6 parquets
+uv run python Projeto/codigo/02_correcao_tipos.py    # W1 - corrige tipos (datetime, float BR)
+uv run python Projeto/codigo/03_limpeza.py           # W1+W3 - limpeza completa (12 etapas)
+uv run python Projeto/codigo/04_eda.py               # W2 - EDA visual (7 figuras + Q4)
+uv run python Projeto/codigo/05_features.py          # W3 - features básicas → v1.parquet
+# ... 06_split (W4), 07_baseline (W5), 08_lightgbm, 09_sobrevivencia, 10_evaluation, 11_isolation_forest
 ```
 
-A ordem dos scripts segue a numeração (01_ → 11_). Detalhe completo dos scripts, semana de implementação e saídas em [`Projeto/relatorio/rascunho.md`](Projeto/relatorio/rascunho.md) (Anexo A — Reprodutibilidade).
+**Scripts auxiliares (investigações ad-hoc, rodam independentemente):**
+```powershell
+uv run python Projeto/codigo/exploracao_w2_obs.py             # W2 - investiga obs 2.1, 2.2, 2.5, 2.6, 2.7
+uv run python Projeto/codigo/exploracao_w3_sobreposicoes.py   # W3 - investiga 340 sobreposições → CA65789
+uv run python Projeto/codigo/extrai_eventos_muito_alto.py     # W2 - extrai eventos_muito_alto.csv (CM 1.1)
+```
+
+A ordem dos scripts principais segue a numeração (01_ → 11_). Detalhe completo dos scripts, semana de implementação, saídas e tempo estimado em [`Projeto/relatorio/rascunho.md`](Projeto/relatorio/rascunho.md) (Anexo A — Reprodutibilidade).
 
 ---
 

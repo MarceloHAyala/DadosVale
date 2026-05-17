@@ -242,17 +242,18 @@ A versão do Python (3.13) está fixada em `.python-version`. Todas as dependên
 |---:|---|---|---|---|
 | 1 | `Projeto/codigo/01_ingestao.py` | W1 | ✅ | `dados/intermediarios/telemetria_consolidado.parquet` (37.164.054 linhas) |
 | 2 | `Projeto/codigo/02_correcao_tipos.py` | W1 | ✅ | `dados/intermediarios/telemetria_tipada.parquet` |
-| 3 | `Projeto/codigo/03_limpeza.py` | W1 | ✅ | `dados/intermediarios/telemetria_limpa.parquet` + `relatorio/tabelas/estatisticas_descritivas.csv` + `relatorio/tabelas/inspecao_inicial.md` |
+| 3 | `Projeto/codigo/03_limpeza.py` | W1 inspeção + W3 cleaning | ✅ | **W1:** normalização Criticidade, dedup, frequência, estatísticas (CM 2.1). **W3 (extensão 17/05):** filtro Informacional, outliers Valor, missing values, Inicio>Fim, sobreposições, controle_alteracoes.csv (CM 3.1). Saídas: `dados/intermediarios/telemetria_limpa.parquet` (7 MB, 545k linhas — pós-filtro) + `dados/intermediarios/apontamentos_limpo.parquet` (6,3 MB, com flag `is_sobreposicao`) + 4 artefatos em `relatorio/tabelas/` |
 | 4 | `Projeto/codigo/04_eda.py` | W2 | ✅ | 7 figuras em `relatorio/figuras/` (fig02-fig06 + figExB + figExG) + `relatorio/tabelas/dgs_por_frota_tipo_classe.csv` |
 | 5 | `Projeto/codigo/exploracao_w2_obs.py` | W2 | ✅ | Análises ad-hoc impressas no terminal — investigações das observações 2.1, 2.2, 2.5, 2.6 e 2.7 |
 | 6 | `Projeto/codigo/extrai_eventos_muito_alto.py` | W2 | ✅ | `relatorio/tabelas/eventos_muito_alto.csv` (82 regras CMA com nível "Muito Alto") |
-| 7 | `Projeto/codigo/05_features.py` | W3-W4 | 🔄 planejado | `dados/features/v1.parquet` + `dados/features/v2.parquet` + `relatorio/tabelas/documentacao_features.csv` |
-| 8 | `Projeto/codigo/06_split.py` | W4 | 🔄 planejado | partição temporal treino (jan-abr) / validação (mai) / teste (jun) |
-| 9 | `Projeto/codigo/07_baseline.py` | W5 | 🔄 planejado | modelo baseline heurístico + métricas |
-| 10 | `Projeto/codigo/08_lightgbm.py` | W5-W6 | 🔄 planejado | LightGBM v1 (defaults) + v2 (após Optuna, 50 trials) — `modelos/lightgbm_v2.lgb` |
-| 11 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Weibull AFT (fallback Cox PH) — `modelos/sobrevivencia.joblib` + tabela hazard ratios + Fig Extra A (curva K-M) |
-| 12 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico (teste empírico do viés do label CMA) — `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv` |
-| 13 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas + figuras 9, 10, 11, 12, 13 + análise de erro por mês/frota/estado |
+| 7 | `Projeto/codigo/exploracao_w3_sobreposicoes.py` | W3 | ✅ | Investigação das 340 sobreposições de ciclo flagadas pelo `03_limpeza.py` etapa 10 — análise por Frota/TAG/Tipo/Classe/mês identifica **bug pontual no CA65789** (H1.4); resultados impressos no terminal, conclusão em PLANEJAMENTO.md → W3 Observações |
+| 8 | `Projeto/codigo/05_features.py` | W3 (básicas) / W4 (avançadas) | ✅ W3 / 🔄 W4 | **W3 ✅:** `dados/features/v1.parquet` (6,9 MB, 5 features básicas: `hora_dia`, `dia_semana`, `turno`, `mes`, `valor_disponivel`) + `relatorio/tabelas/documentacao_features.csv` (CM 3.2). **W4 🔄:** rolling windows, recência, operador, estado_pre_evento, família regimal, encoding categórico → `v2.parquet` |
+| 9 | `Projeto/codigo/06_split.py` | W4 | 🔄 planejado | partição temporal treino (jan-abr) / validação (mai) / teste (jun) |
+| 10 | `Projeto/codigo/07_baseline.py` | W5 | 🔄 planejado | modelo baseline heurístico + métricas |
+| 11 | `Projeto/codigo/08_lightgbm.py` | W5-W6 | 🔄 planejado | LightGBM v1 (defaults) + v2 (após Optuna, 50 trials) — `modelos/lightgbm_v2.lgb` |
+| 12 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Weibull AFT (fallback Cox PH) — `modelos/sobrevivencia.joblib` + tabela hazard ratios + Fig Extra A (curva K-M) |
+| 13 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico (teste empírico do viés do label CMA) — `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv` |
+| 14 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas + figuras 9, 10, 11, 12, 13 + análise de erro por mês/frota/estado |
 
 **Comando de execução padrão:**
 ```powershell
