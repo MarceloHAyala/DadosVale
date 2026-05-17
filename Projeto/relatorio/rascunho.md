@@ -148,3 +148,103 @@ As implicações para a fase de modelagem (W3-W7) são resumidas a seguir:
 ---
 
 *(Próximas seções a desenvolver em W3-W8: Preparação dos Dados, Modelagem, Avaliação e Resultados, Conclusão.)*
+
+---
+
+## Anexo A — Reprodutibilidade
+
+Todo o pipeline analítico deste estudo é reproduzível em qualquer máquina compatível (Windows / Linux / macOS) via os passos abaixo. O detalhamento das decisões metodológicas tomadas em cada etapa está em `Projeto/relatorio/controle_alteracoes.md`; o cronograma e os resultados das investigações ad-hoc estão em `PLANEJAMENTO.md`; as hipóteses analíticas levantadas e seu status atual estão em `Projeto/relatorio/hipoteses_eda.md`.
+
+### A.1. Setup inicial
+
+```powershell
+# 1. Instalar uv (gerenciador de pacotes Python)
+#    https://docs.astral.sh/uv/getting-started/installation/
+
+# 2. Clonar o repositório
+git clone <repo_url>
+cd AnaliseDadosVale
+
+# 3. Sincronizar dependências (cria .venv com as versões exatas de uv.lock)
+uv sync
+
+# 4. Validar imports
+uv run python -c "import polars, pandas, lightgbm, shap, lifelines, optuna; print('OK')"
+```
+
+A versão do Python (3.13) está fixada em `.python-version`. Todas as dependências, com versões exatas, estão em `uv.lock`. Instruções completas em `README.md`.
+
+### A.2. Pipeline analítico — scripts e ordem de execução
+
+| # | Script | Semana | Status | Saída(s) principal(is) |
+|---:|---|---|---|---|
+| 1 | `Projeto/codigo/01_ingestao.py` | W1 | ✅ | `dados/intermediarios/telemetria_consolidado.parquet` (37.164.054 linhas) |
+| 2 | `Projeto/codigo/02_correcao_tipos.py` | W1 | ✅ | `dados/intermediarios/telemetria_tipada.parquet` |
+| 3 | `Projeto/codigo/03_limpeza.py` | W1 | ✅ | `dados/intermediarios/telemetria_limpa.parquet` + `relatorio/tabelas/estatisticas_descritivas.csv` + `relatorio/tabelas/inspecao_inicial.md` |
+| 4 | `Projeto/codigo/04_eda.py` | W2 | ✅ | 7 figuras em `relatorio/figuras/` (fig02-fig06 + figExB + figExG) + `relatorio/tabelas/dgs_por_frota_tipo_classe.csv` |
+| 5 | `Projeto/codigo/exploracao_w2_obs.py` | W2 | ✅ | Análises ad-hoc impressas no terminal — investigações das observações 2.1, 2.2, 2.5, 2.6 e 2.7 |
+| 6 | `Projeto/codigo/extrai_eventos_muito_alto.py` | W2 | ✅ | `relatorio/tabelas/eventos_muito_alto.csv` (82 regras CMA com nível "Muito Alto") |
+| 7 | `Projeto/codigo/04_features.py` | W3-W4 | 🔄 planejado | `dados/features/v1.parquet` + `dados/features/v2.parquet` + `relatorio/tabelas/documentacao_features.csv` |
+| 8 | `Projeto/codigo/05_split.py` | W4 | 🔄 planejado | partição temporal treino (jan-abr) / validação (mai) / teste (jun) |
+| 9 | `Projeto/codigo/06_baseline.py` | W5 | 🔄 planejado | modelo baseline heurístico + métricas |
+| 10 | `Projeto/codigo/07_lightgbm.py` | W5-W6 | 🔄 planejado | LightGBM v1 (defaults) + v2 (após Optuna, 50 trials) — `modelos/lightgbm_v2.lgb` |
+| 11 | `Projeto/codigo/08_sobrevivencia.py` | W6 | 🔄 planejado | Weibull AFT (fallback Cox PH) — `modelos/sobrevivencia.joblib` + tabela hazard ratios + Fig Extra A (curva K-M) |
+| 12 | `Projeto/codigo/10_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico (teste empírico do viés do label CMA) — `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv` |
+| 13 | `Projeto/codigo/09_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas + figuras 9, 10, 11, 12, 13 + análise de erro por mês/frota/estado |
+
+**Comando de execução padrão:**
+```powershell
+uv run python Projeto/codigo/<nome_do_script>.py
+```
+
+**Nota de numeração:** a numeração 04-10 dos scripts planejados pode passar por reconciliação quando forem implementados (atualmente `04_eda.py` ocupa a posição originalmente prevista para `04_features.py`). A reconciliação será registrada em `controle_alteracoes.md` quando ocorrer.
+
+### A.3. Convenções de código
+
+Todos os scripts seguem as convenções abaixo, garantindo previsibilidade e debugabilidade:
+
+- **Resolução de caminhos:** `Path(__file__).resolve().parents[1]` define a raiz do projeto como `Projeto/`. Todos os caminhos são relativos a essa raiz — não há hardcoding absoluto.
+- **Asserções defensivas em pontos críticos:** contagens de linhas esperadas, tipos de colunas pós-conversão, totais de soma após filtros, integridade de joins (ex: 100% de match no `join_asof` da tabela Q4 em W2). Falhas geram exceção explícita, não bug silencioso.
+- **Logs estruturados em `[N/total]`:** cada etapa do script imprime sua progressão (ex: `[3/11] Fig 4 — Série temporal de DGs`). Facilita identificar onde ocorreu falha em scripts longos.
+- **ASCII puro em código e comentários:** evita problemas de encoding em sistemas mistos (PowerShell no Windows, bash no Linux).
+- **Docstring no topo de cada arquivo** explicando entrada, saída, comando de execução e referência aos artefatos gerados.
+
+### A.4. Fluxo de dados
+
+```
+Projeto/Alterado/Base de Dados/datasets/       (dados brutos, versionados no Git)
+            │
+            ▼
+Projeto/dados/intermediarios/*.parquet         (pós-ingestão e limpeza, gitignored)
+            │
+            ▼
+Projeto/dados/features/*.parquet               (matriz de features, gitignored)
+            │
+            ▼
+Projeto/modelos/*.{lgb,joblib,pkl}             (artifacts treinados, gitignored)
+            │
+            ▼
+Projeto/relatorio/figuras/*.png                (figuras finais, versionadas)
+Projeto/relatorio/tabelas/*.csv                (tabelas finais, versionadas)
+Projeto/relatorio/{controle_alteracoes,
+                   hipoteses_eda,
+                   rascunho}.md                (documentos analíticos, versionados)
+```
+
+Arquivos `gitignored` são reproduzíveis a partir dos brutos versionados e dos scripts — não são "fonte de verdade", e por isso não pesam o repositório. O `uv.lock` garante que qualquer máquina chegará exatamente nos mesmos artefatos finais.
+
+### A.5. Reprodução completa (do zero ao relatório final)
+
+Após o setup (A.1), executar em sequência:
+
+```powershell
+uv run python Projeto/codigo/01_ingestao.py
+uv run python Projeto/codigo/02_correcao_tipos.py
+uv run python Projeto/codigo/03_limpeza.py
+uv run python Projeto/codigo/04_eda.py
+uv run python Projeto/codigo/exploracao_w2_obs.py
+uv run python Projeto/codigo/extrai_eventos_muito_alto.py
+# (W3-W7: scripts 7-13 conforme implementados)
+```
+
+Tempo total estimado de reprodução completa em hardware comparável (Intel i5 / 16GB RAM): aproximadamente 10-15 minutos para os scripts W1-W2 já implementados. Tempos de scripts futuros serão registrados conforme execução em W3-W7.
