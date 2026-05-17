@@ -22,6 +22,12 @@ O dataset bruto apresentou três inconsistências sistemáticas de qualidade de 
 
 **Insight metodológico:** as três inconsistências têm padrão comum — múltiplas *pipelines* fonte gravando a mesma categoria com normalização diferente. Sugere problema sistêmico na ingestão de strings categóricas que merece atenção da equipe responsável pela CMA (registrado como recomendação em Trabalhos Futuros).
 
+A análise do volume temporal dos apontamentos operacionais confirma a cobertura completa e estável do dataset ao longo do semestre, condição necessária para o *join* temporal posterior entre telemetria e apontamentos.
+
+[Figura 2 — Distribuição temporal dos apontamentos (jan-jun/2025)](figuras/fig02_distribuicao_temporal_apontamentos.png)
+
+O volume diário oscila entre aproximadamente 1.800 e 2.400 ciclos por dia (média ~2.100/dia, ~88/hora), **sem tendência crescente, sem decrescente, e sem lacunas de dias inteiros sem registro** ao longo dos 180 dias observados. Essa estabilidade tem três implicações relevantes: (i) o dataset é homogêneo em volume operacional bruto, o que torna mais notável a heterogeneidade encontrada na análise mensal dos DGs (Seção 5 — os três regimes não decorrem simplesmente de "mais operação"); (ii) o *join* temporal entre cada evento de telemetria e o ciclo de apontamento ativo no momento atingiu **100% de cobertura** (relatado adiante na Seção 4.2) — a *pipeline* de apontamentos da Vale entrega instrumentação sem gaps; (iii) o volume por hora do dia apresenta variação de aproximadamente ±20% em torno da média horária (cerca de 14.000 a 17.500 apontamentos/hora), com vales discretos em 8-10h e 15h e leves picos em 4-5h e 17-18h, consistentes com as transições do ciclo operacional de 12 horas (turnos típicos 6h-18h e 18h-6h). A operação é, portanto, **contínua 24×7** — não há "horário comercial" em que concentrar atenção, e essa propriedade tem implicação direta para a modelagem: as features temporais derivadas (`hora`, `dia_semana`, `turno`) devem capturar variação intra-dia, não ausência ou presença de operação.
+
 ### 3. Decisão de filtragem: eventos `Informacional`
 
 A análise de distribuição de DGs por nível de criticidade revelou um achado determinístico crucial para a viabilidade computacional do projeto:
@@ -37,6 +43,12 @@ Os 36,6 milhões de eventos `Informacional` no semestre completo geraram **zero*
 Como nota lateral relevante para a discussão de viés do *label* (Limitações), a taxa de DG por evento `Crítico` é de **12,39%** — aproximadamente um em cada oito eventos críticos torna-se um DG. Isso quantifica a "força preditiva instantânea" da própria categoria de criticidade, independente de qualquer rolling window ou *feature engineering* mais sofisticado.
 
 ### 4. Concentração de alertas Don't Go
+
+A análise de concentração dos alertas Don't Go segue três decomposições complementares — por alarme, por equipamento e por estado operacional — e estabelece o panorama empírico que orientará a fase de modelagem. Como decomposição-base, a distribuição de eventos relevantes (após o filtro de `Informacional`) por tipo de equipamento já evidencia a assimetria fundamental do dataset.
+
+[Figura 3 — Eventos por Tipo de equipamento × Criticidade (Informacional filtrado)](figuras/fig03_tipo_x_criticidade.png)
+
+Caminhões 793-D acumulam **376.632 eventos** no semestre (aproximadamente 305 mil Não-Crítico e 71 mil Crítico — ratio 81/19), enquanto escavadeiras LeTourneau L 1850 acumulam **168.253 eventos** (aproximadamente 157 mil Não-Crítico e 11 mil Crítico — ratio 93/7). Os caminhões geram **2,2 vezes mais eventos em termos absolutos** que as escavadeiras, e dentre esses eventos a proporção classificada como Crítico é **2,7 vezes maior** (19% contra 7%). Combinando esses dois fatores com o resultado de Q4 (apenas 167 dos 19.962 DGs ocorrem em escavadeiras — 0,84%), conclui-se que a taxa de conversão de evento em DG nas escavadeiras é da ordem de **53 vezes menor** do que nos caminhões. Esse achado complementa empiricamente a hipótese H4.1 (registrada em `hipoteses_eda.md`) sobre o perfil estatístico distinto da frota LeTourneau L 1850, e justifica a obrigatoriedade da análise estratificada por tipo de equipamento na fase de avaliação (W7 — Qualidade C).
 
 #### 4.1. Concentração por alarme
 
@@ -70,6 +82,12 @@ A análise por equipamento (Pergunta 4 do escopo analítico) cruzou três dimens
 
 Duas frotas (793-D 5S e 4S) concentram **83,89%** dos DGs do semestre, em uma combinação previsível dado o volume operacional desses caminhões. O achado mais relevante, contudo, é a **assimetria entre caminhões e escavadeiras**: caminhões 793-D 5S apresentam taxa média de ~720 DGs por equipamento, enquanto as escavadeiras LeTourneau L 1850 registram apenas ~33 DGs por equipamento — uma diferença de aproximadamente 22 vezes. Essa diferença pode ter três interpretações não mutuamente exclusivas: (i) caminhões realmente sofrem mais falhas que escavadeiras por terem mais componentes em movimento contínuo; (ii) viés da regra CMA, calibrada para caminhões e mal adaptada aos sensores das escavadeiras; (iii) subreporte sistêmico — combinado com outros achados sobre essa frota (cinco escavadeiras sem telemetria contínua, 95% dos *bypasses* manuais do operador, e 88% dos erros de medição de peso vêm dessa frota), sugere problema estrutural de instrumentação. **Recomenda-se análise estratificada (Caminhão vs Escavadeira) em W7 — métricas agregadas mascarariam esse comportamento.**
 
+A decomposição por equipamento individual (TAG), em granularidade abaixo da frota, revela um padrão complementar relevante: a distribuição não é apenas concentrada em poucas frotas — é fortemente concentrada em **poucos equipamentos**, com um caso destacado como outlier.
+
+[Figura Extra G — Pareto top-15 TAGs com mais DGs](figuras/figExG_pareto_tags.png)
+
+O equipamento **CA65926 sozinho responde por aproximadamente 25% de todos os DGs do semestre** (~4.900 de 19.962 DGs), seguido por outros quatro equipamentos (CA65931, CA65930, CA65792, CA65927) na faixa de 1.300 a 1.700 DGs cada. Os cinco TAGs mais frequentes acumulam aproximadamente 60% dos DGs, e os quinze mais frequentes acumulam cerca de 85% — vinte equipamentos com telemetria contribuem com os 15% restantes. Dois padrões adicionais reforçam achados anteriores: **(i) nenhuma escavadeira (TAGs `PE*`) aparece no top 15**, confirmando empiricamente a hipótese H4.1 (LeTourneau L 1850 com perfil estatístico distinto dos caminhões); **(ii) o equipamento CA65926 é candidato a investigação operacional dedicada** pela Vale — pode tratar-se de equipamento com problema crônico (manutenção corretiva profunda, troca de subsistema, falha recorrente de sensor), ou pode coincidir com o equipamento referenciado no caso paradigma `desenvolver_dontgo.xlsx` (cuja cadeia de 147 eventos consecutivos motiva a Obs 2.3 sobre o padrão de acumulação). A análise estratificada por TAG individual em W7, complementar à estratificação por frota, é necessária para distinguir comportamento sistêmico de outlier dominante e evitar generalização indevida do modelo treinado.
+
 #### 4.3. Estado operacional no momento do DG
 
 Cruzando os DGs com o estado operacional do ciclo de apontamento ativo no momento de cada evento, obtém-se uma decomposição inicialmente surpreendente:
@@ -86,6 +104,16 @@ O resultado de que aproximadamente **um em cada oito DGs ocorre durante ciclos d
 Os 2.525 DGs em Manutenção apresentaram distribuição quase-uniforme com viés leve para o início do ciclo (bucket 0-10% com 15,3% vs 10% uniforme; mediana em 38,6%). Os top alarmes coincidem exatamente com os top 5 alarmes do semestre (Engine Coolant Level 55,8%, Aftercooler Level 13,2%, etc.), e nenhum alarme de diagnóstico ou *bypass* aparece no top 10. A conclusão é que **a hipótese H2 ("falsos positivos de bancada") está estatisticamente correta na distribuição, mas conceitualmente errada na interpretação**: esses 2.525 DGs são alertas legítimos disparados durante reativações de teste no ciclo de manutenção. Sensores de temperatura de freio e de nível de fluido de motor só disparam com o equipamento operando — não são falsos positivos artificiais. O cenário real é que ciclos longos de manutenção incluem múltiplas ativações operacionais para teste, e cada ativação é oportunidade de DG real.
 
 Essa conclusão tem três implicações: os 2.525 DGs **não devem ser filtrados em W3** (são alertas reais); no entanto, contextualmente eles representam "DG detectado em teste de manutenção" e não "falha iminente em produção", o que justifica a criação de uma variante `Is_Dont_Go_producao` em W5/W6 para comparação de desempenho; e finalmente, esse achado **refuta parcialmente a suposição inicial sobre viés do *label* CMA** — não há 2.525 falsos positivos óbvios para descontar, e a validação empírica desse viés agora depende exclusivamente do diagnóstico via *Isolation Forest* planejado para W6.
+
+#### 4.4. Estrutura de correlação linear entre features numéricas
+
+A análise da matriz de correlação de Pearson entre as variáveis numéricas disponíveis após o filtro de `Informacional` revela um padrão importante para orientar a escolha de algoritmos de modelagem.
+
+[Figura 5 — Heatmap de correlação entre features numéricas](figuras/fig05_heatmap_correlacao.png)
+
+Nenhuma das correlações entre o target `Is_Dont_Go` e as features brutas ultrapassa magnitude **0,22**: as duas mais fortes são `Is_Dont_Go × Valor` (+0,22, valores numéricos mais altos têm associação fraca com a ocorrência de DG) e `Is_Dont_Go × Id_Criticidade` (−0,20, eventos com `Id_Criticidade` menor — isto é, mais críticos — apresentam maior probabilidade de DG). As demais variáveis (`hora`, `dia_semana`, `mes`) apresentam correlação efetivamente nula com o target (módulo abaixo de 0,03). A única correlação não trivial entre variáveis explicativas é `Id_Criticidade × mes` (+0,17), reflexo plausível da inversão de severidade do alarme Engine Coolant Level entre janeiro e fevereiro discutida na Seção 5 (Anomalia A).
+
+Esse achado, embora pareça "negativo" em superfície, sustenta três decisões metodológicas centrais do projeto: **(i) a justificativa empírica para o uso de LightGBM** como modelo principal em vez de regressão logística ou outros métodos lineares — coeficientes de Pearson capturam apenas relações lineares e a ausência delas implica que o sinal preditivo reside em **interações não-lineares** e em **padrões temporais de acumulação**, exatamente o que árvores de gradient boosting combinadas com *rolling windows* são capazes de modelar; **(ii) a centralidade do feature engineering em W4** — se a matriz bruta não exibe estrutura preditiva direta, o ganho virá das features derivadas (`rolling counts` por janela, razões temporais, `estado_pre_evento`, razão vs *baseline* histórico do próprio alarme); **(iii) a confirmação de que o problema é não trivial** — não basta um limiar sobre uma única variável instantânea para antecipar DG, narrativa que será explicitada no relatório como justificativa para a complexidade metodológica adotada.
 
 ### 5. Análise temporal: três regimes distintos
 
