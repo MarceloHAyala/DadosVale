@@ -458,7 +458,7 @@ Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — 
 
 **Figuras obrigatórias do Estudo Guiado (numeração segue o guia):**
 
-- [ ] **Fig 1** — Diagrama do fluxo operacional: ciclo de apontamento → telemetria → alerta (CM 1.1)
+- [X] **Fig 1** — Diagrama do fluxo operacional: ciclo de apontamento → telemetria → alerta (CM 1.1)
 - [X] **Fig 2** — Distribuição temporal dos registros de apontamentos (volume por dia/hora) (CM 2.1) — `fig02_distribuicao_temporal_apontamentos.png`
 - [X] **Fig 3** — Distribuição de alertas por TIPO × NÍVEL de criticidade (CM 2.2) — `fig03_tipo_x_criticidade.png` (stacked bar Tipo de equipamento × Criticidade, Informacional filtrado)
 - [X] **Fig 4** — Série temporal: frequência de alertas DG ao longo do período (CM 2.2) — `fig04_serie_temporal_dgs.png` (2 subplots: total + split Crítico/Não-Crítico, MA 7d)
@@ -476,7 +476,7 @@ Isso é um **insight não óbvio de alto valor** para o relatório (CM 6.1) — 
 - [X] Análise da distribuição por **Frota / Tipo / Classe** → responde **Q4** — `dgs_por_frota_tipo_classe.csv` via **join temporal `join_asof`** (achado: 12,65% dos DGs ocorrem em estado `Manutenção`, gerou obs 2.7)
 - [X] **Distribuição de alertas por TAG de equipamento** (Pareto/bar plot) — CM 2.2 pede explicitamente — `figExG_pareto_tags.png` (top-15 de 35 TAGs com telemetria)
 - [X] **Tabela `eventos_muito_alto.csv`** listando eventos da CMA com NIVEL "Muito Alto" (CM 1.1) — colunas: TIPO / EVENTO / SITUACAO / QTD / TEMPO / NIVEL — **82 eventos** (76 'Muito Alto' + 6 'Muito alto' normalizados — ver `controle_alteracoes.md`). **Achado lateral:** 95,12% vêm de `ALARME OEM`, 3,66% de TENDÊNCIA, 1,22% de SISTEMA — reforça empiricamente o Risco 3.3 (label CMA é majoritariamente herdado dos alarmes do fabricante, não análise autônoma da Vale)
-- [ ] Escrever em `Projeto/relatorio/rascunho.md` seção EDA + achados de Q4 e Q5
+- [X] Escrever em `Projeto/relatorio/rascunho.md` seção EDA + achados de Q4 e Q5
 - [X] **`Projeto/relatorio/hipoteses_eda.md`** — registrar TODAS as hipóteses levantadas (confirmadas e não confirmadas) com 1 parágrafo cada — **13 hipóteses indexadas em 6 temas** (2 ✅ confirmadas, 4 ❌ refutadas, 2 🟡 refutadas com reinterpretação, 5 🔄 pendentes para W3-W7)
 
 **Entregável:** 6 figuras obrigatórias + extras desejáveis + hipoteses_eda.md + eventos_muito_alto.csv + rascunho EDA.
