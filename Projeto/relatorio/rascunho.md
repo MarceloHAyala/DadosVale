@@ -2,7 +2,7 @@
 
 Documento de escrita progressiva que vai consolidando as seções do relatório final ao longo das semanas W2→W8. Será migrado para `Desenvolver_Template.docx` em W9.
 
-**Status atual:** seção de EDA (W2) preenchida com base nos achados consolidados em `PLANEJAMENTO.md`, `hipoteses_eda.md`, `controle_alteracoes.md` e nos artefatos gerados (figuras, tabelas). Adicionalmente, esqueleto preliminar das seções **Introdução** e **Entendimento do Negócio** (CM 1.1 + CM 1.2) — material a ser refinado em W8.
+**Status atual:** seções preenchidas até a Preparação dos Dados — **Introdução**, **Entendimento do Negócio** (CM 1.1 + CM 1.2), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5) e **Metodologia Parte 2** (Preparação dos Dados — W3 limpeza + W3-W4 feature engineering, 19 features documentadas). Material a ser refinado em W8. Pendentes: Modelagem (W5-W6), Avaliação (W7) e Conclusão (W8).
 
 ---
 
@@ -209,7 +209,97 @@ As implicações para a fase de modelagem (W3-W7) são resumidas a seguir:
 
 ---
 
-*(Próximas seções a desenvolver em W3-W8: Preparação dos Dados, Modelagem, Avaliação e Resultados, Conclusão.)*
+---
+
+## Metodologia — Parte 2: Preparação dos Dados (W3 + W4 parcial)
+
+### Visão geral da fase
+
+A fase de Preparação dos Dados transforma os datasets brutos em uma **matriz pronta para modelagem**, com colunas que codificam explicitamente os padrões temporais e contextuais identificados na exploração (Parte 1). A motivação central é direta: o modelo preditivo (W5-W7) recebe uma tabela e decide, para cada linha, *"haverá um alerta Don't Go nas próximas 4 horas neste equipamento?"*. As 19 colunas brutas do dataset original (`Data_Evento`, `TAG`, `Alarme`, `Criticidade`, `Valor`, etc.) não respondem sozinhas a perguntas como *"este equipamento teve 50 eventos na última hora?"* ou *"este alarme está pulsando mais que o normal dele?"* — informações que estão **implícitas** nos dados e precisam ser materializadas como colunas (features) para que o modelo possa aprender padrões preditivos.
+
+A Parte 2 foi executada em duas semanas: W3 cobriu a limpeza estendida e features básicas; W4 (em andamento) acrescenta as famílias avançadas que codificam histórico temporal recente, contexto operacional e desvios de regime.
+
+### Limpeza estendida (W3 — 03_limpeza.py)
+
+O pipeline `03_limpeza.py` foi expandido em W3 com 6 novas etapas (6-12) sobre o script de inspeção inicial criado em W1, encerrando a fase de tratamento. As etapas 1-5 (inspeção: normalização de Criticidade, verificação de duplicados, frequência média, estatísticas descritivas, validação da taxa de DG) foram preservadas. As etapas 6-12 implementaram: (i) filtro de `Criticidade = Informacional` (decisão validada empiricamente — 36.619.169 eventos sem nenhum DG); (ii) validação defensiva de outliers em `Valor`; (iii) análise de missing values por coluna (CM 3.1); (iv) validação de intervalos inválidos em apontamentos (`Inicio > Fim`); (v) detecção de sobreposições temporais de ciclos; (vi) persistência dos parquets limpos; (vii) geração do `controle_alteracoes.csv` no formato CM 3.1 obrigatório.
+
+O resultado dessa fase é um par de datasets canônicos: `telemetria_limpa.parquet` (544.885 linhas × 19 colunas — redução de 98% vs antes do filtro) e `apontamentos_limpo.parquet` (377.907 linhas × 8 colunas, com flag `is_sobreposicao` para o achado das 340 sobreposições de ciclo concentradas no equipamento CA65789 — H1.4).
+
+### Feature Engineering (W3 + W4 — 05_features.py)
+
+O pipeline `05_features.py` constrói **19 features documentadas** a partir do dataset limpo, organizadas em 6 famílias semânticas (1 família básica de W3 e 4 famílias avançadas de W4 parcial; 2 famílias adicionais pendentes para próxima sessão de W4).
+
+#### Entradas e saídas
+
+**Entradas:**
+- `Projeto/dados/intermediarios/telemetria_limpa.parquet` — 544.885 eventos de telemetria (Crítico e Não-Crítico, após filtro de Informacional)
+- `Projeto/dados/intermediarios/apontamentos_limpo.parquet` — 377.907 ciclos de apontamento operacional (estados Operando / Parado / Manutenção / Hibernando)
+
+**Saídas:**
+- `Projeto/dados/features/v1.parquet` — versão com apenas as 5 features básicas (compatibilidade retroativa, 6,9 MB)
+- `Projeto/dados/features/v2_parcial.parquet` — 5 básicas + 14 avançadas = 19 features (19,6 MB)
+- `Projeto/relatorio/tabelas/documentacao_features.csv` — uma linha por feature com nome, tipo, descrição, fórmula, motivação e semana de criação (formato CM 3.2)
+
+#### Família 0 — Features básicas (W3, 5 colunas)
+
+Construídas a partir de extração temporal direta sobre `Data_Evento` (`hora_dia`, `dia_semana`, `mes`) e sobre `Inicio_Turno` (`turno` ∈ {`Diurno`, `Noturno`}, derivado da hora de início do turno operacional de 12 horas), além da feature binária `valor_disponivel` que captura se o evento possui medição numérica em `Valor` ou se é alarme do tipo `Active/Inactive` sem leitura instantânea (43,58% dos eventos relevantes não têm Valor numérico — achado central da etapa 8 da limpeza). Motivações ancoradas nos achados da EDA: padrão hora × dia da semana (Pergunta 5 / Figura 6); 3 regimes temporais distintos no semestre (Observação 2.6); 43,58% de eventos sem medição como categoria potencialmente preditiva.
+
+#### Família 1 — Rolling windows (W4, 9 colunas)
+
+A pergunta operacional que esta família responde é: *"Quantos eventos ocorreram no MESMO equipamento nas últimas N horas?"*. Para cada evento, o script olha para trás em três janelas (1 hora, 4 horas e 24 horas) e conta os eventos do mesmo equipamento, separadamente por criticidade:
+
+- `count_critico_1h`, `count_critico_4h`, `count_critico_24h`
+- `count_nao_critico_1h`, `count_nao_critico_4h`, `count_nao_critico_24h`
+- `count_total_1h`, `count_total_4h`, `count_total_24h` (= soma das duas anteriores; asserção exata `diff_max = 0`)
+
+A implementação técnica usa `polars.Expr.rolling_sum_by(by="Data_Evento", window_size, closed="left").over("TAG")`. O parâmetro `closed="left"` é crítico para prevenção de *data leakage*: a janela é definida como `[t - N horas, t)`, excluindo o próprio evento da contagem — o modelo só vê o passado, nunca o presente nem o futuro.
+
+A motivação central vem da Observação 2.5: 48% dos DGs do semestre são gerados por **acumulação** (regra CMA `QTD > 1`, isto é, múltiplos alarmes do mesmo tipo em janela temporal definida). Equipamentos que acumulam muitos eventos em pouco tempo têm probabilidade significativamente maior de gerar um DG por acumulação. A versão `count_total` valida adicionalmente a Hipótese 5.2 (padrão "calmaria → acúmulo → disparo" do caso CA65924 é universal) — disponibiliza ao modelo o total agregado para análise direta em W7.
+
+#### Família 2 — Recência (W4, 2 colunas)
+
+A pergunta operacional aqui é: *"Faz quanto tempo desde o último DG (ou último Crítico) deste equipamento?"*.
+
+- `horas_desde_ultimo_DG` — horas decorridas desde o evento mais recente com `Is_Dont_Go = 1` no mesmo TAG (NULL se não houve DG anterior naquela TAG)
+- `horas_desde_ultimo_critico` — análogo, mas para o evento mais recente com `Criticidade = Critico`
+
+A implementação usa `shift(1).forward_fill().over("TAG")` sobre uma coluna auxiliar que contém o timestamp apenas dos eventos-alvo e NULL nos demais. O `shift(1)` garante exclusão do evento corrente; o `forward_fill` propaga o timestamp do último evento-alvo para todos os eventos subsequentes daquela TAG.
+
+A motivação é o padrão clássico em manutenção preditiva — a recência da última falha é fator preditivo aceito no campo: equipamento que acabou de ter um DG (ou Crítico) tem perfil de risco diferente das próximas horas. O modelo poderá aprender, por exemplo, que `horas_desde_ultimo_DG < 2h` é fator agravante para um próximo DG iminente.
+
+Um achado lateral relevante apareceu nesta família: **5.104 eventos têm `horas_desde_ultimo_critico = 0`** (0,94% do dataset), aproximadamente 10× mais que `horas_desde_ultimo_DG = 0` (479 eventos, 0,10%). Isso sugere **cascata de alarmes simultâneos** — múltiplos sensores disparando no mesmo instante em resposta a uma única falha física (por exemplo, queda súbita de pressão hidráulica dispara simultaneamente alarmes de temperatura de transmissão, vibração e nível de fluido). Não é leakage temporal — é sinal preditivo legítimo da existência de uma cascata em curso, comportamento que o modelo poderá aprender a reconhecer.
+
+#### Família 3 — Estado pré-evento (W4, 1 coluna)
+
+A pergunta operacional é: *"O que o equipamento estava fazendo na hora anterior a este evento?"*.
+
+Para cada evento de telemetria com timestamp `t`, o script faz um *join* temporal `join_asof(strategy="backward")` com a tabela de apontamentos, procurando o ciclo de apontamento ativo no instante `t - 1h`. A coluna resultante `estado_pre_evento` assume os valores `Operando`, `Parado`, `Manutenção`, `Hibernando` ou `SEM_APONTAMENTO` (sentinela quando o evento ocorre fora de qualquer ciclo de apontamento da mesma TAG — situação rara, observada em apenas 106 eventos = 0,02% do dataset).
+
+A motivação direta é a Observação 2.7: 12,65% dos DGs ocorrem em estado `Manutenção`, são alertas legítimos disparados durante reativações operacionais de teste (não falsos positivos de bancada). A feature `estado_pre_evento` permitirá ao modelo, em W5-W7, distinguir entre "DG durante operação real" e "DG durante teste de manutenção" — categorias com semântica operacional distinta que devem ser tratadas separadamente na análise estratificada em W7. A distribuição global dos 544.885 eventos por estado pré-evento é Operando 73,7% / Parado 17,8% / Manutenção 8,3% / Hibernando 0,2% / SEM_APONTAMENTO 0,02%; o estado `Manutenção` tem proporção de DGs ~1,5× maior que sua representação no dataset (12,65% / 8,3%), confirmando empiricamente a hipótese H5.1.
+
+#### Família 4 — Regimal (W4, 2 colunas)
+
+Esta família surgiu empiricamente como resposta ao achado central da Observação 2.6 e sua extensão: o alarme `Right Front Brake Temperature - Active` registrava entre 3 e 67 ocorrências mensais de janeiro a maio, e explodiu para **4.247 ocorrências em junho** — um salto de 151,7× sobre a média histórica do próprio alarme. Sem alguma feature que capture explicitamente esse tipo de anomalia, o modelo treinado em janeiro-abril não terá como antecipar o alarme dominante do conjunto de teste de junho.
+
+- **`razao_alarme_7d_vs_30d_anterior`** — para cada evento, compara a frequência do mesmo alarme no mesmo equipamento nos últimos 7 dias contra a frequência nos últimos 30 dias, normalizada por dias. Fórmula: `(count_7d / 7) / (count_30d / 30)`. Uma razão de 5 significa "este alarme está disparando 5 vezes mais que o baseline histórico dele neste equipamento". A feature é calculada apenas para os 19 alarmes que geraram pelo menos um DG no semestre (decisão metodológica documentada — 99,6% dos alarmes do dataset são irrelevantes para o target, decisão consolidada na hipótese H2.1).
+
+- **`razao_severidade_14d_vs_60d`** — para cada evento, compara a proporção Crítico/Não-Crítico em 14 dias recentes contra a mesma proporção em 60 dias do mesmo equipamento. Detecta inversões de severidade como a observada no Engine Coolant Level entre janeiro e fevereiro (de 83% Crítico para 6% Crítico, simultaneamente com aumento de volume — Observação 2.6, candidata à Observação 2.8 sobre mudança de regra CMA em fevereiro).
+
+A interpretação dos resultados confirma o desenho: `razao_alarme_7d_vs_30d_anterior` retorna `NULL` em 74,3% do dataset (eventos cujo `Alarme` não está nos 19 priorizados) — comportamento correto por construção; os 25,7% restantes (~140.000 eventos) cobrem 100% dos DGs do semestre porque por definição todos os DGs derivam de algum dos 19 alarmes. `razao_severidade_14d_vs_60d` retorna `NULL` em apenas 0,2% dos eventos (1.234 ocorrências no início do semestre, sem 60 dias de histórico anterior disponível).
+
+### Coerência interna e validações defensivas
+
+O `05_features.py` aplica sete grupos de asserções defensivas na função `validar()`: shape esperado (544.885 linhas), preservação dos 19.962 DGs, zero `null` nas features básicas e nas 9 features de rolling, coerência aritmética `count_total = count_critico + count_nao_critico` (diff máximo zero), valores positivos ou zero nas features de recência quando não-NULL (proibindo apenas valores estritamente negativos, que seriam leakage temporal real), domínio fechado de `estado_pre_evento` ∈ {Operando, Parado, Manutenção, Hibernando, SEM_APONTAMENTO}, e razões não-negativas nas features regimais quando não-NULL.
+
+### Estado da matriz de features
+
+A matriz `v2_parcial.parquet` contém 544.885 linhas × 38 colunas (19 colunas originais do dataset limpo + 5 features básicas + 14 features avançadas), em 19,6 MB. O pipeline completo (carga, geração das 14 features avançadas e validação) executa em **aproximadamente 2 segundos** no hardware de desenvolvimento — Polars opera eficientemente nessa escala de dados.
+
+A matriz está parcialmente completa em relação ao escopo final previsto para W4: ficam pendentes para a próxima sessão três famílias adicionais — features de operador (`taxa_DG_operador_30d` para a Pergunta 3, `n_bypasses_operador_7d` derivado da Hipótese 1.2), features de regra de negócio (`qtd_alarmes_nivel_muito_alto_360min`), e encoding categórico documentado das cinco categorias estruturais (Tag, Frota, Tipo, Classe, Operador). Após essas adições, a matriz final `v2.parquet` será o input canônico para a fase de Modelagem em W5-W6.
+
+---
+
+*(Próximas seções a desenvolver em W4-W8: Definição do target e split temporal, Modelagem, Avaliação e Resultados, Conclusão.)*
 
 ---
 
