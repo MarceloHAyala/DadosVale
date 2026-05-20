@@ -983,14 +983,14 @@ Script `05_features.py` (W3): 5 etapas — carga → temporais (4) → valor_dis
 
 **Objetivo:** matriz final v2 + datas de corte definidas + target documentado.
 
-- [ ] Rolling windows por TAG: contagem de eventos por criticidade nas últimas 1h, 4h, 24h
-- [ ] Features de recência: `horas_desde_ultimo_DG`, `horas_desde_ultimo_critico`
+- [X] Rolling windows por TAG: contagem de eventos por criticidade nas últimas 1h, 4h, 24h — **9 features** (`count_critico/nao_critico/total × 1h/4h/24h`), implementado em `05_features.py` via `rolling_sum_by(closed="left").over("TAG")`. Asserção: `count_total = count_critico + count_nao_critico` exata.
+- [X] Features de recência: `horas_desde_ultimo_DG`, `horas_desde_ultimo_critico` — implementado via `shift(1).forward_fill().over("TAG")`. Achado: 5.104 eventos com `horas_desde_ultimo_critico = 0` (0,94%) indicam cascata de alarmes simultâneos.
 - [ ] Features de operador: `taxa_DG_operador_30d` → base para **Q3**
 - [ ] Features de regra de negócio: `qtd_alarmes_nivel_muito_alto_360min`
-- [ ] **[Novo após Obs 2.7]** Feature `estado_pre_evento`: estado operacional do equipamento ~1h antes de cada evento (via `join_asof` com apontamentos). Captura se evento ocorreu durante Operando vs Manutenção, base para análise estratificada em W7.
-- [ ] **[Novo após Obs 2.6]** Família de features regimais (resposta empírica à anomalia Right Front Brake em junho):
-  - `count_{alarme}_ultimos_7d / baseline_{alarme}_30d_anterior` — razão vs baseline histórico do próprio alarme; sinal forte para alarmes que explodem do nada (RFB jun)
-  - `razao_Critico_NaoCritico_ultimos_14d / baseline_60d` — captura inversões de severidade (Engine Coolant fev-mar)
+- [X] **[Novo após Obs 2.7]** Feature `estado_pre_evento` — implementada via `join_asof(strategy="backward", t-1h)` com filtro `Data_Evento - 1h <= Fim`. **Achado:** apenas 106 eventos sem apontamento (0,02%) — cobertura quase perfeita. Distribuição: Operando 73,7% / Parado 17,8% / Manutenção 8,3% / Hibernando 0,2% / SEM_APONTAMENTO 0,02%. Reforça H5.1 (Manutenção tem ~1,5× mais DGs que sua representação no dataset).
+- [X] **[Novo após Obs 2.6]** Família de features regimais — restrita aos 19 alarmes que geraram >=1 DG (alinhada com hipoteses_eda.md H2.1):
+  - `razao_alarme_7d_vs_30d_anterior` — razão normalizada por dias entre frequência do alarme em 7d vs baseline 30d. NULL para alarmes fora dos top 19 (74,3% do dataset). 25,7% restante = ~140k eventos com 100% dos DGs cobertos.
+  - `razao_severidade_14d_vs_60d` — razão (Crítico/NãoCrítico) em 14d vs 60d por TAG. NULL em 0,2% dos eventos (início do semestre sem 60d de histórico).
 - [ ] **Fig Extra C — Cadeia de eventos no caso CA65924** *(originalmente em W2, movida)* — visualização dos 147 eventos consecutivos do caminhão CA65924 culminando em DG (do `desenvolver_dontgo.xlsx`). Faz parte da investigação da Obs 2.3 ("padrão calmaria→acúmulo→disparo é universal?"): plotar a linha do tempo dos eventos com o DG marcado + replicar a mesma análise para amostra aleatória de outros DGs para confronto visual
 - [ ] **Finalizar `documentacao_features.csv`** com fórmula+motivação de TODAS as features (CM 3.2 nota)
 - [ ] Construir target: `y = 1` se houver evento DG na janela de +0 a +4h do equipamento (CM 3.3)
@@ -1006,7 +1006,69 @@ Script `05_features.py` (W3): 5 etapas — carga → temporais (4) → valor_dis
 
 #### Observações e Conclusões (W4)
 
-*(A preencher quando observações de W4 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+##### 1. Cascata de alarmes — 5.104 eventos Críticos simultâneos
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+Feature `horas_desde_ultimo_critico` em [`Projeto/codigo/05_features.py`](Projeto/codigo/05_features.py). Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/05_features.py
+```
+
+</details>
+
+A feature `horas_desde_ultimo_critico` retornou **5.104 eventos com valor = 0** (0,94% do dataset) — eventos não-Critico que ocorrem **no exato mesmo `Data_Evento`** que um evento Critico do mesmo equipamento. Comparativamente, `horas_desde_ultimo_DG` teve apenas 479 valores = 0 (0,10%), ~10× menos.
+
+A diferença não é uniforme — eventos Críticos simultâneos são **substantivamente mais frequentes que DGs simultâneos**. Hipótese mais provável: **alarmes em cascata** (múltiplos sensores disparando no mesmo instante em resposta a uma única falha física). Exemplo conceitual: queda súbita de pressão hidráulica pode disparar simultaneamente alarmes de temperatura de transmissão, vibração e nível de fluido.
+
+**Implicação para modelagem:** `horas_desde_ultimo_critico = 0` é **sinal informativo legítimo** (não leakage temporal). O modelo aprenderá que "cascata em curso" é fator de risco. Asserção `>= 0` no script garante que não há valores negativos (que indicariam leakage real).
+
+---
+
+##### 2. Cobertura quase perfeita do `estado_pre_evento` — apenas 106 SEM_APONTAMENTO
+
+Dos 544.885 eventos no dataset filtrado, apenas **106 (0,02%)** não tiveram um apontamento ativo 1h antes do evento (recebendo o sentinela `"SEM_APONTAMENTO"`). Confirma a **excelência da pipeline temporal de apontamentos da Vale** — ciclos operacionais estão registrados de forma quase contínua nos 6 meses observados.
+
+Distribuição completa de `estado_pre_evento`:
+
+| Estado pré-evento (1h antes) | Eventos | % | Comparativo W2 (DGs em Q4) |
+|---|---:|---:|---|
+| Operando | 401.494 | **73,7%** | 80,76% — DGs concentram em Operando |
+| Parado | 96.945 | **17,8%** | 5,93% — DGs **sub-representados** em Parado |
+| **Manutenção** | **45.267** | **8,3%** | **12,65%** — DGs **sobrepresentados ~1,5×** |
+| Hibernando | 1.073 | 0,2% | 0,66% |
+| SEM_APONTAMENTO | 106 | 0,02% | — |
+
+**Achado:** o estado `Manutenção` tem **proporção de DGs ~1,5× maior do que sua representação no dataset** (12,65% / 8,3% = 1,52). Reforça empiricamente a H5.1 (DGs em Manutenção são legítimos de reativações operacionais de teste). Já o estado `Parado` tem o padrão inverso (5,93% / 17,8% = 0,33×) — equipamentos parados geram eventos mas raramente DGs, coerente com a operação normal.
+
+---
+
+##### 3. Família regimal — 74,3% NULL é o esperado e correto
+
+A feature `razao_alarme_7d_vs_30d_anterior` retornou **NULL em 404.902 eventos (74,3%)** — exatamente o comportamento esperado pela restrição metodológica aos 19 alarmes top (decisão registrada em rascunho.md e hipoteses_eda.md H2.1).
+
+Os **25,7% restantes (~140k eventos)** correspondem a eventos cujo `Alarme` está nos 19 que geraram pelo menos 1 DG no semestre. **100% dos DGs estão nessa fatia** (por definição) — portanto a feature **cobre integralmente o universo do target**, ainda que silente nos demais 4.383 alarmes do dataset.
+
+Para a feature `razao_severidade_14d_vs_60d`, NULL em apenas 0,2% (1.234 eventos) — todos no **início do semestre** (sem 60 dias de histórico anterior). Comportamento esperado por construção do *rolling window*.
+
+---
+
+##### 4. Validação de coerência interna entre features
+
+Asserção exata no script: `count_total_Xh == count_critico_Xh + count_nao_critico_Xh` para janelas de 1h, 4h e 24h. **Diff máximo = 0** em todos os 544.885 eventos. Confirma que as 9 features de rolling estão internamente coerentes e podem ser usadas de forma redundante (modelo pode aprender que `count_total` agrega ambos, ou usar separadamente).
+
+---
+
+##### Resumo de execução
+
+Pipeline `05_features.py` (W3 + W4 parcial) executa em **~2 segundos** sobre 544.885 linhas + 377.907 apontamentos, gerando:
+- `v1.parquet` (5 features básicas, 6,9 MB — compatibilidade retroativa)
+- `v2_parcial.parquet` (19 features = 5 básicas + 14 avançadas, 19,6 MB)
+- `documentacao_features.csv` (19 entradas no formato CM 3.2)
+
+**Pendente para próxima sessão de W4:** features de operador (`taxa_DG_operador_30d`, `n_bypasses_operador_7d`), regra de negócio (`qtd_alarmes_nivel_muito_alto_360min`), encoding categórico (5 categorias), Fig Extra C (CA65924), target 4h + análise de sensibilidade, `06_split.py` + Fig 8.
 
 ---
 

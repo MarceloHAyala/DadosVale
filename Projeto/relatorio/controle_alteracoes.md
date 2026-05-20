@@ -207,4 +207,25 @@ Aplicada por `Projeto/codigo/03_limpeza.py` (etapas 6-12), encerrando a fase de 
 
 ---
 
+### 2026-05-17 — Extensão do `05_features.py` com 4 famílias avançadas (W4 parcial)
+
+Aplicada por `Projeto/codigo/05_features.py` (etapas 4-7), implementando 4 das 7 famílias de features avançadas previstas no PLANEJAMENTO.md → W4. Arquitetura consistente com a Opção 1 já adotada em W3 (estender o script existente em vez de criar um novo).
+
+- **ANTES:** O `05_features.py` (W3) tinha 5 features básicas (`hora_dia`, `dia_semana`, `turno`, `mes`, `valor_disponivel`) salvas em `dados/features/v1.parquet` (6,9 MB, 24 colunas). As famílias de features avançadas previstas para W4 ainda não estavam implementadas.
+- **DEPOIS:** Script estendido com 4 novas etapas (etapas 4-7) que adicionam 14 features:
+  - **Etapa 4 — Rolling windows** (9 features): `count_{critico/nao_critico/total} × {1h/4h/24h}` via `rolling_sum_by(closed="left").over("TAG")`. Asserção exata: `count_total = count_critico + count_nao_critico` (diff_max = 0 em todos os 544.885 eventos).
+  - **Etapa 5 — Recência** (2 features): `horas_desde_ultimo_DG` e `horas_desde_ultimo_critico` via `shift(1).forward_fill().over("TAG")`. **Achado:** 5.104 eventos (0,94%) com `horas_desde_ultimo_critico = 0` (cascata de alarmes simultâneos); 479 (0,10%) com `horas_desde_ultimo_DG = 0`. NÃO é leakage — são eventos simultâneos legítimos.
+  - **Etapa 6 — Estado pré-evento** (1 feature): `estado_pre_evento` via `join_asof(strategy="backward", t-1h)` com filtro `Data_Evento - 1h <= Fim`. **Achado:** apenas 106 eventos (0,02%) sem apontamento ativo (`SEM_APONTAMENTO`). Estado `Manutenção` representado em 8,3% dos eventos vs 12,65% dos DGs — confirma H5.1 (DGs em manutenção são legítimos).
+  - **Etapa 7 — Família regimal** (2 features): `razao_alarme_7d_vs_30d_anterior` (restrita aos 19 alarmes que geraram >=1 DG; 74,3% NULL — esperado e correto) e `razao_severidade_14d_vs_60d` (por TAG; 0,2% NULL — eventos do início do semestre).
+- **Justificativa metodológica:** Cada uma das 4 famílias está ancorada em achado empírico anterior (Obs 2.5 → rolling; padrão clássico → recência; Obs 2.7 → estado pré-evento; Obs 2.6 + Obs 2.6 extensão → regimal). A restrição da família regimal aos 19 alarmes está alinhada com decisões documentadas em `rascunho.md` (Seção 4.1) e `hipoteses_eda.md` (H2.1). Asserção `closed="left"` em todas as 13 rolling features previne leakage temporal.
+- **Impacto:**
+  - **Matriz `v2_parcial.parquet`** gerada: 544.885 linhas × 38 colunas (19 originais + 5 básicas + 14 avançadas), **19,6 MB**.
+  - **`v1.parquet` mantida** para compatibilidade retroativa (apenas 5 features básicas).
+  - **`documentacao_features.csv` atualizada** para 19 entradas (CM 3.2 — nome, tipo, descrição, fórmula, motivação, semana criada).
+  - **Tempo de execução do pipeline completo:** ~2 segundos (Polars rolling é eficiente nessa escala).
+- **Decisão metodológica adicional (eventos simultâneos):** As 5.104 ocorrências de `horas_desde_ultimo_critico = 0` foram interpretadas como **sinal preditivo legítimo** (cascata de alarmes simultâneos em resposta a uma única falha física), não como leakage. Asserção foi relaxada para `>= 0` (e não `> 0`) com diagnóstico explícito dos zeros. Justifica-se porque o evento ATUAL não precede no tempo o evento Crítico simultâneo — apenas coincide.
+- **Pendente para próxima sessão de W4:** 3 famílias restantes (operador, regra de negócio, encoding categórico) + target 4h + análise de sensibilidade janela 2h/4h/8h + `06_split.py` + Figs 7 e 8 + Fig Extra C (CA65924).
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->
