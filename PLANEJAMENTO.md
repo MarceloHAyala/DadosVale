@@ -991,16 +991,16 @@ Script `05_features.py` (W3): 5 etapas — carga → temporais (4) → valor_dis
 - [X] **[Novo após Obs 2.6]** Família de features regimais — restrita aos 19 alarmes que geraram >=1 DG (alinhada com hipoteses_eda.md H2.1):
   - `razao_alarme_7d_vs_30d_anterior` — razão normalizada por dias entre frequência do alarme em 7d vs baseline 30d. NULL para alarmes fora dos top 19 (74,3% do dataset). 25,7% restante = ~140k eventos com 100% dos DGs cobertos.
   - `razao_severidade_14d_vs_60d` — razão (Crítico/NãoCrítico) em 14d vs 60d por TAG. NULL em 0,2% dos eventos (início do semestre sem 60d de histórico).
-- [ ] **Fig Extra C — Cadeia de eventos no caso CA65924** *(originalmente em W2, movida)* — visualização dos 147 eventos consecutivos do caminhão CA65924 culminando em DG (do `desenvolver_dontgo.xlsx`). Faz parte da investigação da Obs 2.3 ("padrão calmaria→acúmulo→disparo é universal?"): plotar a linha do tempo dos eventos com o DG marcado + replicar a mesma análise para amostra aleatória de outros DGs para confronto visual
-- [ ] **Finalizar `documentacao_features.csv`** com fórmula+motivação de TODAS as features (CM 3.2 nota)
-- [ ] Construir target: `y = 1` se houver evento DG na janela de +0 a +4h do equipamento (CM 3.3)
-- [ ] **[Profundidade 1] Análise de sensibilidade da janela de predição** (~2h): gerar targets paralelos para janelas de **2h, 4h e 8h**; treinar LightGBM com parâmetros default em cada um e comparar AUC-PR/Recall no conjunto de validação. Tabela `sensibilidade_janela.csv` → justificar empiricamente a escolha de 4h em vez de só argumentar com motivos operacionais. Registrar conclusão em `controle_alteracoes.md`
-- [ ] **Fig 7** — Diagrama da janela de predição: instante de decisão → janela 4h → evento alvo (CM 3.3)
-- [ ] `Projeto/codigo/06_split.py` — split: treino jan-abr, val mai, teste jun
-- [ ] **Fig 8** — Diagrama da estratégia de validação temporal (CM 4.1)
-- [ ] Escrever justificativa explícita do porquê não usar k-fold aleatório (data leakage)
-- [ ] Salvar `Projeto/dados/features/v2.parquet`
-- [ ] Registrar decisões em `controle_alteracoes.md` (janela 4h, definição target, datas de corte)
+- [X] **Fig Extra C — Cadeia de eventos no caso CA65924** *(originalmente em W2, movida)* — implementada em [`exploracao_w4_ca65924.py`](Projeto/codigo/exploracao_w4_ca65924.py), saída [`figExC_ca65924_cadeia.png`](Projeto/relatorio/figuras/figExC_ca65924_cadeia.png). **Resultado: H5.2 refutada** — apenas 1 de 4 painéis confirma o padrão de volume; CA65924 tem fluxo uniforme (~1,25 eventos/min). Sub-hipótese de "acúmulo de criticidade" gerada (Obs 2.11). Detalhes em "Observações e Conclusões (W4)" subseção 5.
+- [X] **Finalizar `documentacao_features.csv`** com fórmula+motivação de TODAS as features (CM 3.2 nota) — **29 entradas** consolidadas (5 básicas + 9 rolling + 2 recência + 1 estado + 2 regimal + 2 operador + 1 regra + 7 encoding), uma linha por feature com nome/tipo/descrição/fórmula/motivação/semana_criada.
+- [X] Construir target: `y = 1` se houver evento DG na janela de +0 a +4h do equipamento (CM 3.3) — **3 colunas geradas** (`target_2h`, `target_4h`, `target_8h`) via padrão `reverse().shift(1).forward_fill().reverse().over("TAG")` para localizar o próximo DG futuro por equipamento. **Achado surpreendente:** taxa de positivos em `target_4h` = **29,3%** (vs expectativa inicial de ~0,054% da taxa global de DGs). Explicação: cada DG "reivindica" ~4h de eventos precedentes do mesmo equipamento como positivos — o problema permanece desbalanceado, mas em ordem de magnitude muito mais branda do que a inicialmente declarada na Introdução. Monotonicidade confirmada: 25,5% (2h) < 29,3% (4h) < 34,2% (8h). 18,83% dos eventos censurados (sem DG futuro observado no horizonte do dataset) tratados como `y = 0` — registrado como limitação a ser quantificada em W7.
+- [X] **[Profundidade 1] Análise de sensibilidade da janela de predição — parte descritiva** (~2h): gerar targets paralelos para janelas de **2h, 4h e 8h** — feito em `05_features.py` etapa 11; tabela `sensibilidade_janela.csv` consolida taxas de positivos e distribuição por mês. **Pendente para W5:** treinar LightGBM com parâmetros default em cada janela e comparar AUC-PR/Recall no conjunto de validação para justificar empiricamente a escolha de 4h. Conclusão final será registrada em `controle_alteracoes.md` após a comparação preditiva.
+- [X] **Fig 7** — Diagrama da janela de predição: instante de decisão → janela 4h → evento alvo (CM 3.3) — gerada em `06_split.py` (matplotlib, reproduzível). Saída: [`fig07_janela_predicao.png`](Projeto/relatorio/figuras/fig07_janela_predicao.png). Timeline -2h a +6h com instante de decisão `t`, janela `(0, 4h]` destacada em azul, DG hipotético dentro (target=1, X vermelho) e fora (descartado, X cinza), e legenda da semântica "janela aberta no início".
+- [X] `Projeto/codigo/06_split.py` — split: treino jan-abr, val mai, teste jun — implementado em 5 etapas (carga → split → sumário → Fig 7 → Fig 8 → persistência). Saída: `dados/features/v2_split.parquet` (544.885 × 52 colunas, 14,9 MB; adiciona col `split ∈ {train, val, test}` ao v2.parquet). **Tempo: 2,6s.** Cortes nos limites de mês (`< 2025-05-01` / `< 2025-06-01`) — coerência direta com Fig 2 mensal.
+- [X] **Fig 8** — Diagrama da estratégia de validação temporal (CM 4.1) — gerada em `06_split.py`. Saída: [`fig08_split_temporal.png`](Projeto/relatorio/figuras/fig08_split_temporal.png). 2 painéis verticais: barras mensais coloridas por split + linha de taxa de DG mês-a-mês (drift quantificado). **Drift confirmado:** taxa_dg 3.19% / 4.38% / 3.30% / 2.59% / **1.62%** (val) / **7.35%** (teste) — teste tem **4.5× a taxa de val** e **2.2× a média do treino**.
+- [X] Escrever justificativa explícita do porquê não usar k-fold aleatório (data leakage) — registrada no docstring de `06_split.py` e em `controle_alteracoes.md` (2026-05-17 — Split temporal). Síntese: k-fold embaralha eventos no tempo → rolling features capturam autocorrelação → leakage massivo. Walk-forward respeita semântica temporal real (treina no passado, prediz futuro).
+- [X] Salvar `Projeto/dados/features/v2.parquet` — feito na sessão anterior (29 features + 3 targets). `v2_split.parquet` é o sucessor canônico (mesmas linhas + col `split`); v2.parquet preservado como matriz "pré-split" para compatibilidade.
+- [X] Registrar decisões em `controle_alteracoes.md` (janela 4h, definição target, datas de corte) — 3 entradas: 2026-05-17 sobre target multi-janela (sessão anterior); 2026-05-17 sobre split temporal walk-forward (esta sessão); a comparação preditiva entre janelas (2h/4h/8h) fica para W5 com baseline LightGBM.
 
 **Entregável:** matriz v2 + documentacao_features.csv completa + Fig 7 + Fig 8.
 
@@ -1072,10 +1072,66 @@ Pipeline `05_features.py` (W3 + W4 parcial) executa em **~2 segundos** sobre 544
 
 ---
 
+##### 5. Refutação da H5.2 via Fig Extra C — padrão "calmaria → acúmulo → disparo" não é universal
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/exploracao_w4_ca65924.py`](Projeto/codigo/exploracao_w4_ca65924.py) — carrega o `desenvolver_dontgo.xlsx` (caso paradigma CA65924) e compara com 3 DGs aleatórios de outros TAGs (`telemetria_tipada.parquet`, `random.seed=42`). Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w4_ca65924.py
+```
+
+Saída: [`Projeto/relatorio/figuras/figExC_ca65924_cadeia.png`](Projeto/relatorio/figuras/figExC_ca65924_cadeia.png).
+
+</details>
+
+A Hipótese H5.2 ("o padrão calmaria → acúmulo → disparo do caso CA65924 é universal nos DGs") foi originalmente formulada a partir de observação qualitativa do caso paradigma (147 eventos consecutivos no caminhão CA65924 culminando em 1 DG). Testada empiricamente em W4 com a Fig Extra C, comparando o paradigma com 3 amostras aleatórias e métrica quantitativa de acúmulo (razão eventos_últimos_30min / eventos_primeiros_90min ≥ 2).
+
+**Resultado quantitativo:**
+
+| Painel | n eventos | Razão 30min/90min | Veredito |
+|---|---:|---:|---|
+| **CA65924** (paradigma) | 147 | **0,39** | ❌ Não confirma |
+| CA5927 | 28 | 0,47 | ❌ Não confirma |
+| **CA65908** | 19 | **3,75** | ✅ Confirma |
+| CA65927 | 38 | 0,52 | ❌ Não confirma |
+
+**Apenas 1 dos 4 painéis confirma o padrão de volume.** O próprio CA65924 — que deu nome à hipótese — não exibe o padrão pela métrica quantitativa: tem fluxo aproximadamente uniforme de ~1,25 eventos/min ao longo dos 2h pré-DG. A hipótese original parece ter sido extraída de observação qualitativa de "147 eventos seguidos antes de um DG", sem quantificação rigorosa da distribuição temporal.
+
+**Reinterpretação visual emergente — acúmulo de criticidade**
+
+A inspeção da figura revela um sub-padrão que a métrica de volume não captura: em **3 dos 4 painéis** (CA65924, CA5927, CA65908), eventos `Critico` (representados em vermelho na figura) concentram-se nos últimos minutos pré-DG, mesmo quando o volume total é distribuído uniformemente. O CA65924, por exemplo, tem 138 eventos Informacional + 7 Não-Crítico + apenas **1 evento Crítico — e esse único Crítico ocorre próximo ao DG**.
+
+Sub-hipótese gerada: o padrão real é **"acúmulo de criticidade, não de volume"**. Concretamente, espera-se que a feature `count_critico_*h` (Família 1 do `05_features.py`) tenha importância maior que `count_total_*h` na análise SHAP do modelo principal em W6. Registrado em `observacoes_importantes.md` como **Obs 2.11** para validação empírica.
+
+**Implicação para modelagem (W5-W7)**
+
+- **Família de rolling counts** (volume-based) continua útil — capturou o caso CA65908 — mas **perde força como família dominante** das features. A expectativa anterior de que rolling seria o "core" preditivo deve ser revista.
+- **Famílias com maior peso preditivo esperado:** regimal (razão vs baseline próprio, Família 4) e estado pré-evento (Família 3), que capturam **mudanças de comportamento e contexto operacional**, não apenas volume.
+- **Validação obrigatória em W6:** SHAP global comparando `count_critico_*h` vs `count_total_*h` resolve formalmente a Obs 2.11.
+
+**Implicação para o relatório (CM 6.1 — Insights Não Óbvios)**
+
+Esta refutação é candidata forte para a seção de Insights Não Óbvios do relatório final. A narrativa: "uma hipótese formulada qualitativamente a partir de um caso emblemático foi refutada pela análise quantitativa, mas a investigação gerou uma sub-hipótese mais refinada que orienta a interpretação do modelo". Demonstra rigor metodológico e atenção a vieses de seleção (o caso paradigma não é necessariamente representativo).
+
+---
+
 ### W5 (10-16/06) — Baseline + LightGBM v1 → MARCO 1
 
 **Objetivo:** modelo principal funcionando, batendo o baseline.
 
+- [ ] **[Refinamento de W4 — adiado para W5 por dependência do target real]** Substituir `tag_freq` e `operador_freq` (frequency encoding implementado em `05_features.py`, Família 7) por **target encoding com KFold temporal**. **Motivação dupla:** (a) target encoding capta correlação com o target — mais informativo que frequency puro; (b) **fix de leakage subtil descoberto após o split:** o frequency encoding atual foi computado sobre o dataset GLOBAL (treino + val + teste) — ou seja, `tag_freq` para um evento de jan-abr embute conhecimento dos volumes de mai-jun, idem `operador_freq`. Magnitude pequena (volume por TAG é estável mês-a-mês) mas tecnicamente é leakage. O fix correto é recomputar frequências sobre TREINO apenas e aplicar a val/teste — incluído na rotina de target encoding abaixo. Casos específicos identificados pós-split: 2 TAGs (`CA65791`, `CA65916`) aparecem só em val/teste e não em treino → `tag_freq` foi calculado com eventos que o modelo "não deveria conhecer"; 13 operadores em val/teste ausentes do treino (mesmo problema). Implementação detalhada:
+  - **Pré-requisito:** target real `y = 1 se DG em [+0, +4h]` (CM 3.3) construído em W4, e split temporal `06_split.py` definido (treino jan-abr / val mai / teste jun).
+  - **Para cada categoria de alta cardinalidade** (`Tag` com 35 valores, `Nome_Operador_Anon` com 394 valores):
+    1. Sobre o conjunto de **TREINO apenas** (jan-abr), particionar em K folds temporais (sugerido K=4: jan / fev / mar / abr).
+    2. Para cada fold `i`: calcular `target_rate_categoria_x_out_of_fold_i = sum(y) / count(eventos)` usando **todos os outros K-1 folds** (não o fold `i`). Aplicar esse encoding aos eventos do fold `i`.
+    3. Adicionar **smoothing** para reduzir overfitting em categorias raras: `target_smooth = (count_pos_categoria + α * media_global) / (count_categoria + α)` com α típico = 10. Categorias com poucos eventos no treino ficam puxadas para a média global, evitando ruído.
+    4. Para val/test: aplicar encoding fitted sobre o treino **completo** (jan-abr inteiro, sem KFold).
+  - **Validação empírica obrigatória:** comparar AUC-PR do LightGBM v1 (frequency encoding atual) vs LightGBM com target encoding nessas duas features. Critério: se ganho de AUC-PR em validação for > 1pp, substituir; se < 1pp, manter frequency (parsimônia + menos código).
+  - **Saída esperada:** novas features `tag_target_enc` e `operador_target_enc` em `v2_5.parquet` ou substituição direta em `v2.parquet`. Registrar decisão final em `controle_alteracoes.md`.
+  - **Onde resolver:** W5 (junto com o `07_baseline.py` e `08_lightgbm.py` — momento natural para a comparação empírica).
 - [ ] `Projeto/codigo/07_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
 - [ ] Métricas baseline no teste de jun: Precision, Recall, F1, AUC-PR
 - [ ] `Projeto/codigo/08_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default

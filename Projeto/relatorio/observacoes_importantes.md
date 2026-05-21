@@ -18,18 +18,6 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ## 2. Observações sobre o domínio (negócio)
 
-### - [ ] 2.3 Padrão "calmaria → acúmulo → disparo" do caso CA65924 aparece em outros equipamentos?
-
-**Contexto:** O arquivo `desenvolver_dontgo.xlsx` traz 147 eventos consecutivos do caminhão CA65924 culminando em um DG, com narrativa clara de acúmulo gradual.
-
-**Por que importa:** Se o padrão é universal, valida o uso de **rolling windows** como feature dominante (W4). Se é caso isolado, precisa estratégia alternativa.
-
-**Investigar:** Para cada DG no semestre, contar eventos do mesmo TAG nos 60min anteriores. Distribuição esperada: se padrão CA65924 é universal, a maioria dos DGs deve ter pico de eventos pré-disparo.
-
-**Onde resolver:** W2 (EDA) ou W4 (validação de features).
-
----
-
 ### - [ ] 2.4 Operador OP_067 (do caso CA65924) tem taxa de DG anormal?
 
 **Contexto:** O caso paradigma envolve um operador específico. Vale checar se OP_067 tem mais DGs que a média.
@@ -63,6 +51,28 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 - Como mitigação dentro do escopo: comparar a distribuição de `Valor` (numérica) do mesmo alarme entre jan e fev-mar. Se a distribuição de Valor é a mesma mas a Criticidade mudou, é confirmação indireta de mudança de regra.
 
 **Onde resolver:** W7 (Limitações e Recomendações) / W8 (Trabalhos Futuros). Investigação técnica auxiliar pode ocorrer em W2-W3 se sobrar tempo.
+
+---
+
+### - [ ] 2.11 Validar empiricamente a sub-hipótese "acúmulo de criticidade pré-DG" (reinterpretação de H5.2)
+
+**Contexto:** Investigação W4 da Fig Extra C (`exploracao_w4_ca65924.py`, 17/05/2026) **refutou** a hipótese H5.2 na forma original ("calmaria → acúmulo de volume → disparo" como padrão universal nos DGs). Apenas 1 dos 4 painéis comparativos (CA65924 + 3 amostras aleatórias) confirmou o padrão pela métrica de volume (razão eventos_30min/eventos_90min ≥ 2). O próprio CA65924 (caso paradigma original) apresenta fluxo aproximadamente uniforme de ~1,25 eventos/min nas 2h pré-DG.
+
+**Reinterpretação visual emergente:** análise dos pontos coloridos por Criticidade na figura sugere padrão alternativo — **acúmulo de criticidade**, não de volume. Em 3 dos 4 painéis (CA65924, CA5927, CA65908), eventos Crítico (vermelhos na figura) concentram-se nos últimos minutos pré-DG, mesmo quando o volume total é distribuído uniformemente. O CA65924, por exemplo, tem 138 eventos Informacional + 7 Não-Crítico + 1 Crítico — e o único Crítico ocorre próximo ao DG.
+
+**Por que importa:**
+- Se o sub-padrão se confirmar, a família de features `count_critico_*h` (Família 1 do `05_features.py`) será **mais preditiva** que `count_total_*h` para antecipar DG, com implicação direta para a interpretação do modelo
+- Se NÃO se confirmar, o sinal preditivo principal vem de outras famílias (regimal, estado_pre_evento, operador) e rolling deixa de ser família dominante — mudaria a narrativa do relatório (CM 6.1)
+- A própria família de features regimais (`razao_severidade_14d_vs_60d`) já é uma operacionalização parcial dessa intuição em janela maior
+
+**Investigar (a fazer em W6, após o modelo LightGBM estar treinado):**
+- Análise SHAP global das 29 features de v2.parquet
+- Comparar importância (mean |SHAP|) de `count_critico_1h` vs `count_total_1h`, `count_critico_4h` vs `count_total_4h`, `count_critico_24h` vs `count_total_24h`
+- Hipótese a testar: `count_critico_*` aparece sistematicamente acima de `count_total_*` no ranking de importância
+- Se confirmada: validação empírica da reinterpretação de H5.2; entra como insight não óbvio em CM 6.1
+- Se não confirmada: registrar limitação e considerar features explícitas de "fração Crítico nos últimos N min" como adição opcional
+
+**Onde resolver:** W6 (análise SHAP do modelo principal) ou W7 (análise final).
 
 ---
 
@@ -185,8 +195,11 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
 - **W3 (17/05/2026 — investigado antecipadamente):** ver `PLANEJAMENTO.md` → seção W3 → "Observações e Conclusões (W3)"
   - **Sobreposições de apontamento (W3 etapa 10):** 340 sobreposições temporais detectadas (0,09%). Investigação dedicada (`exploracao_w3_sobreposicoes.py`) revelou que **100% vêm de UM ÚNICO equipamento (CA65789, frota 793-D 2S)**, com 90% concentradas em janeiro/2025 e 35% em estado `Hibernando`. Diagnóstico: bug pontual no registro do CA65789, NÃO padrão sistêmico. Vira recomendação operacional concreta para Vale (auditar pipeline de apontamentos do CA65789 em jan/2025). Nova hipótese **H1.4** registrada em `hipoteses_eda.md` (refutada com reinterpretação — refuta "padrão sistêmico" mas confirma "bug localizado"). Gerou obs pendente **2.10** para investigar se CA65789 tem outras anomalias além das sobreposições.
 
+- **W4 (17/05/2026 — investigado antecipadamente):** ver `PLANEJAMENTO.md` → seção W4 → "Observações e Conclusões (W4)"
+  - **Obs 2.3 (resolvida — refutada):** Investigação Fig Extra C (`exploracao_w4_ca65924.py`) comparou o caso paradigma CA65924 (147 eventos pré-DG, do `desenvolver_dontgo.xlsx`) com 3 DGs aleatórios de outros TAGs. Métrica de acúmulo: razão eventos_últimos_30min / eventos_primeiros_90min ≥ 2. **Apenas 1 de 4 painéis confirma o padrão de volume** (CA65908, razão=3,75). O próprio CA65924 não exibe acúmulo crescente (razão=0,39 — fluxo aproximadamente uniforme de ~1,25 eventos/min). **H5.2 refutada com reinterpretação:** padrão alternativo emergente é "acúmulo de **criticidade** pré-DG" (não de volume) — eventos `Critico` (vermelhos) concentram-se nos últimos minutos em 3 dos 4 painéis, mesmo quando volume total é uniforme. Nova obs **2.11** gerada para validação empírica via SHAP em W6. Implicação para modelo: rolling counts continuam úteis mas perdem força como família dominante; features regimais e estado_pre_evento provavelmente mais importantes.
+
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 
 ---
 
-**Última atualização:** 2026-05-17 (W3 — investigação das sobreposições)
+**Última atualização:** 2026-05-17 (W4 — Fig Extra C / refutação H5.2 + Obs 2.3 resolvida + Obs 2.11 gerada)

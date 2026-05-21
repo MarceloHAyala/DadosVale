@@ -156,13 +156,27 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 ---
 
 ### H5.2 — O padrão "calmaria → acúmulo → disparo" do caso CA65924 é universal nos DGs
-**Status:** 🔄 Pendente parcialmente apoiada (Obs 2.3 — W4)
+**Status:** 🟡 Refutada com reinterpretação importante (W4 — Fig Extra C, `exploracao_w4_ca65924.py`)
 
-**Origem:** Arquivo `desenvolver_dontgo.xlsx` traz 147 eventos consecutivos do caminhão CA65924 culminando em DG, com narrativa clara de acúmulo gradual nos minutos anteriores.
+**Origem:** Arquivo `desenvolver_dontgo.xlsx` traz 147 eventos consecutivos do caminhão CA65924 culminando em DG. Hipótese inicialmente formulada com base em observação qualitativa de "acúmulo gradual" nos minutos anteriores ao DG.
 
-**Evidência preliminar:** A hipótese é **parcialmente apoiada** pela H2.1 + Obs 2.5 — 48% dos DGs do semestre vêm de `Nao_Critico` que só viram DG por **acúmulo** (regra CMA `QTD > 1`). Isso é evidência indireta de que o padrão temporal de acúmulo é central, embora não confirme que o padrão exato do CA65924 (60min antes) é universal.
+**Evidência:** Investigação empírica em W4 (`exploracao_w4_ca65924.py`, gera `figExC_ca65924_cadeia.png`) comparou o caso paradigma com 3 DGs aleatórios de outros TAGs (random.seed=42). Métrica de "acúmulo": razão `u30/p90` entre eventos nos últimos 30 min antes do DG e eventos nos 90 min anteriores. Como as janelas têm tamanhos diferentes (30 vs 90 min), a leitura direta da razão é enganosa — converter para **densidade relativa** = `(u30/30) / (p90/90) = razão × 3` (quantas vezes mais densa em eventos/min é a janela final em relação à inicial). Limiar para o padrão *sharp* hipotetizado: razão ≥ 2 (densidade ≥ 6×). Valores de razão entre 0,33 e 0,67 correspondem a densificação **gradual** (1,0× a 2,0×).
 
-**Implicação:** Se confirmada para todos os DGs (não só CA65924), valida rolling windows como família dominante de features em W4. Teste concreto a fazer em W4: para cada DG no semestre, contar eventos do mesmo TAG nos 60 minutos anteriores; distribuição deve ter pico pré-disparo se o padrão é universal. Já há base empírica indireta forte; resta a validação formal.
+| Painel | TAG | n eventos | u30 | p90 | Razão | Densidade rel. | Interpretação |
+|---|---|---:|---:|---:|---:|---:|---|
+| (a) | CA65924 (paradigma) | 147 | 41 | 106 | 0,39 | **1,16×** | ~ uniforme |
+| (b) | CA5927 | 28 | 9 | 19 | 0,47 | **1,42×** | gradual |
+| (c) | CA65908 | 19 | 15 | 4 | **3,75** | **11,25×** | **sharp ✓** |
+| (d) | CA65927 | 38 | 13 | 25 | 0,52 | **1,56×** | gradual |
+
+**Veredito em duas camadas:**
+
+- **Na formulação original ("padrão *sharp* universal"): refutada.** Apenas o painel (c) — CA65908 — atinge o limiar (densidade 11,25×, com 79% dos eventos concentrados nos últimos 30 min sobre uma calmaria efetiva de 4 eventos nos 90 min anteriores). O próprio CA65924, que deu nome à hipótese, tem fluxo praticamente uniforme (~1,2 eventos/min ao longo dos 2h pré-DG, densidade 1,16×) — sem calmaria identificável. A hipótese provavelmente foi extraída de observação qualitativa "147 eventos consecutivos antes do DG" sem quantificação rigorosa da distribuição temporal — caso típico de **viés de seleção do caso paradigmático** (volume alto e contínuo lido como acumulação).
+- **Numa formulação fraca alternativa ("há alguma densificação pré-DG"): compatível 4/4.** As densidades relativas (1,16× a 11,25×) indicam que a janela final é sempre ao menos um pouco mais densa que a inicial, sem o salto característico do *sharp* em três dos quatro painéis.
+
+**Reinterpretação (sub-hipótese independente da métrica de volume):** análise visual dos pontos coloridos por Criticidade nos 4 painéis sugere padrão alternativo — **acúmulo de criticidade**, não de volume. Em 3 dos 4 painéis (CA65924, CA5927, CA65908), eventos `Critico` (vermelhos) concentram-se nos últimos minutos pré-DG, mesmo quando o volume total se distribui uniformemente. CA65924 é o caso mais expressivo: dos 147 eventos da janela, 138 são `Informacional`, 7 são `Não-Crítico` e apenas **um único** é `Crítico` — e esse único `Crítico` ocorre próximo ao DG. Sub-hipótese gerada (registrada como Obs 2.11 em `observacoes_importantes.md`): a feature `count_critico_*h` (Família 1 do `05_features.py`) será mais importante que `count_total_*h` quando analisada via SHAP em W6. **A refutação do padrão *sharp* de volume não enfraquece essa sub-hipótese** — são métricas independentes (volume agregado vs distribuição por criticidade).
+
+**Implicação para modelagem:** rolling counts volume-based continuam úteis (capturaram o caso CA65908) mas perdem força como **família dominante** de features. Features **regimais** (razão vs baseline próprio, Família 4) e **estado pré-evento** (Família 3) provavelmente terão peso maior na importância do modelo. Validação empírica a fazer em W6 via análise SHAP — também resolve formalmente a Obs 2.11.
 
 ---
 
@@ -190,20 +204,24 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 
 ---
 
-## Resumo quantitativo (status 2026-05-17)
+## Resumo quantitativo (status 2026-05-17 — pós W4 Fig Extra C)
 
 | Categoria | Total | ✅ Confirmadas | ❌ Refutadas | 🟡 Refutadas com reinterpretação | 🔄 Pendentes |
 |---|---:|---:|---:|---:|---:|
-| 1. Cobertura e qualidade dos dados | **4** | 0 | 2 | **2** | 0 |
+| 1. Cobertura e qualidade dos dados | 4 | 0 | 2 | 2 | 0 |
 | 2. Concentração de DGs | 2 | 1 | 1 | 0 | 0 |
 | 3. Regimes temporais e drift | 3 | 0 | 1 | 0 | 2 |
 | 4. Frota LeTourneau (emergente) | 1 | 1 | 0 | 0 | 0 |
-| 5. Estado operacional e contexto | 3 | 0 | 0 | 1 | 2 |
+| 5. Estado operacional e contexto | 3 | 0 | 0 | **2** | **1** |
 | 6. Viés do label CMA | 1 | 0 | 0 | 0 | 1 |
-| **Total** | **14** | **2** | **4** | **3** | **5** |
+| **Total** | **14** | **2** | **4** | **4** | **4** |
 
-**Observação metodológica:** 7 das 9 hipóteses testadas em W1-W3 caíram (refutadas ou refutadas com reinterpretação). Isso é **sinal de qualidade da exploração** — a EDA está cumprindo o papel de testar premissas, não apenas confirmá-las. Hipóteses refutadas com reinterpretação (H1.2, H1.4, H5.1) geraram achados mais ricos que a hipótese original previa — em particular, H1.4 (W3) revelou bug pontual no CA65789 que vira recomendação operacional concreta para Vale (CM 6.1).
+**Observação metodológica:** 8 das 10 hipóteses testadas em W1-W4 caíram (refutadas ou refutadas com reinterpretação) — taxa de 80% de refutação. Esse é **sinal claro de qualidade da exploração**: a EDA está cumprindo o papel de testar premissas, não apenas confirmá-las. Hipóteses refutadas com reinterpretação (H1.2, H1.4, H5.1, **H5.2**) geraram achados mais ricos que a hipótese original previa:
+- **H1.2 → bypass manual do operador como flag latente** (Id_Criticidade=4)
+- **H1.4 → bug pontual no CA65789** (recomendação operacional concreta para Vale)
+- **H5.1 → DGs em Manutenção são legítimos** (reativações de teste, não falsos positivos)
+- **H5.2 (W4) → padrão "acúmulo de criticidade" no lugar de "acúmulo de volume"** (sub-hipótese registrada como Obs 2.11 para validação via SHAP em W6)
 
 ---
 
-**Última atualização:** 2026-05-17 (W3 — investigação de sobreposições de apontamento)
+**Última atualização:** 2026-05-17 (W4 — Fig Extra C / refutação de H5.2)

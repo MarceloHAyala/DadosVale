@@ -1,9 +1,10 @@
 """
-05_features.py - Feature engineering completo (W3 basicas + W4 completo).
+05_features.py - Feature engineering completo + target multi-janela
+                 (W3 basicas + W4 completo + target CM 3.3).
 
-Pipeline em 10 etapas que constroi 29 features sobre o dataset limpo de
-telemetria + apontamentos, gerando a matriz definitiva v2.parquet para
-modelagem em W5-W7.
+Pipeline em 11 etapas que constroi 29 features + 3 targets sobre o dataset
+limpo de telemetria + apontamentos, gerando a matriz definitiva v2.parquet
+para modelagem em W5-W7.
 
 Familias implementadas (7 grupos = 29 features):
 
@@ -28,12 +29,19 @@ W4 — Familias 5-7 (10 features, novas nesta sessao):
     - Target encoding propriamente dito fica para iteracao apos W4
       construir o target real (CM 3.3)
 
+Target multi-janela (Etapa 11, CM 3.3):
+  - target_2h, target_4h, target_8h (Int8 0/1)
+  - y_Nh = 1 se ha DG do mesmo TAG em (t, t+N horas]
+  - Estritamente > 0 exclui o evento atual (DGs nao contam pro proprio target)
+  - Eventos no fim do dataset sem visibilidade de N horas: y=0 (censoring leve)
+
 Decisoes metodologicas (registradas em PLANEJAMENTO.md / controle_alteracoes.md):
   - Leakage prevention: rolling_sum_by com closed="left" em todas features
   - Recencia sem precedente: NULL
   - Regimal sobre 19 alarmes (alinhado com hipoteses_eda.md H2.1)
   - Bypasses: carga adicional de telemetria_tipada.parquet (pre-filtro)
   - Encoding: frequency + one-hot nesta sessao (sem target encoding)
+  - Target: janela (t, t+N h], y=0 se sem DG futuro observado (censoring)
 
 Entradas:
   - Projeto/dados/intermediarios/telemetria_limpa.parquet (~545k linhas, pos filtro)
@@ -44,8 +52,11 @@ Entradas:
 Saidas:
   - Projeto/dados/features/v1.parquet            (5 features basicas — W3)
   - Projeto/dados/features/v2_parcial.parquet    (19 features — W4 parcial)
-  - Projeto/dados/features/v2.parquet            (29 features — W4 completo)
+  - Projeto/dados/features/v2.parquet            (29 features + 3 targets — W4 completo)
   - Projeto/relatorio/tabelas/documentacao_features.csv (CM 3.2, 29 entradas)
+  - Projeto/relatorio/tabelas/sensibilidade_janela.csv  (sensibilidade descritiva
+                                                        — comparacao preditiva
+                                                        em W5 com baseline+LightGBM)
 
 Executar (da raiz do repositorio):
     uv run python Projeto/codigo/05_features.py
@@ -69,6 +80,7 @@ ARQ_V1 = DIR_FEATURES / "v1.parquet"
 ARQ_V2_PARCIAL = DIR_FEATURES / "v2_parcial.parquet"
 ARQ_V2 = DIR_FEATURES / "v2.parquet"
 ARQ_DOC_FEATURES = ROOT / "relatorio" / "tabelas" / "documentacao_features.csv"
+ARQ_SENSIBILIDADE = ROOT / "relatorio" / "tabelas" / "sensibilidade_janela.csv"
 
 # ---------------------------------------------------------------------------
 # Expectativas
@@ -84,6 +96,11 @@ N_FEATURES_TOTAL = (
 )  # = 29
 N_TOP_ALARMES_ESPERADO = 19
 N_BYPASSES_ESPERADO = 3_119  # Id_Criticidade=4 no semestre
+
+# Janelas de predicao do target (em horas)
+# 4h e' a janela principal (operacional); 2h e 8h sao para sensibilidade
+JANELAS_TARGET_HORAS = [2.0, 4.0, 8.0]
+JANELA_PRINCIPAL_HORAS = 4.0
 
 
 # ---------------------------------------------------------------------------
@@ -781,6 +798,124 @@ def criar_features_encoding(df: pl.DataFrame) -> pl.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# [11/11] Construcao de target multi-janela (CM 3.3)
+# ---------------------------------------------------------------------------
+def construir_targets(df: pl.DataFrame) -> pl.DataFrame:
+    """Constroi 3 targets binarios: y=1 se ha DG do mesmo TAG em (t, t+N h].
+
+    Implementacao: para cada evento, encontra o timestamp do PROXIMO DG
+    estritamente posterior (no mesmo TAG) usando reverse + shift(1) +
+    forward_fill + reverse dentro do grupo TAG. Eventos sem DG futuro
+    observado recebem y=0 (censoring leve no fim do dataset).
+    """
+    print(f"\n[11/11] Construindo targets multi-janela "
+          f"({len(JANELAS_TARGET_HORAS)} janelas: "
+          f"{[int(h) for h in JANELAS_TARGET_HORAS]}h)")
+    t0 = time.time()
+
+    df = df.sort(["TAG", "Data_Evento"])
+
+    # Marca timestamp do evento se ele e' DG; NULL caso contrario
+    df = df.with_columns(
+        pl.when(pl.col("Is_Dont_Go") == 1)
+          .then(pl.col("Data_Evento"))
+          .otherwise(None)
+          .alias("_dg_ts")
+    )
+
+    # Para cada evento, encontrar o PROXIMO DG no mesmo TAG (estritamente
+    # futuro). Tecnica: dentro de cada TAG, reverter ordem, shift(1),
+    # forward_fill, reverter.
+    #   - reverse(): inverte ordem temporal dentro do grupo (ultimo evento
+    #     do TAG passa a ser o primeiro da lista)
+    #   - shift(1): no tempo invertido, valor da linha "anterior" = linha
+    #     temporalmente posterior na ordem original (e' a propria DG, se
+    #     o evento atual for DG; senao e' o DG mais proximo no futuro)
+    #   - forward_fill(): propaga o proximo DG nao-NULL pelas posicoes
+    #     anteriores no tempo invertido (= eventos anteriores ao DG no
+    #     tempo original)
+    #   - reverse(): volta a ordem original
+    # Resultado: cada linha ve o timestamp do PRIMEIRO DG estritamente
+    # apos seu Data_Evento (NULL se nao houver DG futuro no mesmo TAG).
+    df = df.with_columns(
+        pl.col("_dg_ts")
+          .reverse().shift(1).forward_fill().reverse()
+          .over("TAG")
+          .alias("_proximo_dg_ts")
+    )
+
+    # Horas ate o proximo DG (Float64; NULL para eventos sem DG futuro)
+    df = df.with_columns(
+        ((pl.col("_proximo_dg_ts") - pl.col("Data_Evento"))
+            .dt.total_seconds() / 3600.0).alias("_horas_ate_dg")
+    )
+
+    # Quantifica censoring (eventos sem DG futuro observado)
+    n_censored = df.filter(pl.col("_horas_ate_dg").is_null()).height
+    print(f"  Eventos sem DG futuro observado: {n_censored:,} "
+          f"({100*n_censored/df.height:.2f}% — tratados como y=0 em todas as janelas)")
+
+    # Target para cada janela: 1 se horas_ate_dg em (0, N], 0 caso contrario
+    # Estritamente > 0 exclui o proprio evento (caso seja DG)
+    for h in JANELAS_TARGET_HORAS:
+        col_name = f"target_{int(h)}h"
+        df = df.with_columns(
+            ((pl.col("_horas_ate_dg") > 0) & (pl.col("_horas_ate_dg") <= h))
+                .fill_null(False).cast(pl.Int8).alias(col_name)
+        )
+        n_pos = df.get_column(col_name).sum()
+        rate = 100 * n_pos / df.height
+        print(f"  {col_name}: {n_pos:>7,} positivos ({rate:.3f}% do dataset)")
+
+    df = df.drop("_dg_ts", "_proximo_dg_ts", "_horas_ate_dg")
+    print(f"  3 targets criados ({time.time()-t0:.1f}s)")
+    return df
+
+
+def gerar_sensibilidade_descritiva(df: pl.DataFrame) -> None:
+    """Gera tabela descritiva da sensibilidade da janela de target.
+
+    Para cada janela (2h, 4h, 8h) e cada mes, computa n_eventos,
+    n_positivos e taxa_positivos. A comparacao preditiva (LightGBM
+    AUC-PR/Recall por janela) sera feita em W5 quando o baseline existir.
+    """
+    print("\nGerando sensibilidade descritiva (sensibilidade_janela.csv)")
+
+    linhas = []
+    for h in JANELAS_TARGET_HORAS:
+        col_name = f"target_{int(h)}h"
+        por_mes = df.group_by("mes").agg([
+            pl.len().alias("n_eventos"),
+            pl.col(col_name).sum().alias("n_positivos"),
+        ]).sort("mes")
+        for row in por_mes.iter_rows(named=True):
+            taxa = 100 * row["n_positivos"] / row["n_eventos"] if row["n_eventos"] > 0 else 0.0
+            linhas.append({
+                "janela_horas": int(h),
+                "mes": row["mes"],
+                "n_eventos": row["n_eventos"],
+                "n_positivos": row["n_positivos"],
+                "taxa_positivos_pct": round(taxa, 4),
+            })
+
+    sens_df = pl.DataFrame(linhas)
+    ARQ_SENSIBILIDADE.parent.mkdir(parents=True, exist_ok=True)
+    sens_df.write_csv(ARQ_SENSIBILIDADE)
+    print(f"  -> {ARQ_SENSIBILIDADE.relative_to(ROOT)} ({sens_df.height} linhas)")
+
+    # Resumo agregado
+    print("\n  Resumo agregado (todos os meses):")
+    print(f"  {'Janela':<10s} {'Eventos':>12s} {'Positivos':>11s} {'Taxa pos.':>11s}")
+    print(f"  {'-'*10} {'-'*12} {'-'*11} {'-'*11}")
+    for h in JANELAS_TARGET_HORAS:
+        col_name = f"target_{int(h)}h"
+        n_pos = df.get_column(col_name).sum()
+        rate = 100 * n_pos / df.height
+        marca = " <- principal" if h == JANELA_PRINCIPAL_HORAS else ""
+        print(f"  {col_name:<10s} {df.height:>12,} {n_pos:>11,} {rate:>10.3f}%{marca}")
+
+
+# ---------------------------------------------------------------------------
 # Validacao defensiva
 # ---------------------------------------------------------------------------
 def validar(df: pl.DataFrame) -> None:
@@ -890,6 +1025,22 @@ def validar(df: pl.DataFrame) -> None:
     assert tipo.min() >= 0 and tipo.max() <= 1
     print(f"  OK tipo_caminhao: 0 nulls, 0/1, caminhoes={tipo.sum():,}")
 
+    # --- Targets (3) ---
+    for h in JANELAS_TARGET_HORAS:
+        col = f"target_{int(h)}h"
+        s = df.get_column(col)
+        assert s.null_count() == 0, f"{col} tem {s.null_count()} nulls"
+        unique_vals = set(s.unique().to_list())
+        assert unique_vals.issubset({0, 1}), f"{col} fora de {{0,1}}: {unique_vals}"
+
+    # Monotonicidade: target_2h <= target_4h <= target_8h
+    # (janela maior captura pelo menos os mesmos positivos da menor)
+    viola_24 = (df.get_column("target_2h") > df.get_column("target_4h")).sum()
+    viola_48 = (df.get_column("target_4h") > df.get_column("target_8h")).sum()
+    assert viola_24 == 0, f"target_2h > target_4h em {viola_24:,} eventos"
+    assert viola_48 == 0, f"target_4h > target_8h em {viola_48:,} eventos"
+    print("  OK 3 targets: 0 nulls, ∈ {0,1}, monotonicos (target_2h ≤ 4h ≤ 8h)")
+
 
 # ---------------------------------------------------------------------------
 # Persistencia
@@ -946,8 +1097,11 @@ def main() -> None:
     df = criar_features_operador(df)
     df = criar_feature_regra_negocio(df)
     df = criar_features_encoding(df)
+    df = construir_targets(df)
 
     validar(df)
+
+    gerar_sensibilidade_descritiva(df)
 
     print("\nSalvando outputs")
     salvar_v1(df)
@@ -955,13 +1109,13 @@ def main() -> None:
     salvar_v2(df)
     salvar_documentacao()
 
-    print(f"\n[OK] Matriz v2 final gerada. Total: {N_FEATURES_TOTAL} features documentadas.")
+    print(f"\n[OK] Matriz v2 final gerada. {N_FEATURES_TOTAL} features + 3 targets.")
     print(f"     Shape v2.parquet: {df.shape[0]:,} linhas x {df.shape[1]} colunas")
-    print("\nProximas etapas de W4 (separadas):")
-    print("  - Fig Extra C: cadeia de eventos CA65924 (Obs 2.3)")
-    print("  - Construir target y=1 se DG em [+0, +4h] (CM 3.3)")
-    print("  - Sensibilidade janela 2h/4h/8h + Fig 7")
+    print("\nProximas etapas de W4 (restantes):")
+    print("  - Fig 7: diagrama da janela de predicao (manual em draw.io)")
     print("  - 06_split.py: jan-abr / mai / jun + Fig 8")
+    print("\nProximas etapas de W5 (depois do split):")
+    print("  - Comparacao preditiva da sensibilidade (LightGBM baseline em cada target)")
 
 
 if __name__ == "__main__":

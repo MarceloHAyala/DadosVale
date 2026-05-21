@@ -228,4 +228,96 @@ Aplicada por `Projeto/codigo/05_features.py` (etapas 4-7), implementando 4 das 7
 
 ---
 
+### 2026-05-17 — Encoding categórico em W4: frequency + one-hot (target encoding adiado)
+
+Decisão tomada durante a implementação da Família 7 do `05_features.py` (encoding categórico, 7 features novas).
+
+- **ANTES (plano original em PLANEJAMENTO.md W3):** o plano previa target encoding para colunas de média/alta cardinalidade — `Tag` (target encoding com smoothing + KFold para evitar leakage) e `Frota` (target encoding). `Tipo` e `Classe` em one-hot; `Operador` em frequency encoding + feature derivada `taxa_DG_operador_30d`. O plano pressupõe que o target real está disponível para calcular médias por categoria.
+- **DEPOIS:** adotado **frequency encoding + one-hot apenas**, sem target encoding nesta iteração:
+  - `Tag` (35 valores, alta cardinalidade) → `tag_freq` via frequency encoding (1 coluna)
+  - `Frota` (5 valores) → 4 colunas one-hot (`frota_793D_2S/3S/4S/5S`, com LeTourneau L 1850 como referência implícita pela soma = 0)
+  - `Tipo` (2 valores) → 1 coluna binária `tipo_caminhao` (1 = Caminhão, 0 = Escavadeira)
+  - `Operador` (394 valores únicos, alta cardinalidade anonimizada) → `operador_freq` via frequency encoding (1 coluna)
+  - `Classe` (categórica em telemetria, valores `Activate`/null) → **omitida nesta iteração** (cardinalidade muito baixa e semântica de "status do alarme" duplica informação já capturada por `valor_disponivel`)
+- **Justificativa:** O **target final** (`y = 1` se há DG na janela de +0 a +4h após o evento) **ainda não foi construído** — essa é uma task pendente da W4 (CM 3.3). Sem target real, fazer "target encoding" exigiria usar `Is_Dont_Go` (label do evento atual) como proxy, o que introduziria **leakage temporal massivo**: o modelo aprenderia `Tag_X tem taxa_dg histórica de Y%` calculada inclusive sobre o próprio evento que está tentando prever. Para uma estimativa não-leaky, exigiria KFold temporal sobre o treino (jan-abr), que por sua vez requer o split temporal de W4 (também pendente). Frequency encoding captura o **"volume operacional"** da categoria (CA65926 com tag_freq alto, por exemplo) sem qualquer leakage — informação útil, ainda que mais fraca que target encoding propriamente dito.
+- **Impacto:**
+  - **Matriz v2.parquet final gerada** (29 features, 22,4 MB, 48 colunas) usando frequency + one-hot. Suficiente para iniciar a modelagem em W5 e validar a pipeline end-to-end.
+  - **Limitação aceita:** features de encoding podem ser subótimas para alta cardinalidade (Tag, Operador). Esperamos que a perda seja modesta porque (i) LightGBM lida razoavelmente bem com frequency encoding em alta cardinalidade, e (ii) já temos outras features que capturam comportamento por TAG (rolling counts, regimal) e por operador (taxa_DG_operador_30d como feature explícita).
+  - **Refinamento futuro registrado** — ver task detalhada em `PLANEJAMENTO.md` → W5 → "Refinar encoding categórico após target real".
+- **Nota metodológica:** A decisão segue o princípio de **"primeiro fechar o end-to-end, depois otimizar"** — uma matriz funcional vale mais do que uma matriz perfeita para validar que o pipeline integra corretamente. O target encoding será uma iteração de melhoria mensurável (comparação AUC-PR direta entre as duas variantes em W5).
+
+---
+
+### 2026-05-17 — Construção do target multi-janela em W4 (CM 3.3)
+
+Aplicada por `Projeto/codigo/05_features.py` (etapa 11), fechando a definição operacional do *target* prevista no PLANEJAMENTO.md → W4. Gera 3 colunas em `v2.parquet`: `target_2h`, `target_4h`, `target_8h`.
+
+- **ANTES:** O dataset filtrado (`telemetria_limpa.parquet`, 544.885 linhas) carregava apenas a coluna binária `Is_Dont_Go` indicando se o **evento corrente** era DG. Não havia coluna que respondesse à pergunta operacional real do projeto — "haverá DG nas próximas N horas neste equipamento?" — que é a definição de *target* exigida pelo CM 3.3 e pelo cenário operacional descrito no CM 1.2 (Figura 1, bloco G). Sem essa coluna, o pipeline de modelagem em W5 não poderia ser iniciado.
+- **DEPOIS:** 3 colunas-alvo construídas simultaneamente para suportar a análise de sensibilidade (Profundidade 1 do PLANEJAMENTO.md → W4):
+  - Para cada equipamento, ordenar eventos por `Data_Evento`. Coluna auxiliar `_dg_ts` recebe o timestamp apenas dos eventos com `Is_Dont_Go = 1` e NULL nos demais.
+  - Próximo DG futuro localizado via `_dg_ts.reverse().shift(1).forward_fill().reverse().over("TAG")` — semanticamente equivalente a "para cada evento, qual é o timestamp do próximo DG **estritamente posterior** do mesmo equipamento".
+  - Cálculo `_horas_ate_dg = (_proximo_dg_ts - Data_Evento) / 3600s` e construção dos rótulos: `target_Nh = 1` se `0 < _horas_ate_dg <= N`, caso contrário `0` (incluindo eventos sem próximo DG observado).
+  - Janela aberta no início (`> 0`) exclui explicitamente o próprio DG do conjunto de positivos do **seu próprio** target — o modelo não pode "prever" o evento que ele já está vendo. Janela fechada no fim (`<= N`) inclui o instante exato do DG futuro como positivo do horizonte.
+- **Justificativa técnica:** o padrão `reverse → shift(1) → forward_fill → reverse` sobre `_dg_ts` é o equivalente exato de "achar o próximo evento-alvo posterior", e tem complexidade `O(n)` em Polars (a alternativa `join_asof(strategy="forward")` exigiria duas passagens e um join temporal — desempenho pior). O `shift(1)` aplicado APÓS o `reverse` exclui o evento corrente quando ele próprio é DG (evitando que um DG predisse ele mesmo).
+- **Impacto — distribuição empírica nas 544.885 linhas:**
+
+  | Target | Positivos | % | Negativos | Censurados (sem DG futuro) |
+  |---|---:|---:|---:|---:|
+  | `target_2h` | 139.090 | **25,5%** | 405.795 | 102.602 (18,83%) |
+  | `target_4h` (principal) | 159.396 | **29,3%** | 385.489 | 102.602 (18,83%) |
+  | `target_8h` | 186.343 | **34,2%** | 358.542 | 102.602 (18,83%) |
+
+  Monotonicidade confirmada (todo positivo de 2h também é positivo de 4h e 8h). 102.602 eventos sem DG futuro observado no horizonte do dataset (eventos no fim do semestre ou em TAGs sem nenhum DG no período) tratados como `y = 0` em todas as 3 janelas — convenção declarada explicitamente.
+
+- **Achado surpreendente (candidato direto a CM 6.1 — Insights Não Óbvios):** a Introdução do `rascunho.md` declara taxa global de DGs de ~0,054% (19.962 / 37.164.054), e o leitor naturalmente extrapola que o target binário do modelo terá essa proporção de positivos — problema "extremamente desbalanceado" no sentido clássico (1 em 1.852). A construção real revela **29,3% de positivos no `target_4h`**, ~540× a expectativa.
+  - **Por quê:** o target é uma **janela temporal**, não um evento pontual. Cada DG "reivindica" como positivos todos os eventos do mesmo equipamento nos ~4h precedentes — em média ~25 eventos por DG dado a frequência típica de telemetria pós-filtro (~6 eventos/min). Multiplicando 19.962 DGs × ~25 = ~500k positivos esperados, contra 159.396 observados (a diferença é absorvida pelo censoring e por equipamentos com DGs muito espaçados onde a janela 4h não cobre eventos contíguos).
+  - **Consequência para modelagem (W5):** o problema continua desbalanceado, mas em **ordem de magnitude muito mais branda** do que a inicialmente declarada. Estratégias como `class_weight='balanced'` ou `scale_pos_weight ≈ 2.4` (e não `≈ 1850`) são suficientes — não há necessidade do arsenal pesado de imbalance learning (SMOTE temporal, undersampling agressivo).
+  - **Consequência para o relatório:** a Introdução do `rascunho.md` precisará de uma nota de pé esclarecendo que a taxa 0,054% se refere ao **evento pontual** `Is_Dont_Go`, e que o target operacional `target_4h` (Figura 7, ainda pendente) tem taxa muito mais alta por construção. Sem essa nota, o relatório seria internamente contraditório.
+  - **Consequência para a explicabilidade do modelo (W7):** confirmar via SHAP que o modelo aprende sinal genuíno e não apenas a "regra trivial" `houve DG nas últimas 4h → provavelmente terá DG nas próximas 4h também" (autocorrelação alta dada a regra CMA de acumulação).
+- **Decisão metodológica adicional — tratamento do censoring:** eventos sem DG futuro observado (102.602, 18,83%) recebem `y = 0` em vez de NULL. Justificativa: (i) consistente com a semântica operacional — se nenhum DG ocorreu nas N horas seguintes, o instante de decisão era de fato seguro; (ii) NULL exigiria mascaramento durante treino que invalidaria a métrica AUC-PR sobre o teste; (iii) a alternativa Weibull AFT (W6) tratará o censoring de forma rigorosa como dado adicional, oferecendo segunda leitura do problema. Limitação reconhecida: eventos próximos do fim do semestre (junho) têm maior chance de ser falso negativo do label — quantificação prevista para W7 (estratificação mensal do desempenho).
+- **Saídas geradas:** `Projeto/dados/features/v2.parquet` (544.885 × 51 colunas, **22,4 MB**) + `Projeto/relatorio/tabelas/sensibilidade_janela.csv` (3 linhas com taxa global e distribuição por mês para cada janela).
+
+---
+
+### 2026-05-17 — Split temporal walk-forward jan-abr / mai / jun (W4 CM 4.1)
+
+Aplicada por `Projeto/codigo/06_split.py` (5 etapas), fechando a estratégia de validação temporal prevista no PLANEJAMENTO.md → W4. Adiciona coluna `split` ao dataset, gera tabela `split_temporal.csv`, Fig 7 (janela de predição) e Fig 8 (drift mês-a-mês).
+
+- **ANTES:** `v2.parquet` continha as 544.885 linhas de features + 3 colunas-alvo, mas não tinha qualquer divisão treino/validação/teste. O plano original previa split temporal jan-abr / mai / jun e justificativa contra k-fold aleatório, mas nenhuma das duas estava materializada em código ou em figura. A modelagem em W5 não poderia ser iniciada sem decisão concreta sobre as fronteiras temporais e sobre o protocolo de avaliação.
+- **DEPOIS — Split temporal walk-forward em 3 partições com cortes nos limites de mês:**
+
+  | Split | Período (Data_Evento) | Eventos | DGs | Taxa DG | Positivos `target_4h` | Taxa pos. 4h | TAGs |
+  |---|---|---:|---:|---:|---:|---:|---:|
+  | `train` | `< 2025-05-01` (jan-abr) | 394.971 | 13.456 | 3,41% | 132.877 | 33,64% | 33 |
+  | `val`   | `2025-05-01` a `< 2025-06-01` (mai) | 78.825 | 1.280 | **1,62%** | 14.481 | 18,37% | 31 |
+  | `test`  | `>= 2025-06-01` (jun) | 71.089 | 5.226 | **7,35%** | 12.038 | 16,93% | 30 |
+  | **Soma** | | **544.885** | **19.962** | — | 159.396 | — | — |
+
+  Asserções defensivas: somas exatas (544.885 eventos, 19.962 DGs), nenhum vazamento entre splits (`Data_Evento` ordenado garante separação determinística). Tempo total de execução: 2,6s.
+
+- **Justificativa do corte por limite de mês (vs corte por fim de turno):**
+  1. **Coerência com Fig 2** (distribuição temporal mensal): cortes em `2025-05-01 00:00` e `2025-06-01 00:00` alinham diretamente com o grid mensal já usado na seção exploratória — o leitor verifica "treino = jan+fev+mar+abr" contra Fig 2 visualmente.
+  2. **Modelo é event-time-aware, não shift-aware:** features de rolling olham para trás em horas, target olha para frente em horas, LightGBM faz predição por evento. Nada na arquitetura trata "turno" como unidade — cortar 6h antes ou depois do limite de mês é puramente cosmético.
+  3. **Comportamento na fronteira é o desejado em produção:** eventos no início de mai (ex.: `00:00:30` de 01/mai) têm `count_critico_24h` computado com dados de 30/abr — reproduz exatamente o cenário operacional (o modelo deployado em mai naturalmente usa as últimas 24h, que incluem 30/abr). **Não é leakage temporal**, pois o sentido cronológico está preservado (passado → futuro).
+
+- **Justificativa contra k-fold aleatório (registrada como pergunta explícita do PLANEJAMENTO.md):** as features de rolling (Família 1, 9 colunas) e de recência (Família 2, 2 colunas) introduzem **autocorrelação temporal forte** dentro de cada TAG. Em um k-fold aleatório, eventos do treino e do teste do mesmo equipamento estariam interleavados no tempo — o modelo aprenderia padrões de "fold X" que não generalizam para o futuro real. Walk-forward respeita a semântica operacional (treinar no passado para prever futuro) e é o único protocolo defensável quando há feature engineering baseada em janelas temporais. Decisão alinhada com a literatura padrão de séries temporais (Hyndman & Athanasopoulos, 2018).
+
+- **Achado quantitativo: drift mês-a-mês forte e direcional, registrado na Fig 8 painel inferior.** Taxas de DG por mês: jan 3,19% / fev 4,38% / mar 3,30% / abr 2,59% / **mai 1,62%** / **jun 7,35%**. Conclusões para modelagem em W5-W7:
+  1. **Test (jun) tem 2,2× a taxa de DG do treino médio** (3,37%) e **4,5× a taxa de val**. Modelos LightGBM com bons resultados em mai podem degradar muito em jun.
+  2. **Val (mai) tem o menor regime de DGs do semestre** (1,62%, contra média de 3,37% no treino). Hiperparâmetros tunados em mai serão otimistas em precisão e pessimistas em recall — exige ajuste no GATE MARCO 1 de W5 e nas curvas precision-recall de W7.
+  3. **A anomalia RFB de junho** (já descrita em Obs 2.6 e na Fig 5 da EDA — Right Front Brake Temperature explode 151,7× sobre baseline) **é o motor mecânico do drift** — não é um shift contextual genérico, é um alarme específico dominando o teste. Vai ser flagado explicitamente no Anexo A e na seção de Limitações.
+  4. Análise de erro estratificada mês-a-mês em W7 vira **obrigatória**, não opcional. Já estava planejada (Risco 3.2) — agora com magnitude quantificada.
+
+- **Achado lateral: rotação de TAGs entre splits.** 2 TAGs aparecem em val/teste mas não em treino (`CA65791`, `CA65916`); 5 TAGs aparecem em treino mas não em val ou teste (`CA65917`, `CA65908`, `CA65902`, `CA65922`, `CA65923`). 13 operadores em val/teste estão ausentes do treino. **Implicação:** as features de encoding `tag_freq` e `operador_freq` (Família 7) foram computadas sobre o dataset global — embutem volumes de val/teste em features que o modelo usará no treino. Magnitude esperada pequena (volumes mensais por TAG são estáveis), **mas tecnicamente é leakage**. Decisão: documentar e adiar fix para W5, junto com a substituição por target encoding com KFold temporal (refinamento já listado em PLANEJAMENTO.md → W5). O fix será recomputar `tag_freq` e `operador_freq` sobre treino apenas e aplicar a val/teste — mesma rotina do target encoding adequado.
+
+- **Saídas geradas:**
+  - `Projeto/dados/features/v2_split.parquet` (544.885 × 52 colunas, **14,9 MB** — menor que v2.parquet por causa da compressão de Int8 dos targets quando o split também é categoria comprimível).
+  - `Projeto/relatorio/tabelas/split_temporal.csv` (sumário CM 4.1, 3 linhas × 9 colunas).
+  - `Projeto/relatorio/figuras/fig07_janela_predicao.png` (diagrama conceitual do target operacional, matplotlib reproduzível).
+  - `Projeto/relatorio/figuras/fig08_split_temporal.png` (2 painéis: barras mensais coloridas por split + linha de taxa de DG).
+
+- **Status do pipeline canônico após esta sessão:** `v2_split.parquet` é o **input canônico para W5** (baseline + LightGBM v1). Scripts downstream lerão `dados/features/v2_split.parquet` e filtrarão por `split == "train"` para treinar, `split == "val"` para tuning, `split == "test"` para reportar métricas finais. `v2.parquet` original fica preservado como matriz "pré-split" (não deve ser usada diretamente em modelagem para evitar contornar o protocolo de avaliação).
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->
