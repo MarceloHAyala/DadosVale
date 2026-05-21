@@ -1118,6 +1118,42 @@ Esta refutação é candidata forte para a seção de Insights Não Óbvios do r
 
 ---
 
+##### 6. Fig 8 e drift mai→jun: 3 mitigações registradas para W5-W6
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+Fig 8 gerada em [`Projeto/codigo/06_split.py`](Projeto/codigo/06_split.py) etapa 5/5. Tabela de sumário em [`Projeto/relatorio/tabelas/split_temporal.csv`](Projeto/relatorio/tabelas/split_temporal.csv). Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/06_split.py
+```
+
+</details>
+
+A Fig 8 quantificou um **drift mensal forte e direcional** que tem consequências diretas para a modelagem em W5-W6 e merece registro explícito de mitigações antes que o piloto automático "LightGBM default com `class_weight='balanced'`" leve a decisões subótimas em W5. As taxas de DG por mês observadas: 3,19% (jan) / 4,38% (fev) / 3,30% (mar) / 2,59% (abr) / **1,62% (mai, val)** / **7,35% (jun, teste)** — teste tem **4,5× a taxa de val** e **2,2× a média do treino**.
+
+Dois problemas operacionais emergem desse padrão:
+
+1. **Validação em regime raro:** mai com 1,62% de taxa de DG é metade da média do treino. Hiperparâmetros tunados em mai serão otimistas em precisão e pessimistas em recall — métricas single-fold de mai têm alta variância e podem mascarar problemas reais.
+2. **Drift mecânico identificado:** o salto para 7,35% em jun não é shift contextual genérico, é **a anomalia RFB** (`Right Front Brake Temperature - Active` explodindo 151,7× sobre baseline) já mapeada na Obs 2.6. Modelo treinado sem capturar sinal regimal vai degradar em jun.
+
+**3 mitigações concretas registradas como tasks explícitas em W5-W6:**
+
+- **Mitigação 1 (W6, antes do Optuna):** TimeSeriesSplit CV de 4 folds expandidos (jan→fev, jan-fev→mar, jan-mar→abr, jan-abr→mai) para tuning, em vez de validar só em mai. Usa ~5× mais sinal, reduz variância, atenua "mai como regime raro". Teste em jun continua intocado.
+- **Mitigação 2 (W5, LightGBM v1):** comparar `scale_pos_weight` calibrado para taxa de treino (~2,0) vs taxa de produção esperada — não usar só `class_weight='balanced'` default, que assume distribuição estacionária.
+- **Mitigação 3 (W5, GATE MARCO 1):** reportar AUC-PR/Recall/Precisão **estratificados mês-a-mês** desde o LightGBM v1 (não esperar W7). Critério do gate vira **2 critérios** (bate baseline em val E mantém AUC-PR razoável em teste com tolerância de queda ≤ 30%).
+
+Sem essas mitigações registradas, W5 cairia no piloto automático e o drift só seria detectado tarde, em W7 — quando teria custado uma iteração inteira de tuning desperdiçada sobre métricas de validação não confiáveis.
+
+**Implicação para o relatório (CM 6.1 + CM 6.2 + CM 6.3):**
+
+- **CM 6.1 (Insights Não Óbvios):** o drift de jun tem causa mecânica nominal e identificável — RFB anomalia. Não é "modelo pode falhar por motivos desconhecidos", é "modelo precisa aprender o sinal regimal que detecta esse tipo de explosão". A Família 4 (`razao_alarme_7d_vs_30d_anterior`) foi desenhada proativamente para esse padrão.
+- **CM 6.2 (Limitações):** validação em regime raro + drift de teste são limitações honestas que o relatório vai expor com magnitude exata (Fig 8 quantifica), não esconder.
+- **CM 6.3 (Trabalhos Futuros):** retreinamento rolling mensal em produção é o caminho de mitigação operacional natural — registrar como Trabalho Futuro.
+
+---
+
 ### W5 (10-16/06) — Baseline + LightGBM v1 → MARCO 1
 
 **Objetivo:** modelo principal funcionando, batendo o baseline.
@@ -1134,13 +1170,20 @@ Esta refutação é candidata forte para a seção de Insights Não Óbvios do r
   - **Onde resolver:** W5 (junto com o `07_baseline.py` e `08_lightgbm.py` — momento natural para a comparação empírica).
 - [ ] `Projeto/codigo/07_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
 - [ ] Métricas baseline no teste de jun: Precision, Recall, F1, AUC-PR
-- [ ] `Projeto/codigo/08_lightgbm.py` — LightGBM v1 com `class_weight='balanced'`, parâmetros default
+- [ ] `Projeto/codigo/08_lightgbm.py` — LightGBM v1 com parâmetros default. **Encoding pré-modelagem:** corrigir o leakage subtil de `tag_freq`/`operador_freq` (frequências computadas sobre dataset global em `05_features.py`) recalculando sobre TREINO apenas e aplicando em val/teste — mesma rotina do target encoding refinado (refinamento já listado abaixo).
+- [ ] **[Mitigação 2 — derivada da Fig 8 W4, drift mai→jun 4,5×]** Comparar duas calibrações de `scale_pos_weight` em vez de só usar `class_weight='balanced'` default:
+  - (a) `scale_pos_weight = (1 - taxa_train) / taxa_train ≈ 2.0` — calibrado para taxa do TREINO (33,64% positivos no `target_4h`).
+  - (b) `scale_pos_weight` calibrado para taxa esperada de PRODUÇÃO (mistura realista do semestre, ou — mais agressivo — taxa do TESTE 16,93%). Justificativa: tuning sobre taxa de treino otimiza o objetivo errado quando há drift confirmado. Comparar AUC-PR e Recall das duas variantes no GATE MARCO 1. Registrar em `controle_alteracoes.md` qual venceu e por quê.
+- [ ] **[Mitigação 3 — derivada da Fig 8 W4]** **Reportar métricas estratificadas mês-a-mês** já no LightGBM v1 (não esperar W7). Para cada modelo treinado (baseline, LightGBM v1, variante `Is_Dont_Go_producao`, variantes (a)/(b) do scale_pos_weight): tabela com AUC-PR, Recall e Precisão calculados separadamente em mai e em jun. Critério explícito do gate: **modelo deve bater baseline em AUC-PR de val (mai) E manter AUC-PR razoável em test (jun)** — se cair muito em jun, é sinal precoce de que o drift quebrou o modelo e Mitigação 1 (W6, CV expandida) precisa entrar antes do tuning.
 - [ ] **Documentar pré-processamento específico do baseline e do LightGBM** (CM 4.3): baseline usa só `Criticidade` e `TAG`; LightGBM usa matriz completa v2
 - [ ] Comparar com baseline
 - [ ] **[Novo após Obs 2.7]** Treinar **variante `Is_Dont_Go_producao`** (filtra os 2.525 DGs em Manutenção) com os mesmos hiperparâmetros e comparar AUC-PR contra o target original. Se variante "produção" for substancialmente melhor (>5pp AUC-PR), confirma que o contexto Manutenção introduz ruído treinável; registrar decisão em `controle_alteracoes.md`.
-- [ ] 🚦 **GATE MARCO 1: LightGBM bate baseline em AUC-PR?**
-  - SIM → avança para W6
-  - NÃO → pare. Reveja features antes de tunar parâmetros
+- [ ] 🚦 **GATE MARCO 1 (2 critérios após Fig 8 W4 confirmar drift):**
+  - **Critério A — generalização inicial:** LightGBM bate baseline em AUC-PR de val (mai)?
+  - **Critério B — robustez ao drift:** LightGBM mantém AUC-PR razoável em test (jun)? Tolerância sugerida: queda ≤ 30% vs val (regime raro de mai vs anomalia RFB de jun são esperadamente difíceis; queda grande mas não catastrófica é aceitável).
+  - **A=SIM + B=SIM** → avança para W6 (tuning de hiperparâmetros + sobrevivência).
+  - **A=SIM + B=NÃO** → drift é o problema, não as features. Aplicar Mitigação 1 (TimeSeriesSplit CV em W6) antes do Optuna; documentar em CM 6.2 como Limitação.
+  - **A=NÃO** → pare. Reveja features antes de tunar parâmetros — drift não é a causa, é problema de sinal.
 
 **Entregável:** tabela comparativa baseline×LightGBM + modelos serializados em `Projeto/modelos/` + pré-processamento documentado.
 
@@ -1154,8 +1197,14 @@ Esta refutação é candidata forte para a seção de Insights Não Óbvios do r
 
 **Objetivo:** LightGBM otimizado + modelo de sobrevivência + diagnóstico não supervisionado (K) + interpretabilidade + ablation. Semana mais carregada do projeto (~15h).
 
-- [ ] Optuna no LightGBM: 50 trials sobre validação (mai)
-- [ ] LightGBM v2 com melhores parâmetros, avaliar no teste
+- [ ] **[Mitigação 1 — derivada da Fig 8 W4, atenua "mai como regime raro de DG 1,62%"]** Substituir validação single-fold (só mai) por **TimeSeriesSplit CV de 4 folds expandidos** antes do Optuna:
+  - Fold 1: treino=jan, val=fev
+  - Fold 2: treino=jan-fev, val=mar
+  - Fold 3: treino=jan-mar, val=abr
+  - Fold 4: treino=jan-abr, val=mai (split atual)
+  - **Métrica de tuning:** AUC-PR média dos 4 folds. **Teste em jun continua intocado** (não entra na CV em nenhum momento). Ganho: ~5× mais sinal para tuning, reduz variância das métricas de validação, atenua "mai como regime raro" (1,62% de DG é metade da média do treino). Custo: ~5 min de tempo total de treino (LightGBM é rápido). Implementação: `sklearn.model_selection.TimeSeriesSplit` com cortes mensais customizados ou loop manual. **Asserção defensiva crítica:** validar em cada fold que `train.max(Data_Evento) < val.min(Data_Evento)` — protocolo walk-forward estrito.
+- [ ] Optuna no LightGBM: 50 trials sobre **AUC-PR média da CV de 4 folds** (Mitigação 1 acima), não sobre validação single-fold de mai.
+- [ ] LightGBM v2 com melhores parâmetros, avaliar no teste (jun) — único contato do modelo com test set em todo o pipeline.
 - [ ] `Projeto/codigo/09_sobrevivencia.py` — **Modelo de Sobrevivência (Weibull AFT, fallback Cox PH)** com `lifelines`:
   - [ ] **Reformatar dados para análise de sobrevivência**: para cada equipamento (TAG), construir tuplas (T, E, X) onde T = tempo até o próximo DG (em horas), E = 1 se evento observado / 0 se censurado (fim da janela jan-jun sem DG), X = features no instante de referência
   - [ ] Treinar `WeibullAFTFitter` no treino (jan-abr), avaliar **C-index** em validação (mai) e teste (jun)

@@ -125,29 +125,37 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 
 ---
 
-### - [ ] 3.2 Drift temporal do modelo (jan-abr → jun) — RISCO CONFIRMADO E QUANTIFICADO
+### - [ ] 3.2 Drift temporal do modelo (jan-abr → jun) — RISCO CONFIRMADO, QUANTIFICADO E COM MITIGAÇÕES REGISTRADAS
 
 **Risco:** Operação de mineração tem sazonalidade (chuva, troca de equipamentos, recapagem de pneus). Modelo treinado em jan-abr pode degradar em jun.
 
-**Quantificação completa (16/05/2026 — Obs 2.6 e extensão):** O drift **não é hipotético — está medido**. A análise mensal identificou **3 regimes distintos** com 2 anomalias em alarmes diferentes:
+**Quantificação inicial (16/05/2026 — Obs 2.6 e extensão):** O drift **não é hipotético — está medido**. A análise mensal identificou **3 regimes distintos** com 2 anomalias em alarmes diferentes:
 
 - **Jan:** baseline normal (19,5% Não-Crítico)
 - **Fev-Mar:** Anomalia A — Engine Coolant Level Não-Crítico explode (9,3-10,6× baseline), com inversão simultânea de severidade (volume +79%, mix Crítico 83% → 6%)
 - **Jun:** Anomalia B — Right Front Brake Temperature Crítico explode (4.247 ocorrências vs média 28/mês jan-mai = 151,7× baseline)
+
+**Quantificação refinada pós-split (17/05/2026 — Fig 8 do `06_split.py`):** com o *split* temporal materializado, a magnitude exata do *drift* ficou medida em termos de **taxa de DG por split**: 3,41% (treino) / **1,62% (validação, mai)** / **7,35% (teste, jun)**. Em razão direta, **o teste tem 4,5× a taxa de DG da validação e 2,2× a média do treino**. Junho também concentra 26,2% de todos os DGs do semestre apesar de representar apenas 13,0% dos eventos — DGs clusterizados em torno da anomalia RFB.
 
 **Impacto direto no split planejado (jan-abr / mai / jun):**
 - Treino contém Anomalia A
 - Teste contém Anomalia B
 - Right Front Brake Temperature Crítico tem 3-67 ocorrências/mês no treino → estatisticamente invisível para o modelo
 - O alarme dominante do teste é praticamente desconhecido no treino
+- Validação (mai, 1,62%) é o **regime mais raro de DG do semestre** — métricas single-fold de mai têm alta variância e podem mascarar problemas reais
 
-**Decisão metodológica de hoje (16/05/2026):** manter split fixo jan-abr/mai/jun e tratar o drift como tema central em W7 (análise de erro mensal) e W8 (Limitações). Decisão final entrará em `controle_alteracoes.md` quando W4 implementar o split.
+**Decisões metodológicas — ✅ ambas registradas em `controle_alteracoes.md`:**
+1. **17/05/2026 — manutenção do split fixo jan-abr/mai/jun:** registrado na entrada "2026-05-17 — Split temporal walk-forward jan-abr / mai / jun (W4 CM 4.1)". Cortes nos limites de mês (coerência com Fig 2); justificativa formal contra *k-fold* aleatório (autocorrelação das rolling features); semântica de fronteira documentada (features na borda usam dados do *split* anterior — comportamento desejado em produção, não *leakage*).
+2. **17/05/2026 — 3 mitigações nominais para W5-W6:** registradas no PLANEJAMENTO.md como subseção §6 da seção "Observações e Conclusões (W4)" e como *tasks* explícitas em W5 e W6:
+   - **Mitigação 1 (W6, antes do Optuna):** *TimeSeriesSplit* CV de 4 *folds* expandidos (jan→fev, jan-fev→mar, jan-mar→abr, jan-abr→mai). Usa ~5× mais sinal para *tuning*, reduz variância, atenua "mai como regime raro". Teste em jun permanece intocado.
+   - **Mitigação 2 (W5, LightGBM v1):** comparar `scale_pos_weight` calibrado para taxa de treino vs taxa de produção esperada — não usar só `class_weight='balanced'` *default* que assume distribuição estacionária.
+   - **Mitigação 3 (W5, GATE MARCO 1):** métricas AUC-PR / Recall / Precisão estratificadas **mai vs jun** desde o LightGBM v1 (não esperar W7). Gate vira **2 critérios** (A: bate baseline em val; B: mantém AUC-PR razoável em teste com tolerância de queda ≤ 30%).
 
-**Monitorar:** Análise de drift mensal (AUC-PR por mês no teste de junho) — agora com **expectativa empírica clara** de que o desempenho cairá no alarme Right Front Brake Temperature.
+**Monitorar (W5-W7):** Análise de *drift* mensal (AUC-PR por mês no teste de junho), agora com **expectativa empírica precisa** — desempenho deve cair em jun, especialmente em eventos cujo alarme é Right Front Brake Temperature; magnitude da queda calibra se as 3 mitigações foram suficientes ou se será preciso plano alternativo (retreino *rolling* mensal proposto para CM 6.3 — Trabalhos Futuros).
 
-**Mitigação se acontecer:** (i) Reportar métricas mês a mês obrigatoriamente em W7; (ii) Discussão honesta no relatório (W8) sobre o impacto dos 2 regimes; (iii) Recomendação de retraining mensal nos Trabalhos Futuros; (iv) Família nova de features regimais em W4 (`razao_vs_baseline_proprio_alarme`) que pode mitigar parcialmente.
+**Mitigação adicional já implementada em W4:** a Família 4 de *features* regimais (`razao_alarme_7d_vs_30d_anterior`, `razao_severidade_14d_vs_60d`) foi desenhada proativamente para capturar exatamente o tipo de anomalia que gera o *drift* — a feature `razao_alarme_7d_vs_30d_anterior` é a operacionalização direta da detecção de explosões como a do RFB. A análise SHAP em W6 vai diagnosticar se essa família efetivamente capturou o sinal regimal pretendido.
 
-**Onde resolver:** W7 (análise) + W8 (escrita).
+**Onde resolver:** W5 (Mitigações 2 + 3 + GATE MARCO 1) + W6 (Mitigação 1 + análise SHAP da Família 4) + W7 (análise estratificada mês × frota × estado, decisão final) + W8 (escrita de Limitações em CM 6.2 e Trabalhos Futuros em CM 6.3).
 
 ---
 

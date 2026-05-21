@@ -136,19 +136,21 @@ Tempo: ~35 segundos. Cria `Projeto/dados/intermediarios/telemetria_consolidado.p
 
 **Pipeline principal (rodar em ordem):**
 ```powershell
-uv run python Projeto/codigo/01_ingestao.py          # W1 - ingestão + consolida 6 parquets
-uv run python Projeto/codigo/02_correcao_tipos.py    # W1 - corrige tipos (datetime, float BR)
-uv run python Projeto/codigo/03_limpeza.py           # W1+W3 - limpeza completa (12 etapas)
-uv run python Projeto/codigo/04_eda.py               # W2 - EDA visual (7 figuras + Q4)
-uv run python Projeto/codigo/05_features.py          # W3 - features básicas → v1.parquet
-# ... 06_split (W4), 07_baseline (W5), 08_lightgbm, 09_sobrevivencia, 10_evaluation, 11_isolation_forest
+uv run python Projeto/codigo/01_ingestao.py          # W1 - ingestão + consolida 6 parquets mensais → telemetria_consolidado.parquet (37,16M linhas)
+uv run python Projeto/codigo/02_correcao_tipos.py    # W1 - corrige tipos (datetime, float BR com vírgula decimal) → telemetria_tipada.parquet
+uv run python Projeto/codigo/03_limpeza.py           # W1+W3 - limpeza completa em 12 etapas (filtro Informacional, outliers, missings, sobreposições) → telemetria_limpa.parquet (544.885 linhas) + apontamentos_limpo.parquet + controle_alteracoes.csv
+uv run python Projeto/codigo/04_eda.py               # W2 - EDA visual (7 figuras fig02-fig06 + figExB + figExG) + tabela Q4 (dgs_por_frota_tipo_classe.csv)
+uv run python Projeto/codigo/05_features.py          # W3+W4 - 7 famílias de features (29 cols) + 3 targets (target_2h/4h/8h) → v1.parquet (5 básicas) + v2_parcial.parquet (19) + v2.parquet (29 + 3 targets, 22,4 MB) + documentacao_features.csv (CM 3.2) + sensibilidade_janela.csv
+uv run python Projeto/codigo/06_split.py             # W4 - split temporal walk-forward jan-abr / mai / jun + Fig 7 (janela predição) + Fig 8 (drift mensal) → v2_split.parquet (52 cols, 14,9 MB) + split_temporal.csv (CM 4.1)
+# ... 07_baseline (W5), 08_lightgbm (W5-W6), 09_sobrevivencia (W6), 10_evaluation (W7), 11_isolation_forest (W6)
 ```
 
 **Scripts auxiliares (investigações ad-hoc, rodam independentemente):**
 ```powershell
-uv run python Projeto/codigo/exploracao_w2_obs.py             # W2 - investiga obs 2.1, 2.2, 2.5, 2.6, 2.7
-uv run python Projeto/codigo/exploracao_w3_sobreposicoes.py   # W3 - investiga 340 sobreposições → CA65789
-uv run python Projeto/codigo/extrai_eventos_muito_alto.py     # W2 - extrai eventos_muito_alto.csv (CM 1.1)
+uv run python Projeto/codigo/exploracao_w2_obs.py             # W2 - investiga obs 2.1, 2.2, 2.5, 2.6, 2.7 (impressões no terminal)
+uv run python Projeto/codigo/exploracao_w3_sobreposicoes.py   # W3 - investiga 340 sobreposições → bug pontual no CA65789 (H1.4)
+uv run python Projeto/codigo/exploracao_w4_ca65924.py         # W4 - investiga H5.2 / Obs 2.3 → Fig Extra C (figExC_ca65924_cadeia.png) — refuta padrão "calmaria → acúmulo" universal; gera Obs 2.11 (sub-hipótese de acúmulo de criticidade)
+uv run python Projeto/codigo/extrai_eventos_muito_alto.py     # W2 - extrai eventos_muito_alto.csv (CM 1.1, 82 regras CMA Muito Alto)
 ```
 
 A ordem dos scripts principais segue a numeração (01_ → 11_). Detalhe completo dos scripts, semana de implementação, saídas e tempo estimado em [`Projeto/relatorio/rascunho.md`](Projeto/relatorio/rascunho.md) (Anexo A — Reprodutibilidade).
