@@ -320,4 +320,44 @@ Aplicada por `Projeto/codigo/06_split.py` (5 etapas), fechando a estratégia de 
 
 ---
 
+### 2026-05-22 — Fix do leakage subtil de frequency encoding (`06b_fix_encoding_leakage.py`, W5 pré-modelagem)
+
+Aplicada por `Projeto/codigo/06b_fix_encoding_leakage.py` (4 etapas, ~5s de execução), corrigindo a limitação conhecida das features `tag_freq` e `operador_freq` (Família 7 do `05_features.py`) — calculadas originalmente sobre o dataset GLOBAL na sessão de 17/05, com a inconsistência de leakage temporal subtil documentada e *fix* agendado para W5.
+
+- **ANTES:** as features de *frequency encoding* `tag_freq` e `operador_freq` em `v2_split.parquet` foram computadas em `05_features.py` (Etapa 10, Família 7) como `count(TAG) / 544.885` sobre o dataset filtrado completo (treino + validação + teste). Consequência: para um evento de janeiro-abril (treino), a feature `tag_freq` embute informação sobre volumes de maio-junho (val + teste) — *leakage* temporal de magnitude pequena (volumes mensais por equipamento são estáveis), mas tecnicamente presente. Casos específicos identificados: 2 TAGs (`CA65791`, `CA65916`) aparecem apenas em val/teste e não em treino; 13 operadores adicionais na mesma situação.
+- **DEPOIS:** matriz canônica `v3.parquet` (544.885 × 52, 14,9 MB) gerada com `tag_freq` e `operador_freq` **recomputadas sobre o split de treino apenas** (`split == 'train'`, 394.971 eventos) e propagadas para val/teste via `join` por chave. Categorias que aparecem em val/teste mas não em treino recebem `tag_freq = 0` ou `operador_freq = 0` (decisão Opção C-1 — análise rigorosa em `notas_metodologicas.md` Seção 2 mostra que adicionar feature binária `is_*_unknown_in_train` seria inerte em single-fold). Schema preservado (mesmas 52 colunas; o *fix* sobrescreve duas colunas em vez de adicionar novas).
+
+- **Justificativa metodológica:**
+  - **Por que isolar em script dedicado (`06b_fix_*` em vez de embutir em `08_lightgbm.py`):** separa responsabilidades (encoding correto é responsabilidade da preparação dos dados, não da modelagem), gera artefato canônico único (`v3.parquet`) reusável por todos os *scripts* downstream (`07_baseline.py`, `08_lightgbm.py`, `09_sobrevivencia.py`, `11_isolation_forest.py`), e mantém o pipeline puro de modelagem mais legível.
+  - **Por que `v3.parquet` em vez de sobrescrever `v2_split.parquet`:** preserva histórico para inspeção de regressões; consistente com a convenção v1/v2 já estabelecida em `05_features.py`. `v2_split.parquet` fica como referência histórica do estado "pré-*fix*".
+  - **Por que `freq = 0` para unknowns em vez de média global, mediana ou nova feature binária:** análise teórica em `notas_metodologicas.md` Seção 2 demonstra que (a) a Opção 2 (média global) mascara a novidade — operador desconhecido fica indistinguível de operador médio — sem ganho preditivo claro; (b) a Opção 3 (feature binária `is_unknown`) seria **matematicamente inerte** em *single-fold* porque a *feature* seria constante = 0 em 100% dos 394.971 eventos do treino, tendo *information gain* zero e sendo ignorada pelo LightGBM. **A Opção 3 deve ser reavaliada em W6** após implementação da Mitigação 1 (TimeSeriesSplit CV) — registrada como *task* explícita no `PLANEJAMENTO.md → W6`.
+
+- **Verificação empírica de W5 (resumida; detalhes em `notas_metodologicas.md` Seção 2):**
+
+  | Categoria afetada | VAL (78.825 eventos) | TEST (71.089 eventos) |
+  |---|---:|---:|
+  | Eventos com `tag_freq = 0` (TAG unknown) | 12 (0,02%) | 1.394 (1,96%) |
+  | Eventos com `operador_freq = 0` (op unknown) | 154 (0,20%) | 418 (0,59%) |
+  | **Eventos com qualquer freq = 0** | **166 (0,21%)** | **1.812 (2,55%)** |
+  | DGs com qualquer freq = 0 | 2 de 1.280 (0,16%) | **133 de 5.226 (2,54%)** |
+
+  TAGs unknown: `CA65916` (em val + test), `CA65791` (apenas em test). 6 operadores unknown em val, 7 em test. Asserções defensivas no `06b_fix_encoding_leakage.py` validam essas contagens — falha explícita caso o universo de unknowns mude em futuras execuções.
+
+- **Diff numérico antes/depois (sanity check):**
+  - `tag_freq.mean()` original: 0,050747 → pós-*fix*: 0,051484 (diff ~1,4%)
+  - `operador_freq.mean()` original: 0,007044 → pós-*fix*: 0,006971 (diff ~1,0%)
+  - Diferenças pequenas confirmam que o *leakage* era subtil (volumes mensais por TAG e por operador são empiricamente estáveis no semestre), mas agora está corrigido sem ambiguidade.
+
+- **Impacto no pipeline canônico de Modelagem:**
+  - **`v3.parquet` é o input canônico para toda a fase de Modelagem em W5-W7.** Scripts a jusante (`07_baseline.py`, `08_lightgbm.py`, `09_sobrevivencia.py`, `11_isolation_forest.py`) leem `v3.parquet` e filtram pela coluna `split` nos pontos de treino, validação e teste.
+  - **`v2_split.parquet` é deprecado para modelagem** mas preservado como referência do estado "com *leakage*", para reprodutibilidade histórica e para o teste opcional em W6 de "qual o impacto real do *leakage* na AUC-PR?" (treinar duas variantes do LightGBM v1, uma com `v2_split.parquet` e outra com `v3.parquet`, comparar — pode virar achado de Limitação se o efeito for não-desprezível).
+
+- **Decisões futuras agendadas com base no estudo de W5:**
+  - **W6:** reavaliar Opção 3 (`is_tag_unknown_in_train` como feature) após TimeSeriesSplit CV (Mitigação 1) — em CV a feature pode variar entre *folds* do treino e tornar-se aprendível. *Task* explícita no `PLANEJAMENTO.md → W6`.
+  - **W6 SHAP:** análise estratificada das importâncias por subgrupo "categoria conhecida vs unknown" — diagnostica se o modelo extrapola bem.
+  - **W7:** análise estratificada obrigatória "TAG/operador conhecidos vs unknown" no teste — reportar AUC-PR / Recall / Precisão separadamente para os 1.812 eventos / 133 DGs unknown. *Task* explícita no `PLANEJAMENTO.md → W7`.
+  - **CM 6.3 (Trabalhos Futuros):** argumento empírico concreto para a recomendação de retreino *rolling* mensal — 2,55% dos eventos em produção contínua virão de categorias novas; sem retreino, *blind spot* acumula. *Task* explícita no `PLANEJAMENTO.md → W8 → seção Trabalhos Futuros*.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

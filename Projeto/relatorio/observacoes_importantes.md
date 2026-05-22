@@ -18,20 +18,6 @@ Observações já **incorporadas** em `controle_alteracoes.md` (decisões metodo
 
 ## 2. Observações sobre o domínio (negócio)
 
-### - [ ] 2.4 Operador OP_067 (do caso CA65924) tem taxa de DG anormal?
-
-**Contexto:** O caso paradigma envolve um operador específico. Vale checar se OP_067 tem mais DGs que a média.
-
-**Por que importa:** Responde diretamente a **Q3** (operador correlaciona com alertas?).
-
-**Investigar:**
-- Taxa de DG por operador (DGs / total de eventos do operador)
-- OP_067 está no top? É outlier?
-- Distribuição geral: alguns operadores são sistematicamente piores?
-
-**Onde resolver:** W4 (criação da feature `taxa_DG_operador_30d`) ou W7 (análise de Q3 via SHAP).
-
----
 
 ### - [ ] 2.8 Houve recalibração de threshold ou regra CMA no Engine Coolant Level em fevereiro de 2025?
 
@@ -92,28 +78,6 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 
 ---
 
-### - [ ] 2.9 Qual evento operacional disparou o pico de Right Front Brake Temperature em junho?
-
-**Contexto:** Investigação Obs 2.6 extensão (16/05/2026) revelou que `Right Front Brake Temperature - Active` teve em junho:
-- 4.247 ocorrências (87,7% de todos os DGs Crítico de junho)
-- Média jan-mai: 28 ocorrências/mês
-- **Salto de 151,7×** — não é gradiente, é evento estrutural pontual
-
-**Por que importa:**
-- O alarme era **estatisticamente invisível** no período de treino (3-67 ocorrências/mês de jan a mai). O modelo dificilmente vai antecipá-lo no teste de junho — efeito direto do drift estrutural (Risco 3.2).
-- Se foi recapagem em massa, sazonalidade térmica ou troca de sensor, vira contexto importante para o relatório e para a recomendação operacional.
-
-**Investigar:**
-- Distribuição dos 4.247 DGs por **TAG**: foi concentrado em poucos equipamentos (sugere troca de sensor/falha localizada) ou difuso (sugere sazonalidade/política operacional)?
-- Distribuição dentro de junho: foi um dia específico (evento único) ou difuso ao longo do mês?
-- Cruzar com `Tag_Frota`: foi só frota 793-D 5S/4S ou difuso?
-- Cruzar com `Operador`: foi turno/operador específico?
-
-**Sem registros de manutenção/operação da Vale**, parte dessa investigação vira Limitação. O que dá pra fazer com os dados existentes alimenta narrativa do relatório.
-
-**Onde resolver:** W2 (EDA — alimenta a Fig Extra C — Cadeia de eventos) ou W7 (análise de erro estratificada e narrativa de drift).
-
----
 
 ## 3. Riscos a monitorar (não são observações, mas precisam vigilância)
 
@@ -136,6 +100,8 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 - **Jun:** Anomalia B — Right Front Brake Temperature Crítico explode (4.247 ocorrências vs média 28/mês jan-mai = 151,7× baseline)
 
 **Quantificação refinada pós-split (17/05/2026 — Fig 8 do `06_split.py`):** com o *split* temporal materializado, a magnitude exata do *drift* ficou medida em termos de **taxa de DG por split**: 3,41% (treino) / **1,62% (validação, mai)** / **7,35% (teste, jun)**. Em razão direta, **o teste tem 4,5× a taxa de DG da validação e 2,2× a média do treino**. Junho também concentra 26,2% de todos os DGs do semestre apesar de representar apenas 13,0% dos eventos — DGs clusterizados em torno da anomalia RFB.
+
+**Re-framing do drift (22/05/2026 — Obs 2.9 resolvida, ver `exploracao_w5_obs_pendentes.py`):** a investigação dedicada da anomalia RFB de junho refutou as hipóteses de drift regimal difuso e revelou que **a anomalia é a falha mecânica progressiva de UM ÚNICO equipamento (CA65926, frota 793-D 4S)**. Decomposição empírica: 98,53% dos 4.278 eventos RFB-Active de junho vêm exclusivamente do CA65926, e **82,2% de TODOS os DGs de junho (4.298 de 5.226)** vêm do mesmo equipamento. Onset abrupto (0% nos primeiros 5 dias de jun, 41% no meio, 58,9% nos últimos 5 dias — picos nos dias 26, 27 e 30). CA65926 já tinha histórico parcial (438 DGs em março via outros alarmes, taxa 20,28%) que pode ter sido sinal precursor da falha que se manifestou em junho. **Consequência para a interpretação do Risco 3.2:** o que parecia "drift estrutural genérico" é, na verdade, **um equipamento em deterioração progressiva** — pergunta para o modelo deixa de ser "antecipar regime nunca visto" e vira "antecipar falha progressiva de equipamento com histórico no treino" (6.578 eventos / 625 DGs do CA65926 em jan-mai disponíveis para aprendizado). As Mitigações 1-3 continuam válidas, mas a Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) ganha protagonismo central — foi desenhada exatamente para detectar esse tipo de explosão (RFB salta de 0-6/mês para 4.215 em jun no CA65926).
 
 **Impacto direto no split planejado (jan-abr / mai / jun):**
 - Treino contém Anomalia A
@@ -206,8 +172,12 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
 - **W4 (17/05/2026 — investigado antecipadamente):** ver `PLANEJAMENTO.md` → seção W4 → "Observações e Conclusões (W4)"
   - **Obs 2.3 (resolvida — refutada):** Investigação Fig Extra C (`exploracao_w4_ca65924.py`) comparou o caso paradigma CA65924 (147 eventos pré-DG, do `desenvolver_dontgo.xlsx`) com 3 DGs aleatórios de outros TAGs. Métrica de acúmulo: razão eventos_últimos_30min / eventos_primeiros_90min ≥ 2. **Apenas 1 de 4 painéis confirma o padrão de volume** (CA65908, razão=3,75). O próprio CA65924 não exibe acúmulo crescente (razão=0,39 — fluxo aproximadamente uniforme de ~1,25 eventos/min). **H5.2 refutada com reinterpretação:** padrão alternativo emergente é "acúmulo de **criticidade** pré-DG" (não de volume) — eventos `Critico` (vermelhos) concentram-se nos últimos minutos em 3 dos 4 painéis, mesmo quando volume total é uniforme. Nova obs **2.11** gerada para validação empírica via SHAP em W6. Implicação para modelo: rolling counts continuam úteis mas perdem força como família dominante; features regimais e estado_pre_evento provavelmente mais importantes.
 
+- **W5 (22/05/2026 — pré-modelagem, quick wins enriquecedores):** ver `PLANEJAMENTO.md` → seção W5 → "Observações e Conclusões (W5)"
+  - **Obs 2.4 (resolvida — Q3 do edital respondida):** Investigação via `exploracao_w5_obs_pendentes.py`. **OP_067 (operador do caso paradigma CA65924) NÃO é outlier extremo:** taxa 6,338% (1,73× baseline global de 3,664%), rank #76 de 394 operadores (top 19%); 152 operadores em faixa comparável (±50% da taxa de OP_067) — não é singular. **Resposta empírica para Q3:** comportamento do operador correlaciona com DG, mas de forma suave — distribuição assimétrica com mediana 2,99% / p95 10,87% / máx 83,77%, mas os extremos têm baixo volume (operadores raros / de teste). **OP_029 é o operador com maior massa estatística problemática** (taxa 32,5% sobre 3.125 eventos = 1.016 DGs absolutos). **Implicação para SHAP em W6:** feature `taxa_DG_operador_30d` é informativa mas não deve dominar o ranking; sinal real difuso, não concentrado. **H5.3 atualizada de 🔄 Pendente para 🟡 Refutada com reinterpretação.** Tabela `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas) anexada.
+  - **Obs 2.9 (resolvida — re-framing forte do drift):** Investigação via `exploracao_w5_obs_pendentes.py`. **A "anomalia RFB de junho" é a falha mecânica progressiva de UM ÚNICO equipamento (CA65926, frota 793-D 4S):** 98,53% dos 4.278 eventos RFB-Active de jun e 82,2% de TODOS os 5.226 DGs de jun vêm do CA65926. Top 3 TAGs concentram 99,8%. Decomposição temporal: onset abrupto (0% nos primeiros 5 dias, 41% no meio, 58,9% nos últimos 5 dias; picos dias 26-27-30). CA65926 já tinha sinal precursor em março (438 DGs, taxa 20,28%) mas via outros alarmes; RFB-Active saltou de 0-6/mês (jan-mai) para 4.215 em junho — **salto de ~700× no equipamento**, não nos 30 TAGs. **Refutadas:** H_recapagem em massa (só 1 TAG), H_sazonal térmica (não é rampa gradual), H_sensor em lote (lote afetaria múltiplos equipamentos). **Confirmada:** H_localizada (falha mecânica progressiva ou sensor defeituoso específico do CA65926). **H3.3 atualizada de 🔄 Pendente para 🟡 Refutada com reinterpretação.** Tabela `relatorio/tabelas/obs29_rfb_junho_decomposicao.csv` (34 linhas long-format) anexada. **Re-framing do Risco 3.2:** pergunta para o modelo deixa de ser "antecipar regime nunca visto" e vira "antecipar falha progressiva de equipamento específico com histórico no treino" (CA65926 tem 6.578 eventos / 625 DGs em jan-mai disponíveis). **Padrão emergente reforçado: equipamentos individuais problemáticos** — CA65926 aparece agora em DOIS contextos independentes (outlier de DGs em W2 + dominante na anomalia RFB em W5), análogo ao CA65789 (W3, 100% das sobreposições). Candidato a CM 6.1 (Insight Não Óbvio) + CM 6.3 (Recomendação Operacional: auditar sistema de freio dianteiro direito do CA65926).
+
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 
 ---
 
-**Última atualização:** 2026-05-17 (W4 — Fig Extra C / refutação H5.2 + Obs 2.3 resolvida + Obs 2.11 gerada)
+**Última atualização:** 2026-05-22 (W5 pré-modelagem — Obs 2.4 + Obs 2.9 resolvidas + Risco 3.2 re-framado)

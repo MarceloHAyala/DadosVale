@@ -1189,7 +1189,98 @@ Sem essas mitigações registradas, W5 cairia no piloto automático e o drift s�
 
 #### Observações e Conclusões (W5)
 
-*(A preencher quando observações de W5 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+##### 1. Obs 2.4 — Resposta empírica a Q3 (operador correlaciona com DG): sinal real, mas difuso
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/exploracao_w5_obs_pendentes.py`](Projeto/codigo/exploracao_w5_obs_pendentes.py) — função `obs_24`. Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w5_obs_pendentes.py
+```
+
+</details>
+
+Investigação dedicada ao caso paradigma CA65924 deixou pendente desde W1 a pergunta: o operador OP_067 (que aparece no `desenvolver_dontgo.xlsx`) tem taxa de DG anormal? A resposta direta vai além do operador específico — atinge a **Pergunta 3 do edital** sobre se o comportamento do operador correlaciona com alertas DG.
+
+**Resultado quantitativo** (394 operadores no dataset filtrado):
+
+| Métrica | OP_067 | Distribuição global |
+|---|---:|---|
+| Eventos | 426 | mediana 165 |
+| DGs absolutos | 27 | mediana 5 |
+| Taxa de DG | **6,338%** | baseline global 3,664% |
+| Rank | **#76 de 394** (top 19%) | — |
+| Razão vs baseline | 1,73× | — |
+| Operadores em faixa comparável (±50%) | **152** outros | — |
+
+A distribuição é fortemente assimétrica (q25 0,57% / q50 2,99% / q75 5,71% / q95 10,87% / q99 35,08% / máx 83,77%), mas os extremos têm baixo volume — OP_004 com taxa 83,77% só tem 154 eventos, provavelmente operador raro ou de teste. **O caso de comportamento operacional realmente preocupante** está em outro operador: **OP_029 com 1.016 DGs absolutos** (taxa 32,5% sobre 3.125 eventos) — único com massa estatística suficiente para virar sinal preditivo robusto no modelo.
+
+**Veredito sobre H5.3:** ❌ refutada na forma original — OP_067 não é outlier extremo. Atualizada para 🟡 (refutada com reinterpretação) em `hipoteses_eda.md`.
+
+**Resposta empírica para Q3 (CM 5.x do relatório):** sim, comportamento do operador correlaciona com DG, **mas de forma difusa** — não há 1-2 operadores "ruins" carregando o problema; há um continuum de 30× de variação entre p25 e p95. A feature `taxa_DG_operador_30d` (Família 5 do `05_features.py`) é informativa mas não deve dominar o ranking SHAP em W6. Interpretações do tipo "operador X é problemático" precisam ser estratificadas por volume de exposição.
+
+**Entregável anexado:** `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas com `n_eventos`, `n_dgs`, `taxa_dg_pct`) — vira material direto para a seção de resposta a Q3 do relatório final.
+
+---
+
+##### 2. Obs 2.9 — Re-framing forte do drift: anomalia RFB de junho é falha mecânica progressiva de UM equipamento
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/exploracao_w5_obs_pendentes.py`](Projeto/codigo/exploracao_w5_obs_pendentes.py) — função `obs_29`. Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/exploracao_w5_obs_pendentes.py
+```
+
+</details>
+
+A "Anomalia B de junho" havia sido caracterizada em W2 (Obs 2.6) como "explosão de 151,7× do Right Front Brake Temperature - Active" e adotada como **motor mecânico do drift** quantificado pela Fig 8 (taxa de DG 1,62% em mai → 7,35% em jun). Quatro hipóteses operacionais foram registradas para investigação dedicada: recapagem em massa de pneus, sazonalidade térmica de inverno, troca de sensor em lote, ou falha localizada em 1-2 equipamentos. A investigação de W5 decompôs os 4.278 eventos RFB-Active de junho por TAG / dia / frota / operador e produziu veredito **decisivo**:
+
+| Decomposição | Resultado |
+|---|---|
+| TAGs afetadas | 9 de 30 no split de teste |
+| **CA65926 isolado** | **98,53% dos 4.278 eventos** |
+| Top 3 TAGs concentram | 99,8% do volume |
+| Frota dominante (herdada da TAG) | 793-D 4S (98,55%) |
+| Onset temporal (primeiros 5 dias de jun) | 0% do volume |
+| Onset temporal (últimos 5 dias de jun) | 58,9% do volume; picos dias 26 (458), 27 (518), 30 (1087) |
+| CA65926: RFB-Active jan→jun | 0 / 3 / 6 / 0 / 0 / **4.215** → salto de ~700× no equipamento |
+| CA65926: histórico de DGs (todos alarmes) | 13.661 eventos, 4.923 DGs no semestre; **438 DGs em março já com taxa 20,28%** |
+
+**Veredito:**
+
+- **H_recapagem em massa**: ❌ refutada (uma operação de recapagem afetaria múltiplos equipamentos).
+- **H_sazonal térmica**: ❌ refutada (sazonalidade seria rampa gradual e difusa entre TAGs; aqui é onset abrupto e localizado).
+- **H_sensor em lote**: ❌ refutada (lote afetaria múltiplos equipamentos da mesma frota).
+- **H_localizada**: ✅ **confirmada.** Falha mecânica progressiva do sistema de freio dianteiro direito do CA65926 (ou sensor defeituoso específico). CA65926 já tinha sinal precursor em março (438 DGs com taxa 20,28% via outros alarmes); a manifestação no RFB explodiu em junho.
+
+**Re-framing do Risco 3.2 (drift temporal):** o que parecia "drift regimal genérico que o modelo não conseguiria antecipar" é, na verdade, **deterioração progressiva de um equipamento com histórico no treino**. Modelo treinado em jan-mai tem **6.578 eventos do CA65926 com 625 DGs históricos** disponíveis para aprendizado. A pergunta operacional deixa de ser "antecipar anomalia nunca vista" e vira "antecipar falha de equipamento que dava sinais" — significativamente mais respondável. A Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) foi desenhada exatamente para detectar esse tipo de explosão (volume recente vs baseline próprio) e ganha protagonismo central na narrativa SHAP de W6.
+
+**Implicação quantitativa para W7:** 82,2% de todos os DGs de junho (4.298 de 5.226) vêm do CA65926. Análise estratificada "com vs sem CA65926" no teste deve ser obrigatória — quantifica quanto da degradação esperada em junho é mecânica de UM equipamento vs distribuída entre os demais.
+
+**Veredito sobre H3.3:** ❌ refutada na forma original. Atualizada para 🟡 (refutada com reinterpretação) em `hipoteses_eda.md`.
+
+**Padrão emergente reforçado: equipamentos individuais problemáticos.** O CA65926 aparece agora em **dois contextos independentes** — outlier de DGs em W2 (Q4) + dominante da anomalia RFB em W5. Análogo ao **CA65789** que apareceu em W3 (100% das 340 sobreposições de apontamento). A EDA agregada por frota / mês / criticidade esconde sistematicamente esses indivíduos problemáticos; **análise estratificada por TAG vira mandatória em W7** (Qualidade C — análise por equipamento). Candidato direto a:
+
+- **CM 6.1 (Insights Não Óbvios):** "métricas agregadas escondem equipamentos individuais problemáticos — a Vale tem pelo menos dois equipamentos (CA65789 e CA65926) com comportamento sistematicamente anômalo que só emergem na análise estratificada".
+- **CM 6.3 (Recomendação Operacional):** auditar manualmente o sistema de freio dianteiro direito do CA65926 (junho); revisar política de manutenção preventiva por equipamento, não por frota agregada.
+
+**Entregável anexado:** `relatorio/tabelas/obs29_rfb_junho_decomposicao.csv` (34 linhas long-format: `dimensao ∈ {dia, TAG, frota}`, `valor`, `n`) — vira tabela de apoio direta na narrativa de Limitações (CM 6.2) e Trabalhos Futuros (CM 6.3) do relatório.
+
+---
+
+##### 3. Implicações conjuntas para W5 modelagem e W6 SHAP
+
+As duas resoluções confluem para uma narrativa coerente sobre o que esperar do modelo:
+
+1. **Família 4 regimal ganha protagonismo central** (Obs 2.9): `razao_alarme_7d_vs_30d_anterior` deveria estar no topo do ranking SHAP em W6 — foi desenhada exatamente para detectar saltos como o RFB no CA65926.
+2. **Família 5 operador é informativa mas suave** (Obs 2.4): `taxa_DG_operador_30d` aparece no SHAP mas não domina; sinal real é difuso, não concentrado.
+3. **Família 1 rolling counts e Família 2 recência** capturam deterioração progressiva por TAG (Obs 2.9): também devem aparecer no topo, especialmente `count_critico_24h` (que captura a "acumulação de criticidade" da Obs 2.11) e `horas_desde_ultimo_DG` (que captura o histórico recente de CA65926).
+4. **Mitigações 1-3 continuam válidas**, mas a Mitigação 1 (TimeSeriesSplit CV) ganha relevância dupla: além de atenuar "mai como regime raro", a CV expandida vai medir se o modelo aprende o padrão "CA65926 em deterioração" desde o treino mais antigo (jan → fev) — se sim, esperamos boa performance em jun apesar do drift de prevalência.
 
 ---
 
@@ -1205,6 +1296,11 @@ Sem essas mitigações registradas, W5 cairia no piloto automático e o drift s�
   - **Métrica de tuning:** AUC-PR média dos 4 folds. **Teste em jun continua intocado** (não entra na CV em nenhum momento). Ganho: ~5× mais sinal para tuning, reduz variância das métricas de validação, atenua "mai como regime raro" (1,62% de DG é metade da média do treino). Custo: ~5 min de tempo total de treino (LightGBM é rápido). Implementação: `sklearn.model_selection.TimeSeriesSplit` com cortes mensais customizados ou loop manual. **Asserção defensiva crítica:** validar em cada fold que `train.max(Data_Evento) < val.min(Data_Evento)` — protocolo walk-forward estrito.
 - [ ] Optuna no LightGBM: 50 trials sobre **AUC-PR média da CV de 4 folds** (Mitigação 1 acima), não sobre validação single-fold de mai.
 - [ ] LightGBM v2 com melhores parâmetros, avaliar no teste (jun) — único contato do modelo com test set em todo o pipeline.
+- [ ] **[Derivado do estudo W5 sobre encoding fix — `notas_metodologicas.md` Seção 2]** **Reavaliar Opção 3 (`is_tag_unknown_in_train` e `is_op_unknown_in_train` como features binárias)** agora que a Mitigação 1 (TimeSeriesSplit CV) está implementada — em single-fold a feature é constante no treino (LightGBM ignora); em CV expandida, a feature pode variar entre folds e tornar-se aprendível.
+  - **Justificativa empírica:** o estudo de W5 mediu que **2,55% dos eventos do teste (1.812 eventos / 133 DGs)** vêm de categorias unknown (TAGs `CA65791`, `CA65916` + 7 operadores). Magnitude não-desprezível mas não-dominante.
+  - **Critério de decisão:** treinar LightGBM v2.1 com as 2 features binárias adicionadas e comparar AUC-PR contra v2 (sem essas features). Se v2.1 ganha > 1pp em AUC-PR no teste → adotar; se ganho < 1pp ou negativo → confirmar Opção 1 e descartar definitivamente (parsimônia + menos código).
+  - **Critério estratificado adicional:** comparar AUC-PR especificamente nos 1.812 eventos unknown — se v2.1 melhora substancialmente esse subgrupo, vale adotar mesmo que ganho global seja pequeno.
+- [ ] **[Derivado do estudo W5]** **Análise SHAP estratificada por categoria unknown** — computar `is_tag_unknown` em runtime (sem persistir como feature) e gerar dois rankings de importância SHAP separados: (a) eventos com TAG/operador conhecidos no treino vs (b) eventos com qualquer unknown. Compara como o modelo extrapola para categorias nunca vistas. **Justificativa:** 1.812 eventos no teste estão nessa situação — se o ranking SHAP for muito diferente entre os dois subgrupos, o modelo está usando estratégias distintas, e isso vira material para CM 6.1 ou CM 6.2 do relatório.
 - [ ] `Projeto/codigo/09_sobrevivencia.py` — **Modelo de Sobrevivência (Weibull AFT, fallback Cox PH)** com `lifelines`:
   - [ ] **Reformatar dados para análise de sobrevivência**: para cada equipamento (TAG), construir tuplas (T, E, X) onde T = tempo até o próximo DG (em horas), E = 1 se evento observado / 0 se censurado (fim da janela jan-jun sem DG), X = features no instante de referência
   - [ ] Treinar `WeibullAFTFitter` no treino (jan-abr), avaliar **C-index** em validação (mai) e teste (jun)
@@ -1252,6 +1348,12 @@ Sem essas mitigações registradas, W5 cairia no piloto automático e o drift s�
   - [ ] Análise dos falsos negativos: que TAGs/frotas/operadores escapam?
   - [ ] **[Qualidade C] Análise de erro estratificada**: matriz de confusão e métricas por **frota** e por **tipo** (Caminhão vs. Escavadeira) — modelo não pode falhar mais em uma frota
   - [ ] **[Novo após Obs 2.7]** Métricas estratificadas por **estado operacional do DG** (Operando / Manutenção / Parado / Hibernando) — separa "DG operacional" (alvo principal) de "DG em teste de manutenção" (ruído contextual). Reportar Precision/Recall em cada subgrupo.
+  - [ ] **[Novo após Obs 2.9, H7.1]** Análise estratificada **"com vs sem CA65926"** no teste de junho — quantifica quanto da degradação esperada em jun é mecânica de UM equipamento (CA65926 = 82,2% dos DGs de jun = 4.298 de 5.226) vs distribuída entre os demais 29 equipamentos. **Justificativa empírica:** Obs 2.9 confirmou que a anomalia RFB de jun é falha localizada do CA65926, não drift regimal genérico. Sem essa separação, métricas agregadas misturam "modelo aprendeu deterioração de equipamento conhecido" (positivo) com "modelo manteve performance nos demais" (também positivo) — duas histórias diferentes que pedem narrativas distintas no relatório.
+  - [ ] **[Novo derivado do estudo W5 sobre encoding fix — `notas_metodologicas.md` Seção 2]** Análise estratificada **"TAG/operador conhecidos vs unknown no treino"** no teste — reportar AUC-PR / Recall / Precisão separadamente para:
+    - (a) **69.277 eventos / 5.093 DGs** em categorias conhecidas (97,45% do teste)
+    - (b) **1.812 eventos / 133 DGs** em categorias unknown (2,55% do teste)
+    - Detalhar: TAGs unknown identificadas (`CA65791` com 1.394 eventos, `CA65916`) + 7 operadores unknown (418 eventos).
+    - **Justificativa empírica:** o estudo de W5 mediu que 2,55% dos eventos do teste vêm de TAGs/operadores que não existiam no treino — análise agregada esconde se o modelo extrapola bem para essas categorias ou não. Se AUC-PR cai mais que 30% no subgrupo (b) vs (a), vira limitação concreta em CM 6.2 e argumento empírico para a recomendação de retreino rolling em CM 6.3.
   - [ ] Drift mensal: AUC-PR mês a mês no teste
   - [ ] Tabela custo-benefício: FN × FP × limiar ótimo
 - [ ] **Fig 13** — Comparação visual de performance: baseline vs. modelos desenvolvidos (CM 6.1)
@@ -1292,7 +1394,7 @@ Sem essas mitigações registradas, W5 cairia no piloto automático e o drift s�
 - [ ] Conclusão (1 p) + Trabalhos Futuros (1 p) — **mínimo 3 propostas concretas e justificadas** (CM 6.3):
   - [ ] Q2 (modelo multi-classe para tipo do alerta)
   - [ ] Integração de dados externos (manutenção preventiva, condições climáticas)
-  - [ ] Modelo online com retraining mensal para combater drift detectado em W7
+  - [ ] **Modelo online com retraining mensal para combater drift detectado em W7** — agora com **justificativa empírica concreta** (não apenas conceitual): o estudo de W5 sobre `tag_freq`/`operador_freq` mediu que **2,55% dos eventos do teste de junho (1.812 eventos / 133 DGs) vêm de TAGs/operadores que não existiam no treino jan-abr** (notas_metodologicas.md Seção 2). TAGs identificadas: `CA65791`, `CA65916`; 7 operadores adicionais. Em produção contínua, espera-se taxa mensal similar de "categorias novas" — modelo deployado sem retreino acumula *blind spot* crescente. Retreino *rolling* mensal (modelo treinado no mês N-3 até N-1, deployado para o mês N) elimina esse efeito por construção.
   - [ ] **Autoencoder LSTM** sobre série temporal bruta de telemetria — extensão natural do Isolation Forest já entregue, mas com estrutura temporal explícita; requer GPU não disponível neste ciclo
   - [ ] **Validação prospectiva com dados de manutenção corretiva**: usar registros de intervenção física (não disponíveis no escopo atual) para validar se as anomalias detectadas pelo IF correspondem a falhas reais, fechando o ciclo do diagnóstico complementar
 - [ ] **Resumo (500 palavras) — escrever por último**

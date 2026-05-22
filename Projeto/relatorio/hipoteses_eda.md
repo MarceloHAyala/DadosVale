@@ -113,13 +113,42 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 ---
 
 ### H3.3 — O pico de Right Front Brake Temperature Crítico em junho foi evento operacional pontual
-**Status:** 🔄 Pendente (Obs 2.9 — investigar contexto em W2 ou W7)
+**Status:** 🟡 Refutada com reinterpretação importante (W5 — Obs 2.9 resolvida via `exploracao_w5_obs_pendentes.py`, 22/05/2026)
 
-**Origem:** Right Front Brake Temperature - Active teve entre 3 e 67 ocorrências/mês de jan a mai, e **4.247 ocorrências em junho** (salto de 151,7×). Não é gradiente — é evento estrutural pontual.
+**Origem:** Right Front Brake Temperature - Active teve entre 3 e 67 ocorrências/mês de jan a mai (média ~74 no dataset filtrado), e **4.278 ocorrências em junho** (salto de 58× sobre média jan-mai, ou ~150× se comparado ao baseline mais restrito de mar-mai). Não é gradiente — é evento estrutural pontual.
 
-**Evidência preliminar:** Padrão sugere causa única e súbita. Hipóteses operacionais (não testáveis sem registros de manutenção da Vale): recapagem em massa de pneus afetando termoregulação dos freios, sazonalidade térmica (início de inverno em Itabira), troca/recalibração de sensor em lote.
+**Hipóteses operacionais testadas em W5:**
 
-**Implicação:** Diferenciar entre as causas exige cruzamento por TAG (foi concentrado em poucos equipamentos? sugere troca de sensor / falha localizada), por dia dentro de junho (evento único vs difuso), por Frota e Operador. Vira contexto crítico para narrativa do relatório. Sem dados de operação, parte da investigação se converte em Limitação (CM 6.2). Pendente em [observacoes_importantes.md](observacoes_importantes.md) Obs 2.9.
+- **H_recapagem em massa** (afetando termoregulação dos freios) → esperaria distribuição espalhada por TAGs com onset sincronizado
+- **H_sazonal térmica** (início de inverno em Itabira) → esperaria rampa gradual ao longo de junho
+- **H_sensor em lote** (troca/recalibração de sensores) → esperaria poucas TAGs com onset abrupto em data única
+- **H_localizada** (falha em 1-2 equipamentos, análoga ao CA65789 da H1.4) → esperaria concentração extrema (poucas TAGs, possivelmente uma)
+
+**Evidência empírica (W5):**
+
+| Decomposição | Resultado |
+|---|---|
+| TAGs afetadas | 9 de 30 no split de teste |
+| **CA65926 isolado** | **98,53% dos 4.278 eventos RFB-Active de junho** |
+| Top 3 TAGs | 99,8% do volume |
+| Frota dominante | 793-D 4S (98,55%, herdada da TAG CA65926) |
+| Onset (primeiros 5 dias de jun) | 0% do volume |
+| Onset (últimos 5 dias de jun) | 58,9% do volume; picos nos dias 26 (458), 27 (518), 30 (1087) |
+| CA65926 jan-mai (RFB-Active) | 0/3/6/0/0 eventos por mês → **salto de ~700× no equipamento** |
+| CA65926 historicamente | 13.661 eventos, 4.923 DGs no semestre; taxa em março já era 20,28% via outros alarmes |
+
+**Veredito:**
+
+- **H_recapagem em massa**: ❌ **Refutada.** Uma operação de recapagem afetaria múltiplos equipamentos, não 98,5% concentrados em um único.
+- **H_sazonal térmica**: ❌ **Refutada.** Sazonalidade térmica seria rampa gradual e difusa entre TAGs; aqui o onset é abrupto e localizado.
+- **H_sensor em lote**: ❌ **Refutada.** Lote de sensores trocados afetaria múltiplos equipamentos da mesma frota — aqui apenas o CA65926.
+- **H_localizada**: ✅ **Confirmada.** Falha mecânica progressiva do sistema de freio dianteiro direito do CA65926 (ou sensor defeituoso específico do equipamento). CA65926 já tinha sinal precursor em março (438 DGs via outros alarmes); a falha do RFB em junho é a manifestação acumulada do problema mecânico.
+
+**Implicação central (re-framing do Risco 3.2):** o "drift estrutural de junho" não é regimal genérico — é a **deterioração progressiva de um equipamento específico com histórico no treino**. Modelo treinado em jan-mai tem 6.578 eventos do CA65926 com 625 DGs históricos disponíveis para aprendizado. A pergunta deixa de ser "antecipar anomalia nunca vista" e vira "antecipar falha de equipamento que dava sinais". A Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) foi desenhada exatamente para detectar esse tipo de explosão e ganha protagonismo central na narrativa SHAP de W6. **82,2% de todos os DGs do teste (4.298 de 5.226) vêm do CA65926** — análise estratificada "com vs sem CA65926" em W7 pode quantificar quanto da degradação esperada em jun é mecânica de UM equipamento.
+
+**Padrão emergente reforçado:** CA65926 aparece agora em DOIS contextos independentes (outlier de DGs em W2 + dominante da anomalia RFB em W5), análogo ao CA65789 (W3 — 100% das sobreposições de apontamento). Candidato a **CM 6.1** (Insight Não Óbvio: a EDA agregada esconde equipamentos individuais problemáticos) + **CM 6.3** (Recomendação Operacional Concreta: auditar sistema de freio dianteiro direito do CA65926 e revisar política de manutenção preventiva por equipamento, não por frota).
+
+Tabela `relatorio/tabelas/obs29_rfb_junho_decomposicao.csv` (34 linhas long-format: dia / TAG / frota) anexada.
 
 ---
 
@@ -181,13 +210,33 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 ---
 
 ### H5.3 — O operador OP_067 (do caso CA65924) tem taxa anormal de DGs
-**Status:** 🔄 Pendente (Obs 2.4 — investigar em W4 ou W7)
+**Status:** 🟡 Refutada com reinterpretação (W5 — Obs 2.4 resolvida via `exploracao_w5_obs_pendentes.py`, 22/05/2026)
 
-**Origem:** O caso paradigma envolve operador específico (OP_067). Vale checar se esse operador é outlier ou se há outros sistematicamente piores — base para responder Q3 ("comportamento do operador correlaciona com alertas?").
+**Origem:** O caso paradigma envolve operador específico (OP_067). Vale checar se esse operador é outlier ou se há outros sistematicamente piores — base para responder **Q3 do edital** ("comportamento do operador correlaciona com alertas?").
 
-**Evidência preliminar:** Não testada ainda.
+**Evidência empírica (W5):**
 
-**Implicação:** Se OP_067 é outlier (ou se outros operadores são sistematicamente piores), justifica feature `taxa_DG_operador_30d` em W4 + análise SHAP em W7 para Q3. Se a distribuição é uniforme, Q3 perde força mas é honestidade analítica reportar.
+| Métrica | OP_067 | Distribuição (394 operadores) |
+|---|---:|---|
+| Eventos no dataset filtrado | 426 | mediana 165 |
+| DGs absolutos | 27 | mediana 5 |
+| **Taxa de DG** | **6,338%** | baseline global 3,664% |
+| Rank por taxa | **#76 de 394** (top 19%) | — |
+| Razão vs baseline global | 1,73× | — |
+| Operadores em faixa comparável (±50%) | **152** outros | — |
+
+Quantis da distribuição de taxa de DG por operador: q25 0,57% / q50 (mediana) 2,99% / q75 5,71% / q90 8,60% / q95 10,87% / q99 35,08% / máx 83,77%. A distribuição é **fortemente assimétrica** (cauda longa para a direita), mas os extremos têm baixo volume — OP_004 com taxa 83,77% só tem 154 eventos (provavelmente operador raro / de teste / outlier de exposição). Os operadores com massa estatística problemática estão no top de volume absoluto: **OP_029 com 1.016 DGs absolutos** (taxa 32,5% sobre 3.125 eventos) — esse sim é um caso de comportamento operacional efetivamente preocupante, com escala suficiente para o modelo aprender.
+
+**Veredito:**
+
+- **Hipótese original (OP_067 é outlier de DGs)**: ❌ **Refutada.** OP_067 está acima do baseline mas longe da extremidade — 152 operadores têm perfil similar. Não é singular.
+- **Pergunta substituta (Q3 do edital — operador correlaciona com DG?)**: ✅ **Resposta empírica suave.** Sim, há correlação, mas é **difusa**, não concentrada em 1-2 indivíduos. A taxa varia 30× entre p25 e p95, mas os extremos têm baixo volume. A informação preditiva está no perfil completo (distribuição), não num operador específico.
+
+**Implicação central:** a feature `taxa_DG_operador_30d` (Família 5 do `05_features.py`) é **informativa mas não dominante** — não deve aparecer no topo do ranking SHAP em W6, e qualquer interpretação do tipo "operador X é problemático" precisa ser estratificada por volume de exposição (operadores de baixo volume com taxas extremas são ruído de pequena amostra). O sinal real de comportamento operacional é difuso e provavelmente entra no modelo via interações entre `taxa_DG_operador_30d`, `n_bypasses_operador_7d` (Família 5) e `operador_freq` (Família 7).
+
+**Implicação para a resposta do CM 5 (responder Q3 no relatório final):** Q3 tem resposta empírica honesta — "sim, com sinal difuso, e a feature `taxa_DG_operador_30d` ranqueia operadores de forma consistente mas suave; o caso paradigma OP_067 está acima da média mas não é extremo, e os operadores realmente problemáticos por volume absoluto são OP_029 (1.016 DGs) e similares". Não há narrativa de "operadores ruins versus bons" — há um continuum.
+
+Tabela `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas com `n_eventos`, `n_dgs`, `taxa_dg_pct` por operador) anexada como entregável de Q3.
 
 ---
 
@@ -204,24 +253,75 @@ Detalhes completos dos testes empíricos estão em [`PLANEJAMENTO.md`](../../PLA
 
 ---
 
-## Resumo quantitativo (status 2026-05-17 — pós W4 Fig Extra C)
+## 7. Equipamentos individuais problemáticos (padrão emergente)
+
+### H7.1 — Há equipamentos individuais com problemas sistêmicos que não são capturados pelas médias agregadas por frota
+**Status:** ✅ Confirmada por convergência de 3 evidências independentes em 2 equipamentos distintos (W2 + W3 + W5)
+
+**Origem:** Padrão emergente — equipamentos específicos surgiram em investigações independentes ao longo de W2-W5 sem terem sido hipotetizados a priori. **Análogo metodológico à H4.1** (frota LeTourneau L 1850, padrão emergente confirmado por 4 evidências), com diferença de escala importante: H4.1 atua sobre uma frota inteira (sistêmico), H7.1 atua sobre equipamentos individuais dentro de outras frotas (idiossincrático). As duas hipóteses são compatíveis e fortalecem mutuamente a tese central de que dados de frota industrial têm heterogeneidade não-trivial que precisa ser respeitada na avaliação e na recomendação operacional.
+
+**Evidência (3 convergências em 2 equipamentos):**
+
+1. **W2 (Q4 — `04_eda.py`):** **CA65926 (frota 793-D 4S)** aparece como outlier no topo do *ranking* de DGs absolutos por equipamento no semestre completo (consolidado em `relatorio/tabelas/dgs_por_frota_tipo_classe.csv` e visualizado em `relatorio/figuras/figExG_pareto_tags.png`). Taxa de DG global do equipamento no semestre supera substancialmente a média da própria frota; em junho a taxa mensal sobe a **60,68%** (4.298 DGs sobre 7.083 eventos do mês). Achado inicial não-marcado como hipótese — apenas registrado como caracterização de Q4.
+
+2. **W3 (sobreposições temporais — `exploracao_w3_sobreposicoes.py`):** **CA65789 (frota 793-D 2S)** concentra **100% das 340 sobreposições temporais de ciclos de apontamento** detectadas pela etapa 10 do `03_limpeza.py`, com 90% concentradas em janeiro/2025 e 35% em estado `Hibernando`. Bug pontual de registro, não padrão sistêmico — mas inteiramente localizado em um único equipamento específico. Taxa local de sobreposições no CA65789 é de 2,81% dos seus 12.118 apontamentos (significativo localmente, irrelevante quando agregado: 0,09% do dataset todo). Formalizada como H1.4 (Refutada com reinterpretação — refuta "padrão sistêmico" mas confirma "bug localizado em UM equipamento").
+
+3. **W5 (decomposição RFB de junho — `exploracao_w5_obs_pendentes.py`):** o pico de `Right Front Brake Temperature - Active` em junho/2025 (4.278 eventos, salto de ~58× sobre média jan-mai) é **98,53% concentrado no CA65926**. Onset abrupto nos últimos 5 dias do mês (58,9% do volume; picos dias 26 / 27 / 30). O equipamento já tinha sinal precursor em março (438 DGs com taxa 20,28% via outros alarmes, antes da manifestação no sensor de freio). **82,2% de TODOS os DGs do conjunto de teste de junho (4.298 de 5.226) vêm exclusivamente do CA65926.** Formalizada como re-framing da H3.3 (Refutada com reinterpretação — refuta "pico operacional genérico" e confirma "falha localizada do CA65926").
+
+**Implicação central:** há pelo menos 2 equipamentos com comportamento sistematicamente anômalo que **só emergem na análise estratificada por TAG**. A EDA agregada por frota, por mês ou por criticidade esconde sistematicamente esses indivíduos:
+
+- A média da frota 793-D 4S é puxada pelo CA65926 em junho (98% dos eventos RFB), mas o CA65926 não domina a frota em todos os meses — o efeito agregado é diluído.
+- A taxa de sobreposições do semestre todo é 0,09% — desprezível. Localizada no CA65789 isoladamente é 2,81% — significativa.
+- A taxa global de DG é 3,66% — mas o CA65926 tem taxa mensal de 60,68% em junho (16× a média global).
+
+**Três interpretações possíveis (mutuamente não-exclusivas):**
+
+1. **Falhas mecânicas/sensoriais reais em equipamentos específicos** — CA65926 mostra sinais de deterioração progressiva (sinal em março → manifestação no RFB em junho); CA65789 mostra problema localizado de registro/instrumentação em janeiro. Ambos coerentes com explicações puramente físicas.
+2. **Viés de manutenção/operação** — equipamentos com histórico de manutenção pior, operadores específicos recorrentemente atribuídos, ou exposição a operações mais críticas (mineração em fronts mais agressivos, por exemplo). Não verificável só com os dados disponíveis (precisaria de registros de manutenção da Vale).
+3. **Limitações da CMA** — regras de alarme calibradas para o "equipamento médio" da frota ficam mal adaptadas para casos extremos — equipamentos em deterioração extrapolam os *thresholds* projetados. Análogo metodológico ao Risco 3.3 (viés do label CMA), mas com efeito direcionado a equipamentos específicos.
+
+**Implicação para modelagem (W5-W7):**
+
+- **Análise estratificada por TAG é obrigatória em W7** (Qualidade C do edital — análise por equipamento). Métricas agregadas (AUC-PR global, *Recall* global) podem esconder duas histórias muito diferentes: "modelo aprendeu a antecipar deterioração de equipamentos conhecidos" vs "modelo manteve *performance* estável em todos os equipamentos". Sem estratificação, a leitura externa do desempenho mistura ambas e perde poder de interpretação.
+- Em particular: **análise "com vs sem CA65926"** no conjunto de teste deve ser reportada explicitamente. Quantifica quanto da degradação esperada em junho é mecânica de um equipamento conhecido (~82% dos DGs do teste vêm dele) e quanto é difusa entre os 29 equipamentos restantes — duas histórias com implicações operacionais radicalmente diferentes.
+- A análise SHAP em W6 deve incluir **stratificação por TAG** para os equipamentos identificados em H7.1 — se o ranking de *features* mudar substancialmente quando focado em CA65926 ou CA65789, há sinal de que o modelo aprende padrões individualizados (bom para previsão por equipamento, ruim para generalização).
+
+**Implicação para o relatório (CM 6):**
+
+- **CM 6.1 (Insights Não Óbvios):** "A EDA agregada por frota esconde equipamentos individuais problemáticos. Pelo menos 2 equipamentos (CA65789 em W3 e CA65926 em W2 + W5) têm comportamento sistematicamente anômalo que só emerge na análise estratificada por TAG. A descoberta foi não-trivial porque cada equipamento apareceu em uma investigação distinta — só ao consolidar os achados em W5 o padrão emergiu."
+- **CM 6.2 (Limitações):** "Médias agregadas têm valor limitado em *datasets* com forte concentração em poucos indivíduos. Qualquer recomendação operacional baseada apenas em estatísticas agregadas por frota risca não capturar os casos onde a ação preventiva tem maior valor."
+- **CM 6.3 (Recomendação Operacional Concreta):** dois itens materializáveis e direcionáveis:
+  1. **Auditoria manual do CA65926** — investigar fisicamente o sistema de freio dianteiro direito, especialmente o sensor e a integridade mecânica, após os picos de 26-30 de junho. Sinal de deterioração estava presente desde março (438 DGs, taxa 20,28%) — janela de antecipação real.
+  2. **Auditoria do pipeline de registro de apontamentos do CA65789** — investigar o sistema de registro especificamente para esse equipamento em janeiro/2025 (340 ciclos sobrepostos, todos localizados nele).
+  3. **Revisão da política de manutenção preventiva** — incluir gatilhos baseados em métricas individuais por TAG (taxa mensal de DG, salto de alarmes específicos vs *baseline* próprio do equipamento), não apenas em médias por frota. Trabalho Futuro: explorar se os 35 equipamentos com telemetria contínua se beneficiam de modelos individuais (um modelo por TAG) ou se a estratificação dentro de um modelo único é suficiente.
+
+**Limitação metodológica reconhecida:** com apenas 3 evidências em 2 equipamentos, H7.1 é estatisticamente mais frágil que H4.1 (4 evidências em uma frota inteira). É possível que existam outros equipamentos problemáticos não detectados — a investigação foi *opportunistic*, não sistemática (cada um surgiu por motivo distinto). Uma extensão natural seria fazer **análise sistemática de outliers por TAG** ao longo de múltiplas dimensões (taxa de DG, volume, perfil de alarmes, estado operacional dominante) para construir um *ranking* defensável de equipamentos a auditar. Está registrado como Trabalho Futuro candidato a CM 6.3.
+
+---
+
+## Resumo quantitativo (status 2026-05-22 — pós W5 quick wins + H7.1 formalizada)
 
 | Categoria | Total | ✅ Confirmadas | ❌ Refutadas | 🟡 Refutadas com reinterpretação | 🔄 Pendentes |
 |---|---:|---:|---:|---:|---:|
 | 1. Cobertura e qualidade dos dados | 4 | 0 | 2 | 2 | 0 |
 | 2. Concentração de DGs | 2 | 1 | 1 | 0 | 0 |
-| 3. Regimes temporais e drift | 3 | 0 | 1 | 0 | 2 |
+| 3. Regimes temporais e drift | 3 | 0 | 1 | 1 | 1 |
 | 4. Frota LeTourneau (emergente) | 1 | 1 | 0 | 0 | 0 |
-| 5. Estado operacional e contexto | 3 | 0 | 0 | **2** | **1** |
+| 5. Estado operacional e contexto | 3 | 0 | 0 | 3 | 0 |
 | 6. Viés do label CMA | 1 | 0 | 0 | 0 | 1 |
-| **Total** | **14** | **2** | **4** | **4** | **4** |
+| **7. Equipamentos individuais (emergente)** | **1** | **1** | 0 | 0 | 0 |
+| **Total** | **15** | **3** | **4** | **6** | **2** |
 
-**Observação metodológica:** 8 das 10 hipóteses testadas em W1-W4 caíram (refutadas ou refutadas com reinterpretação) — taxa de 80% de refutação. Esse é **sinal claro de qualidade da exploração**: a EDA está cumprindo o papel de testar premissas, não apenas confirmá-las. Hipóteses refutadas com reinterpretação (H1.2, H1.4, H5.1, **H5.2**) geraram achados mais ricos que a hipótese original previa:
+**Observação metodológica:** 13 das 15 hipóteses testadas até W5 receberam veredito empírico (apenas H3.2 — mudança de regra CMA em fev — e H6.1 — viés do label CMA — permanecem pendentes, ambas dependentes de evidência externa ou de modelo). Das 13 testadas, 10 caíram (refutadas ou refutadas com reinterpretação) — **taxa de 77% de refutação**. Esse é **sinal claro de qualidade da exploração**: a EDA está cumprindo o papel de testar premissas, não apenas confirmá-las. As **3 hipóteses confirmadas** (H2.1 top 5 alarmes / H4.1 LeTourneau / H7.1 equipamentos individuais) são todas estruturalmente fortes — duas delas (H4.1 e H7.1) emergiram como padrões não-hipotetizados a priori, validados pela convergência de múltiplas evidências independentes. Hipóteses refutadas com reinterpretação geraram **achados sempre mais ricos** que a hipótese original previa:
 - **H1.2 → bypass manual do operador como flag latente** (Id_Criticidade=4)
 - **H1.4 → bug pontual no CA65789** (recomendação operacional concreta para Vale)
+- **H3.3 (W5) → falha mecânica progressiva localizada do CA65926** (não recapagem em massa, não sazonalidade térmica, não troca de sensor em lote — re-framing forte do Risco 3.2; ver tabela `obs29_rfb_junho_decomposicao.csv`)
 - **H5.1 → DGs em Manutenção são legítimos** (reativações de teste, não falsos positivos)
 - **H5.2 (W4) → padrão "acúmulo de criticidade" no lugar de "acúmulo de volume"** (sub-hipótese registrada como Obs 2.11 para validação via SHAP em W6)
+- **H5.3 (W5) → operador correlaciona com DG de forma difusa** (OP_067 não é outlier, mas Q3 tem resposta empírica; ver tabela `obs24_taxa_dg_por_operador.csv`)
+
+**Padrão emergente forte (formalizado como H7.1 em 22/05/2026):** equipamentos individuais problemáticos aparecem em múltiplos contextos independentes — **CA65789** (W3: 100% das sobreposições de apontamento) e **CA65926** (W2: outlier de DGs por equipamento; W5: 82,2% dos DGs de junho e 98,5% da anomalia RFB). Convergência de 3 evidências independentes em 2 equipamentos, análoga em força à H4.1 (LeTourneau). A EDA agregada esconde esses indivíduos; análise estratificada por TAG vira mandatória em W7 (Qualidade C — análise por equipamento). Candidato direto a **CM 6.1** (Insight Não Óbvio) + **CM 6.3** (Recomendação Operacional: auditoria manual do CA65926 e do CA65789 + revisão da política de manutenção preventiva por equipamento, não por frota).
 
 ---
 
-**Última atualização:** 2026-05-17 (W4 — Fig Extra C / refutação de H5.2)
+**Última atualização:** 2026-05-22 (W5 quick wins — H3.3 refutada e re-framada / H5.3 refutada e Q3 respondida / **H7.1 formalizada como padrão emergente confirmado**)
