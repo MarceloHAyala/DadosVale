@@ -1158,7 +1158,7 @@ Sem essas mitigações registradas, W5 cairia no piloto automático e o drift s�
 
 **Objetivo:** modelo principal funcionando, batendo o baseline.
 
-- [ ] **[Refinamento de W4 — adiado para W5 por dependência do target real]** Substituir `tag_freq` e `operador_freq` (frequency encoding implementado em `05_features.py`, Família 7) por **target encoding com KFold temporal**. **Motivação dupla:** (a) target encoding capta correlação com o target — mais informativo que frequency puro; (b) **fix de leakage subtil descoberto após o split:** o frequency encoding atual foi computado sobre o dataset GLOBAL (treino + val + teste) — ou seja, `tag_freq` para um evento de jan-abr embute conhecimento dos volumes de mai-jun, idem `operador_freq`. Magnitude pequena (volume por TAG é estável mês-a-mês) mas tecnicamente é leakage. O fix correto é recomputar frequências sobre TREINO apenas e aplicar a val/teste — incluído na rotina de target encoding abaixo. Casos específicos identificados pós-split: 2 TAGs (`CA65791`, `CA65916`) aparecem só em val/teste e não em treino → `tag_freq` foi calculado com eventos que o modelo "não deveria conhecer"; 13 operadores em val/teste ausentes do treino (mesmo problema). Implementação detalhada:
+- [ ] **[Refinamento de W4 — adiado para W5 por dependência do target real]** Substituir `tag_freq` e `operador_freq` (frequency encoding implementado em `05_features.py`, Família 7) por **target encoding com KFold temporal**. **Motivação dupla:** (a) target encoding capta correlação com o target — mais informativo que frequency puro; (b) **fix de leakage subtil descoberto após o split** — ✅ **PARTE (b) RESOLVIDA EM 22/05 via `06b_fix_encoding_leakage.py`** (gerou `v3.parquet`; ver task de 06b acima e entrada controle_alteracoes 2026-05-22). Resta apenas a parte (a) — substituição por target encoding com KFold, que é o refinamento incremental mais ambicioso. Casos específicos identificados pós-split: 2 TAGs (`CA65791`, `CA65916`) aparecem só em val/teste e não em treino; 13 operadores em val/teste ausentes do treino — tratamento atual em `v3.parquet`: `freq = 0` para esses unknowns (Opção C-1, registrada em `notas_metodologicas.md` Seção 2). Implementação detalhada do target encoding refinado:
   - **Pré-requisito:** target real `y = 1 se DG em [+0, +4h]` (CM 3.3) construído em W4, e split temporal `06_split.py` definido (treino jan-abr / val mai / teste jun).
   - **Para cada categoria de alta cardinalidade** (`Tag` com 35 valores, `Nome_Operador_Anon` com 394 valores):
     1. Sobre o conjunto de **TREINO apenas** (jan-abr), particionar em K folds temporais (sugerido K=4: jan / fev / mar / abr).
@@ -1168,22 +1168,34 @@ Sem essas mitigações registradas, W5 cairia no piloto automático e o drift s�
   - **Validação empírica obrigatória:** comparar AUC-PR do LightGBM v1 (frequency encoding atual) vs LightGBM com target encoding nessas duas features. Critério: se ganho de AUC-PR em validação for > 1pp, substituir; se < 1pp, manter frequency (parsimônia + menos código).
   - **Saída esperada:** novas features `tag_target_enc` e `operador_target_enc` em `v2_5.parquet` ou substituição direta em `v2.parquet`. Registrar decisão final em `controle_alteracoes.md`.
   - **Onde resolver:** W5 (junto com o `07_baseline.py` e `08_lightgbm.py` — momento natural para a comparação empírica).
-- [ ] `Projeto/codigo/07_baseline.py` — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG
-- [ ] Métricas baseline no teste de jun: Precision, Recall, F1, AUC-PR
-- [ ] `Projeto/codigo/08_lightgbm.py` — LightGBM v1 com parâmetros default. **Encoding pré-modelagem:** corrigir o leakage subtil de `tag_freq`/`operador_freq` (frequências computadas sobre dataset global em `05_features.py`) recalculando sobre TREINO apenas e aplicando em val/teste — mesma rotina do target encoding refinado (refinamento já listado abaixo).
+- [X] `Projeto/codigo/07_baseline.py` (executado em 22/05/2026, 0,4s) — heurística: DG=1 se houve crítico nas últimas 4h do mesmo TAG. **Foco em `target_4h` apenas** (pergunta operacional canônica do CM 1.2). Score raw para AUC-PR: `count_critico_4h` (perfeitamente alinhado com o horizonte do *target*). Thresholds binários reportados: 1, 2, 3, 5 (Mitigação 3 estratifica val/test). Decisão registrada após discussão no W5 pré-baseline: NÃO incluir `target_2h` e `target_8h` no baseline porque exigiria features adjacentes mal-alinhadas (`count_critico_1h` para 2h, `count_critico_24h` para 8h) que introduziriam viés metodológico — análise de sensibilidade da janela migra para `08_lightgbm.py` onde é metodologicamente correta. **Saída:** `relatorio/tabelas/baseline_metricas.csv` (8 linhas). Detalhes do achado em §4 das Observações e Conclusões abaixo.
+- [X] Métricas baseline no teste de jun: Precision, Recall, F1, AUC-PR — **completas para val e test estratificados**. Resultado: AUC-PR val 0,2397 / test 0,5803 (test 2,42× val — achado contra-intuitivo). F1 máximo: val 0,3127 (threshold=1) / test 0,5243 (threshold=5). Forçou re-calibração do GATE MARCO 1 (ver task abaixo).
+- [ ] **[Profundidade 1 — comparação preditiva entre horizontes do *target*, refinamento da análise descritiva já feita em W4]** Em `08_lightgbm.py`, treinar **3 variantes do LightGBM v1 com hiperparâmetros idênticos** mas *targets* diferentes:
+  - **Variante T2:** `target_2h` como alvo
+  - **Variante T4:** `target_4h` como alvo (canônica)
+  - **Variante T8:** `target_8h` como alvo
+  - Mesma matriz `v3.parquet` em todas as variantes (features completas — LightGBM tem acesso a `count_critico_1h/4h/24h` e pode usar as que fizerem sentido para cada horizonte). Mesmos hiperparâmetros *default* + mesma calibração de `scale_pos_weight` (Mitigação 2). Comparação rigorosa porque **só o *target* varia**.
+  - **Métricas comparativas:** AUC-PR de cada variante em val e teste, estratificadas mai/jun (Mitigação 3). Registrar em tabela `relatorio/tabelas/comparacao_horizontes_lightgbm.csv`.
+  - **Critério de decisão:** se T4 dominar em AUC-PR, justifica empiricamente a escolha operacional de 4h (CM 3.3 ganha fundamentação empírica em vez de só argumento operacional). Se T2 ou T8 forem melhores, é achado forte de CM 6.1 (Insight Não Óbvio: horizonte operacional ≠ horizonte ótimo preditivamente) e abre discussão de Trabalhos Futuros.
+  - **Cenário de aprofundamento condicional:** se AUC-PR de T2 ou T8 ficar substancialmente abaixo de T4, investigar se a causa é falta de feature alinhada (não temos `count_critico_2h` nem `count_critico_8h` em `v3.parquet`). Nesse caso, voltar a `05_features.py` para adicionar essas 6 features (3 criticidades × 2 janelas) e re-rodar a comparação. **Não adicionar features preventivamente** — só se a evidência empírica justificar.
+  - **Conclusão final registrada em `controle_alteracoes.md`** após a comparação preditiva (encerra a Profundidade 1, originalmente prevista para W4).
+- [X] `Projeto/codigo/06b_fix_encoding_leakage.py` (executado em 22/05/2026, 4,8s) — **fix do leakage subtil de encoding** identificado no estudo prévio de W5. Recomputou `tag_freq` e `operador_freq` (Família 7) sobre o split de treino apenas (394.971 eventos) e propagou para val/teste; categorias unknown no treino receberam `freq = 0` (decisão Opção C-1, registrada em `notas_metodologicas.md` Seção 2 — feature binária `is_unknown` seria inerte em single-fold). **Saída:** `dados/features/v3.parquet` (544.885 × 52, 14,9 MB, input canônico para W5+). Diff médio de `tag_freq` 0,0507→0,0515 (+1,4%) e `operador_freq` 0,0070→0,0070 (-1,0%) — confirma que leakage era subtil mas presente. Casos de borda registrados: 2 TAGs e 13 operadores unknown afetando 1.812 eventos / 133 DGs em test (2,55% / 2,54%). Decisão completa em `controle_alteracoes.md` 2026-05-22.
+- [ ] `Projeto/codigo/08_lightgbm.py` — LightGBM v1 com parâmetros default. **Encoding pré-modelagem:** ✅ FIX JÁ APLICADO em `06b_fix_encoding_leakage.py` (linha acima). O `08_lightgbm.py` deve ler `v3.parquet` diretamente como input canônico — não precisa reaplicar o fix. O **target encoding com KFold temporal** (refinamento mais ambicioso, listado abaixo) continua pendente como melhoria incremental.
 - [ ] **[Mitigação 2 — derivada da Fig 8 W4, drift mai→jun 4,5×]** Comparar duas calibrações de `scale_pos_weight` em vez de só usar `class_weight='balanced'` default:
   - (a) `scale_pos_weight = (1 - taxa_train) / taxa_train ≈ 2.0` — calibrado para taxa do TREINO (33,64% positivos no `target_4h`).
   - (b) `scale_pos_weight` calibrado para taxa esperada de PRODUÇÃO (mistura realista do semestre, ou — mais agressivo — taxa do TESTE 16,93%). Justificativa: tuning sobre taxa de treino otimiza o objetivo errado quando há drift confirmado. Comparar AUC-PR e Recall das duas variantes no GATE MARCO 1. Registrar em `controle_alteracoes.md` qual venceu e por quê.
-- [ ] **[Mitigação 3 — derivada da Fig 8 W4]** **Reportar métricas estratificadas mês-a-mês** já no LightGBM v1 (não esperar W7). Para cada modelo treinado (baseline, LightGBM v1, variante `Is_Dont_Go_producao`, variantes (a)/(b) do scale_pos_weight): tabela com AUC-PR, Recall e Precisão calculados separadamente em mai e em jun. Critério explícito do gate: **modelo deve bater baseline em AUC-PR de val (mai) E manter AUC-PR razoável em test (jun)** — se cair muito em jun, é sinal precoce de que o drift quebrou o modelo e Mitigação 1 (W6, CV expandida) precisa entrar antes do tuning.
-- [ ] **Documentar pré-processamento específico do baseline e do LightGBM** (CM 4.3): baseline usa só `Criticidade` e `TAG`; LightGBM usa matriz completa v2
+- [ ] **[Mitigação 3 — derivada da Fig 8 W4]** **Reportar métricas estratificadas mês-a-mês** já no LightGBM v1 (não esperar W7). Para cada modelo treinado (baseline, LightGBM v1, variante `Is_Dont_Go_producao`, variantes (a)/(b) do scale_pos_weight): tabela com AUC-PR, Recall e Precisão calculados separadamente em mai e em jun. Critério explícito do gate: **modelo deve bater baseline em AUC-PR de val (mai) E manter AUC-PR razoável em test (jun)** — se cair muito em jun, é sinal precoce de que o drift quebrou o modelo e Mitigação 1 (W6, CV expandida) precisa entrar antes do tuning. **Parcialmente concluída em 22/05:** ✅ baseline já reporta P/R/F1 estratificados em val (mai) e test (jun) por 4 thresholds + AUC-PR por split em `baseline_metricas.csv`. **Pendente:** mesma estratificação para LightGBM v1, variantes scale_pos_weight (a)/(b), e Is_Dont_Go_producao.
+- [ ] **Documentar pré-processamento específico do baseline e do LightGBM** (CM 4.3): baseline usa só `count_critico_4h` (feature derivada de `Criticidade` + `TAG` via rolling 4h, `closed="left"`); LightGBM usa matriz completa `v3.parquet` (29 features + 3 targets). **Parcialmente concluída em 22/05:** ✅ pré-processamento do baseline documentado em `rascunho.md → Metodologia Parte 3 → Baseline heurístico` e no docstring do `07_baseline.py`. **Pendente:** documentação equivalente para o LightGBM (subseção dedicada em rascunho.md após o LightGBM v1 rodar).
 - [ ] Comparar com baseline
 - [ ] **[Novo após Obs 2.7]** Treinar **variante `Is_Dont_Go_producao`** (filtra os 2.525 DGs em Manutenção) com os mesmos hiperparâmetros e comparar AUC-PR contra o target original. Se variante "produção" for substancialmente melhor (>5pp AUC-PR), confirma que o contexto Manutenção introduz ruído treinável; registrar decisão em `controle_alteracoes.md`.
-- [ ] 🚦 **GATE MARCO 1 (2 critérios após Fig 8 W4 confirmar drift):**
-  - **Critério A — generalização inicial:** LightGBM bate baseline em AUC-PR de val (mai)?
-  - **Critério B — robustez ao drift:** LightGBM mantém AUC-PR razoável em test (jun)? Tolerância sugerida: queda ≤ 30% vs val (regime raro de mai vs anomalia RFB de jun são esperadamente difíceis; queda grande mas não catastrófica é aceitável).
-  - **A=SIM + B=SIM** → avança para W6 (tuning de hiperparâmetros + sobrevivência).
-  - **A=SIM + B=NÃO** → drift é o problema, não as features. Aplicar Mitigação 1 (TimeSeriesSplit CV em W6) antes do Optuna; documentar em CM 6.2 como Limitação.
-  - **A=NÃO** → pare. Reveja features antes de tunar parâmetros — drift não é a causa, é problema de sinal.
+- [ ] 🚦 **GATE MARCO 1 (2 critérios — RE-CALIBRADO em 22/05 após resultado empírico do baseline):**
+  - **Critério A — superar baseline em validação:** LightGBM v1 em val (mai) deve atingir **AUC-PR ≥ 0,2897** (baseline 0,2397 + 5 pontos percentuais de margem). Baseline simples performa baixo em mai porque o regime distribuído (1,62% de DG, menor do semestre) não oferece assinatura clara para regra binária; LightGBM com 29 features tem espaço amplo para ganhar.
+  - **Critério B — superar baseline em teste (FORMULAÇÃO REVISADA):** LightGBM v1 em test (jun) deve atingir **AUC-PR ≥ 0,6303** (baseline 0,5803 + 5 pontos percentuais de margem). **A formulação anterior** ("queda ≤ 30% vs val") **assumia que test seria mais difícil que val** — premissa empiricamente falsa: o baseline em test atingiu 0,5803 (lift 3,43× sobre random) contra apenas 0,2397 em val (lift 1,30×). A anomalia localizada do CA65926 (Obs 2.9) cria assinatura mecânica clara para a heurística "conte Críticos recentes", tornando test mais fácil para regra simples. Para justificar a complexidade adicional, o LightGBM precisa adicionar valor genuíno em cima do baseline — não basta "cair pouco vs val".
+  - **A = SIM + B = SIM** → avança para W6 (tuning de hiperparâmetros + sobrevivência + Isolation Forest + SHAP). Esperar SHAP confirmar diversidade de features no topo do ranking (não dominância isolada de `count_critico_4h`).
+  - **A = SIM + B = NÃO** → LightGBM aprende padrão de mai mas reproduz baseline em jun — indica super-otimização para regime distribuído. Aplicar Mitigação 1 (TimeSeriesSplit CV em W6) ANTES do Optuna para reduzir overfitting ao regime específico de mai; documentar em CM 6.2 como limitação.
+  - **A = NÃO + B = qualquer** → LightGBM não bate baseline em val (cenário ruim que indica falha na geração de features ou no encoding). Reveja `05_features.py` antes de tunar — pode haver problema de leakage residual, features sem variância no treino, ou erro no encoding pós-`06b_fix_encoding_leakage.py`.
+
+**Nota histórica (registro da re-calibração em 2026-05-22):** o Critério B original ("queda ≤ 30% test vs val") foi formulado em W4 (registrado na entrada de 2026-05-17 do `controle_alteracoes.md` — "Split temporal walk-forward jan-abr / mai / jun") assumindo que test seria mais difícil que val. O baseline executado em 22/05 produziu resultado contra-intuitivo (test 0,5803 > val 0,2397, razão 2,42×), revelando que a anomalia mecânica localizada do CA65926 cria assinatura preditiva forte para a heurística simples. Re-calibração formal registrada em `controle_alteracoes.md` (entrada 2026-05-22 — "Re-calibração do Critério B do GATE MARCO 1") com a justificativa empírica completa e o ANTES/DEPOIS dos critérios.
 
 **Entregável:** tabela comparativa baseline×LightGBM + modelos serializados em `Projeto/modelos/` + pré-processamento documentado.
 
@@ -1281,6 +1293,78 @@ As duas resoluções confluem para uma narrativa coerente sobre o que esperar do
 2. **Família 5 operador é informativa mas suave** (Obs 2.4): `taxa_DG_operador_30d` aparece no SHAP mas não domina; sinal real é difuso, não concentrado.
 3. **Família 1 rolling counts e Família 2 recência** capturam deterioração progressiva por TAG (Obs 2.9): também devem aparecer no topo, especialmente `count_critico_24h` (que captura a "acumulação de criticidade" da Obs 2.11) e `horas_desde_ultimo_DG` (que captura o histórico recente de CA65926).
 4. **Mitigações 1-3 continuam válidas**, mas a Mitigação 1 (TimeSeriesSplit CV) ganha relevância dupla: além de atenuar "mai como regime raro", a CV expandida vai medir se o modelo aprende o padrão "CA65926 em deterioração" desde o treino mais antigo (jan → fev) — se sim, esperamos boa performance em jun apesar do drift de prevalência.
+
+---
+
+##### 4. Baseline heurístico — AUC-PR superior em teste vs validação (achado contra-intuitivo)
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/07_baseline.py`](Projeto/codigo/07_baseline.py) — heurística canônica `predict_dg = (count_critico_4h >= threshold)`. Saída: `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 thresholds × 2 splits). Tempo: 0,4s. Para reproduzir:
+
+```powershell
+uv run python Projeto/codigo/07_baseline.py
+```
+
+</details>
+
+Heurística baseline implementada conforme decisão consolidada em W5 pré-modelagem: foco em `target_4h` apenas (pergunta operacional canônica do CM 1.2), score raw `count_critico_4h` (perfeitamente alinhado ao horizonte do *target*), 4 thresholds binários (1, 2, 3, 5) para análise da curva precision/recall, estratificação obrigatória mai vs jun (Mitigação 3 derivada da Fig 8). Execução em 0,4s sobre 149.914 eventos de val + test.
+
+**Resultado quantitativo (estratificado mai vs jun):**
+
+| Métrica | VAL (mai) | TEST (jun) | Razão test / val |
+|---|---:|---:|---:|
+| Eventos | 78.825 | 71.089 | — |
+| Positivos `target_4h` | 14.481 (18,37%) | 12.038 (16,93%) | — |
+| **AUC-PR (score = `count_critico_4h`)** | **0,2397** | **0,5803** | **2,42×** |
+| Random AP (chance) | 0,1837 | 0,1693 | — |
+| Lift sobre random | 1,30× | **3,43×** | — |
+
+Matriz de Precision / Recall / F1 por threshold:
+
+| Threshold | VAL P / R / F1 | TEST P / R / F1 |
+|---:|---:|---:|
+| ≥ 1 | 0,2556 / 0,4025 / 0,3127 | 0,3436 / **0,6976** / 0,4604 |
+| ≥ 2 | 0,2887 / 0,2740 / 0,2812 | 0,4060 / 0,5969 / 0,4833 |
+| ≥ 3 | 0,3152 / 0,2226 / 0,2609 | 0,4651 / 0,5510 / 0,5044 |
+| ≥ 5 | 0,3630 / 0,1654 / 0,2273 | **0,5905** / 0,4714 / **0,5243** |
+
+**Achado contra-intuitivo:** o baseline performa **2,42 vezes melhor em TEST do que em VAL**, medido por AUC-PR. Recall em threshold = 1 passa de 40% (val) para 70% (test). O F1 máximo em val é 0,3127 (threshold = 1); em test é 0,5243 (threshold = 5) — aproximadamente 1,7× maior por F1.
+
+Esse resultado é o **oposto do que a Figura 8 do W4 sugeria**. O drift mai → jun foi quantificado como aumento de taxa de DG por evento (1,62% → 7,35%, fator 4,5×), e a interpretação corrente era "test mais difícil porque tem mais DGs concentrados em regime nunca visto". Mas o baseline contradisse essa interpretação — o **regime concentrado** é o que **favorece** uma heurística simples.
+
+**Explicação mecânica via Obs 2.9 (resolvida em 22/05, antes do baseline):**
+
+A anomalia RFB de junho não é regime distribuído entre equipamentos — é **falha mecânica progressiva de um único equipamento, o CA65926**:
+- **98,53%** dos 4.278 eventos `Right Front Brake Temperature - Active` de junho vêm exclusivamente do CA65926.
+- **82,2%** de todos os DGs de junho (4.298 de 5.226) vêm do mesmo equipamento.
+- RFB-Active no CA65926 passou de 0–6 eventos por mês (jan-mai) para 4.215 em junho — salto de aproximadamente 700×.
+
+Quando um equipamento dispara Críticos com essa intensidade nos minutos e horas que antecedem um DG, a feature `count_critico_4h` atinge valores elevados consistentemente nesses eventos. A heurística "conte Críticos recentes" tem **assinatura clara para detectar esse padrão concentrado** — é o cenário ideal para uma regra simples.
+
+Em maio, o cenário é qualitativamente diferente: taxa de DG de 1,62% é a mais baixa do semestre e os DGs estão distribuídos entre múltiplos equipamentos sem dominância única. Não há um "alvo claro" para a heurística — a regra simples performa apenas marginalmente acima de chance (lift 1,30×).
+
+**Interpretação metodológica:** o "drift mai → jun" **não é uniformemente "test mais difícil"**. É **mudança qualitativa da natureza do problema**. Em junho, predizer DG vira predominantemente predizer "CA65926 em deterioração progressiva", uma tarefa com assinatura preditiva forte em features simples. Em maio, predizer DG vira predizer regime distribuído sem alvo claro, genuinamente mais difícil para qualquer modelo.
+
+**Exemplo concreto da diferença entre os dois regimes (para o leitor visualizar):**
+
+- **Em junho:** um evento `e` do CA65926 em 28/jun (auge da anomalia) tem provavelmente `count_critico_4h ≥ 5` (cascata de RFB-Active já em curso). A heurística com threshold = 1 prediz corretamente `target_4h = 1`. **70% dos positivos de junho são detectados pela regra simples em threshold = 1.**
+- **Em maio:** um evento `e` qualquer pode ter `count_critico_4h ∈ {0, 1, 2}` mesmo precedendo um DG, porque DGs em mai não vêm com cascata pré-existente. A heurística tem dificuldade em distinguir — **apenas 40% dos positivos são detectados em threshold = 1**.
+
+**Quatro implicações operacionais para LightGBM em W5-W6:**
+
+1. **O baseline em test é um teto alto (AUC-PR 0,5803).** LightGBM v1 precisa SUPERAR esse valor para passar o Critério B do GATE MARCO 1. Não é trivial — significa adicionar valor genuíno sobre uma regra que já capta 70% do recall em jun.
+
+2. **O baseline em val é baixo (AUC-PR 0,2397).** Critério A do gate é fácil de bater. Mas não confundir "facilidade de bater baseline em val" com "boa generalização" — se LightGBM super-otimiza para regime distribuído de mai, pode performar pior em test (regime concentrado), invertendo o ganho.
+
+3. **Critério B foi re-calibrado em conjunto com este registro.** A formulação original ("queda ≤ 30% test vs val") assumia que test seria mais difícil. Como o baseline mostrou o oposto, Critério B passa a ser "AUC-PR do LightGBM em test ≥ AUC-PR do baseline em test, com margem ≥ 5pp" (ou seja, ≥ 0,6303). Ver re-calibração formal na próxima task abaixo (GATE MARCO 1) e em `controle_alteracoes.md` (entrada 2026-05-22 — "Re-calibração do Critério B do GATE MARCO 1").
+
+4. **SHAP em W6 vira ainda mais importante metodologicamente.** Precisamos confirmar que LightGBM aprendeu sinal **além** de "contar Críticos recentes". Se SHAP mostrar que `count_critico_4h` domina sozinho o ranking de importância, o modelo praticamente reproduz o baseline e não justifica a complexidade adicional. As outras 28 features precisam aparecer no top 10 — especialmente Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`), desenhada exatamente para detectar a explosão do CA65926.
+
+**Achado direto para CM 6.1 (Insight Não Óbvio):** "Heurísticas simples capturam bem padrões de drift localizado (1 equipamento em deterioração), mas têm desempenho mediano em regimes distribuídos. O baseline 'conte Críticos nas últimas 4h' produziu AUC-PR 2,42× melhor em jun (regime concentrado) do que em mai (regime distribuído) — contra-intuitivamente, o conjunto de teste 'mais difícil' pela taxa de DG era na verdade o mais fácil para a regra simples por causa da assinatura mecânica clara do CA65926. Esse achado tem implicação direta para a interpretação do desempenho do modelo principal: ganhos do LightGBM sobre baseline são esperados em mai (espaço a ganhar), mas em jun o teto do baseline é alto e o modelo precisa demonstrar valor genuíno via features não-triviais."
+
+**Entregável anexado:** `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 thresholds × 2 splits) — vira tabela de referência canônica para o LightGBM v1 em `08_lightgbm.py`.
 
 ---
 

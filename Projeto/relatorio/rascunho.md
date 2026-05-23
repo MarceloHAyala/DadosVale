@@ -2,7 +2,7 @@
 
 Documento de escrita progressiva que vai consolidando as seções do relatório final ao longo das semanas W2→W8. Será migrado para `Desenvolver_Template.docx` em W9.
 
-**Status atual:** seções preenchidas até a Preparação dos Dados — **Introdução**, **Entendimento do Negócio** (CM 1.1 + CM 1.2), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5) e **Metodologia Parte 2** (Preparação dos Dados — W3 limpeza + W3-W4 feature engineering completo: **7 famílias de features (29 colunas) + 3 targets multi-janela (target_2h, target_4h, target_8h) + split temporal walk-forward jan-abr / mai / jun** documentados, totalizando matriz canônica `v2_split.parquet` com 544.885 × 52 colunas; Fig 7 (janela de predição), Fig 8 (drift mensal) e Fig Extra C (refutação H5.2) integradas à narrativa). Material a ser refinado em W8. Pendentes: Modelagem (W5-W6), Avaliação (W7) e Conclusão (W8).
+**Status atual:** seções preenchidas até o **início da Modelagem (W5 baseline)** — **Introdução**, **Entendimento do Negócio** (CM 1.1 + CM 1.2), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5), **Metodologia Parte 2** (Preparação dos Dados — W3 limpeza + W3-W4 feature engineering completo: 7 famílias de *features* (29 colunas) + 3 *targets* multi-janela + *split* temporal *walk-forward* jan-abr / mai / jun + fix de *leakage* subtil de encoding em W5, totalizando matriz canônica `v3.parquet` com 544.885 × 52 colunas) e **Metodologia Parte 3** (Modelagem — começa em W5 com baseline heurístico via `count_critico_4h` aplicado a `target_4h`; achado contra-intuitivo de AUC-PR 2,42× melhor em test vs val explicado pela anomalia localizada do CA65926). Figuras 7 (janela de predição), 8 (drift mensal) e Extra C (refutação H5.2) integradas à narrativa. GATE MARCO 1 re-calibrado em 22/05 após resultado do baseline. Material a ser refinado em W8. Pendentes: LightGBM v1 + v2 (W5-W6), Sobrevivência + Isolation Forest + SHAP (W6), Avaliação (W7) e Conclusão (W8).
 
 ---
 
@@ -481,7 +481,111 @@ O achado reforça também o **padrão emergente de equipamentos individuais prob
 
 ---
 
-*(Próximas seções a desenvolver em W5-W8: Modelagem — baseline + LightGBM (W5), modelo de sobrevivência + Isolation Forest (W6), Avaliação e Resultados (W7), Conclusão (W8).)*
+---
+
+## Metodologia — Parte 3: Modelagem
+
+A fase de Modelagem segue o protocolo de avaliação temporal definido em W4 (Figura 8) e usa como *input* canônico a matriz `v3.parquet` (544.885 × 52 colunas, com *encoding* limpo após o *fix* do *leakage* subtil documentado em W5 — ver `controle_alteracoes.md` entrada de 2026-05-22 e `notas_metodologicas.md` Seção 2). O CM 4.3 do Estudo Guiado exige dois modelos bem feitos com seus respectivos pré-processamentos; este trabalho adota três:
+
+1. **Baseline heurístico** (referência operacional; `07_baseline.py`).
+2. **LightGBM principal** (modelo de classificação supervisionada; `08_lightgbm.py`, em versão v1 com parâmetros *default* em W5 e versão v2 com Optuna em W6).
+3. **Modelo de Sobrevivência Weibull AFT** (segunda leitura do problema, com tratamento rigoroso de *censoring*; `09_sobrevivencia.py`, em W6).
+
+Adicionalmente, em W6 será treinado um **Isolation Forest diagnóstico** sobre o mesmo *dataset* sem usar o rótulo `Is_Dont_Go` — não é modelo de classificação, mas teste empírico único do Risco 3.3 (viés do *label* CMA). Sua discussão será apresentada em seção dedicada.
+
+### Baseline heurístico (`07_baseline.py`)
+
+#### Definição operacional
+
+A heurística canônica é: `DG_predito = 1` se houve evento `Critico` nas últimas 4 horas do mesmo equipamento. A formalização usa a *feature* `count_critico_4h` da Família 1 (rolling de 4h com `closed="left"`, ou seja, exclusiva do evento corrente): `predito = (count_critico_4h ≥ threshold).cast(Int8)`. Para AUC-PR (métrica que não depende de *threshold*), usa-se o próprio `count_critico_4h` como *score* contínuo, com interpretação direta — "quanto mais Críticos recentes no mesmo equipamento, maior a probabilidade estimada de DG nas próximas 4 horas".
+
+A construção é deliberadamente simples. O baseline serve para responder: *"qual é o desempenho preditivo já contido na regra operacional óbvia, antes de qualquer modelo de ML?"*. Sem essa referência, o ganho do LightGBM v1 fica sem contexto — não saberíamos se o desempenho final é resultado da complexidade do modelo ou apenas do sinal preditivo inerente à regra simples.
+
+#### Decisões de escopo
+
+Três decisões metodológicas foram registradas na fase pré-execução do `07_baseline.py`, todas baseadas em discussão de qualidade e documentadas em `notas_metodologicas.md`:
+
+**Foco em `target_4h` apenas.** O *target* canônico, definido em CM 1.2 e CM 3.3, é a janela operacional de 4 horas — compatível com o tempo de mobilização de peças e equipe de manutenção em Itabira. A análise de sensibilidade entre horizontes alternativos (`target_2h`, `target_8h`, Profundidade 1 do plano) **não entra no baseline**: incluir esses horizontes exigiria *features* adjacentes mal-alinhadas (e.g., `count_critico_1h` para predizer `target_2h`, ou `count_critico_24h` para predizer `target_8h`) que introduziriam viés metodológico não-corrigível — o baseline seria artificialmente fraco nos horizontes não-canônicos. A análise de sensibilidade migra para a fase do LightGBM (`08_lightgbm.py`), onde três variantes do modelo com hiperparâmetros idênticos podem ser comparadas em pé de igualdade (o modelo tem acesso a todas as 29 *features* e escolhe quais usar para cada *target*).
+
+**Quatro *thresholds* binários para mapear a curva operacional.** A heurística "qualquer Crítico recente" (*threshold* = 1) é máximaalmente permissiva — gera muitas predições positivas com precisão baixa. A heurística mais restritiva (*threshold* = 5, "pelo menos cinco Críticos em quatro horas") gera menos predições mas mais precisas. Reportamos *thresholds* em 1, 2, 3 e 5 para que o leitor possa escolher o ponto operacional adequado ao cenário (mais conservador ou mais agressivo) com base no *trade-off* explícito. AUC-PR é *threshold*-independente e captura toda a curva de uma vez.
+
+**Estratificação obrigatória mai vs jun.** Em linha com a Mitigação 3 derivada da análise de *drift* da Figura 8 (W4), todas as métricas são reportadas separadamente para validação (maio) e teste (junho) desde o baseline. A motivação é detectar problemas cedo: se já o baseline apresenta degradação severa entre os dois meses, o LightGBM herdará o problema; se a degradação é leve, fica mais difícil para o LightGBM superar.
+
+#### Resultado quantitativo
+
+A heurística foi executada em 0,4 segundos sobre os 149.914 eventos de val + teste. Os resultados consolidados em duas tabelas:
+
+| Métrica | VAL (mai) | TEST (jun) | Razão test / val |
+|---|---:|---:|---:|
+| Eventos | 78.825 | 71.089 | — |
+| Positivos `target_4h` | 14.481 (18,37%) | 12.038 (16,93%) | — |
+| **AUC-PR** | **0,2397** | **0,5803** | **2,42×** |
+| Random AP (chance) | 0,1837 | 0,1693 | — |
+| Lift sobre random | 1,30× | **3,43×** | — |
+
+Matriz de Precision / Recall / F1 por *threshold*:
+
+| Threshold | VAL P / R / F1 | TEST P / R / F1 |
+|---:|---:|---:|
+| ≥ 1 | 0,2556 / 0,4025 / 0,3127 | 0,3436 / **0,6976** / 0,4604 |
+| ≥ 2 | 0,2887 / 0,2740 / 0,2812 | 0,4060 / 0,5969 / 0,4833 |
+| ≥ 3 | 0,3152 / 0,2226 / 0,2609 | 0,4651 / 0,5510 / 0,5044 |
+| ≥ 5 | 0,3630 / 0,1654 / 0,2273 | **0,5905** / 0,4714 / **0,5243** |
+
+Em validação, o F1 fica na faixa estreita 0,23–0,31 entre os quatro *thresholds* — sem um *sweet spot* claro. Em teste, o F1 cresce monotonicamente com o *threshold*, atingindo o máximo de 0,5243 em *threshold* = 5 (alta precisão de 0,59 com *recall* ainda razoável de 0,47). Para AUC-PR, o *lift* sobre o classificador aleatório é de 1,30× em val e 3,43× em test — diferença substancial que merece análise.
+
+#### Interpretação: o achado contra-intuitivo
+
+O resultado central do baseline é que **o desempenho em teste é 2,42 vezes maior que em validação**, medido por AUC-PR. Esse resultado é exatamente o **oposto** do que a Figura 8 do W4 sugeria. O *drift* entre maio e junho foi quantificado como aumento de taxa de DG por evento (de 1,62% para 7,35%, fator 4,5×), e a interpretação corrente, registrada em `controle_alteracoes.md` (entrada de 2026-05-17 — "Split temporal walk-forward"), era que o teste seria o conjunto mais difícil: "modelo treinado em jan-abr terá que generalizar para um regime de prevalência três a quatro vezes maior, em que o alarme dominante (Right Front Brake Temperature) era estatisticamente invisível no treino". Por que então o baseline performa melhor exatamente no conjunto supostamente mais difícil?
+
+A resposta vem do achado da Observação 2.9 (W5, resolvida em 22/05): a anomalia RFB de junho não é regime distribuído entre equipamentos — é **falha mecânica progressiva de um único equipamento, o CA65926**. Os números reforçam essa interpretação com clareza:
+
+- **98,53%** dos 4.278 eventos `Right Front Brake Temperature - Active` de junho vêm exclusivamente do CA65926.
+- **82,2%** de todos os DGs de junho (4.298 de 5.226) vêm do mesmo equipamento.
+- O CA65926 disparou Críticos massivamente — `Right Front Brake Temperature - Active` no equipamento passou de 0–6 eventos por mês (jan-mai) para 4.215 em junho, salto de aproximadamente 700 vezes sobre o *baseline* do próprio equipamento.
+
+Quando um equipamento dispara Críticos com essa intensidade nos minutos e horas que antecedem um DG, a *feature* `count_critico_4h` atinge valores elevados consistentemente nesses eventos. A heurística "conte Críticos recentes" tem **assinatura clara para detectar esse padrão concentrado** — é o cenário ideal para uma regra simples baseada em contagem.
+
+Em maio, o cenário é qualitativamente diferente: a taxa de DG de 1,62% é a mais baixa do semestre, e os DGs estão distribuídos entre múltiplos equipamentos sem dominância única. Não há um "alvo claro" para a heurística — a regra simples performa apenas marginalmente acima de chance (*lift* 1,30×).
+
+A consequência metodológica é importante e merece destaque: **o "drift mai → jun" não é uniformemente "test mais difícil"**. É **mudança qualitativa da natureza do problema**. Em junho, predizer DG vira predominantemente predizer "CA65926 em deterioração progressiva", uma tarefa com assinatura preditiva forte em *features* simples. Em maio, predizer DG vira predizer regime distribuído sem alvo claro — genuinamente mais difícil para qualquer modelo (incluindo o LightGBM).
+
+#### Exemplo concreto da diferença entre os dois regimes
+
+Para tornar a interpretação concreta, considere um evento `e` qualquer no *dataset*:
+
+- **Em junho:** se `e` é do CA65926 e ocorre em 28/jun (auge da anomalia, antes do pico de 30/jun com 1.087 eventos RFB no equipamento), o valor de `count_critico_4h` para `e` está provavelmente alto — 5, 10, ou 30+ Críticos recentes — porque a cascata de RFB-Active já está em curso há horas ou dias. A heurística com *threshold* = 1 prediz `target_4h = 1` corretamente, e o predito acerta porque o CA65926 realmente vai disparar um DG nas próximas 4 horas. Em junho, **70% dos eventos com `target_4h = 1` são detectados pela heurística em *threshold* = 1** (recall 0,6976) — sem precisar do LightGBM. Quando o *threshold* sobe para 5, a precisão sobe para 59% e a *recall* cai para 47% — ainda performance robusta.
+- **Em maio:** se `e` é de qualquer equipamento, o valor de `count_critico_4h` para `e` pode estar baixo (0, 1, ou 2) mesmo para eventos que efetivamente precederão um DG nas próximas 4 horas. Os DGs em maio não vêm com cascata pré-existente — vêm de eventos isolados sem padrão claro de acumulação. A heurística tem dificuldade em distinguir "vai dar DG" de "não vai dar DG" porque o sinal não está nas contagens recentes. Em maio, **apenas 40% dos positivos são detectados** mesmo com o *threshold* mínimo. Subir o *threshold* só piora — em *threshold* = 5, apenas 17% dos positivos de maio são detectados (recall 0,1654).
+
+Essa diferença qualitativa é o que produz o salto de AUC-PR de 0,2397 (val) para 0,5803 (test). Não é o modelo ficando "melhor" entre os dois conjuntos — é o problema ficando mais previsível para uma regra simples no mês específico de teste, por causa da assinatura mecânica do CA65926.
+
+#### Implicações para o LightGBM (W5–W6) — re-calibração do GATE MARCO 1
+
+O resultado do baseline força uma revisão do GATE MARCO 1, originalmente formulado em W4 com a expectativa de que o teste seria mais difícil. A re-calibração formal está registrada em `controle_alteracoes.md` (entrada 2026-05-22 — "Re-calibração do Critério B do GATE MARCO 1") e em `PLANEJAMENTO.md → W5`. Quatro implicações operacionais foram derivadas e merecem destaque:
+
+**1. Teto alto em teste.** O LightGBM precisa superar AUC-PR de 0,5803 em junho com margem mínima de 5 pontos percentuais para justificar a complexidade adicional sobre a regra simples (Critério B re-calibrado: ≥ 0,6303). Não é trivial — significa adicionar valor genuíno sobre uma regra que já capta 70% do *recall* em jun.
+
+**2. Espaço amplo em validação.** Baseline em maio (AUC-PR 0,2397) é baixo. LightGBM com 29 *features* deve facilmente superar — Critério A do *gate* (≥ 0,2897) é o mais fácil de bater. Mas é necessário não confundir "facilidade de bater baseline em val" com "boa generalização" — se LightGBM se especializa no regime distribuído de mai, pode perder em test (regime concentrado), invertendo o ganho.
+
+**3. Risco de super-otimização para mai.** O critério dual (A *e* B simultâneos) protege contra esse cenário. Em caso de A = SIM + B = NÃO, a Mitigação 1 (TimeSeriesSplit CV em W6) entra antes do Optuna para reduzir o *overfitting* ao regime específico de maio. A formulação revisada do *gate* torna essa proteção explícita.
+
+**4. SHAP em W6 vira teste central de qualidade do modelo.** Se a análise de importância das *features* mostrar `count_critico_4h` dominando o *ranking*, o LightGBM está praticamente reproduzindo o baseline; o valor agregado precisa estar em outras *features*. Esperamos especialmente a Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) no topo, pois ela foi desenhada para detectar exatamente a explosão RFB do CA65926. Caso ela não apareça, é sinal de que o modelo está usando *proxies* menos diretas (provavelmente `count_critico_24h` e `horas_desde_ultimo_DG`), e a Obs 2.11 (acúmulo de criticidade) ganha relevância adicional.
+
+#### Candidato a CM 6.1 (Insight Não Óbvio) do relatório final
+
+O achado tem força narrativa direta. A história é: *"uma heurística simples pode parecer melhor que um modelo complexo num regime específico se esse regime tem assinatura preditiva mecânica clara; o trabalho rigoroso de comparação revela quando o ganho de complexidade vale e quando não vale"*. Em termos mais concretos:
+
+- O baseline simples "conte Críticos nas últimas 4 horas" produziu AUC-PR 2,42 vezes melhor em junho (regime concentrado pela anomalia RFB do CA65926) do que em maio (regime distribuído).
+- Contra-intuitivamente, o conjunto de teste — que tinha 4,5× a taxa de DG da validação — era o **mais fácil** para a regra simples, justamente porque a alta prevalência vinha de UM equipamento com assinatura preditiva clara, não de um regime difuso.
+- A comparação rigorosa contra baseline revelou essa heterogeneidade. Sem o baseline, o resultado do LightGBM em jun (esperadamente alto pela natureza concentrada do problema) seria atribuído à qualidade do modelo principal, quando na verdade boa parte é simplesmente captura do padrão óbvio do CA65926.
+
+Esse tipo de honestidade analítica — em que o trabalho explicitamente compara modelos contra heurísticas simples e identifica quando o ganho vem do modelo vs do problema — é o tipo de elemento que diferencia trabalho de alta qualidade. O achado entra na seção CM 6.1 como narrativa convergente com a Obs 2.9 (causa localizada do *drift*) e com a H7.1 (equipamentos individuais problemáticos): a EDA agregada esconde heterogeneidades importantes; quando essas heterogeneidades emergem, métricas e modelos respondem de formas surpreendentes que exigem interpretação cuidadosa.
+
+A tabela `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 *thresholds* × 2 *splits*, com TP / FP / FN / TN / Precision / Recall / F1 / AUC-PR / Random AP para cada combinação) é o entregável canônico de referência que será usado para comparação com o LightGBM v1 em `08_lightgbm.py`.
+
+---
+
+*(Próximas seções a desenvolver em W5-W8: LightGBM v1 + v2 (W5-W6), modelo de sobrevivência + Isolation Forest (W6), Avaliação e Resultados (W7), Conclusão (W8).)*
 
 ---
 

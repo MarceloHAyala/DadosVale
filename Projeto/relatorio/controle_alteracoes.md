@@ -360,4 +360,59 @@ Aplicada por `Projeto/codigo/06b_fix_encoding_leakage.py` (4 etapas, ~5s de exec
 
 ---
 
+### 2026-05-22 — Re-calibração do Critério B do GATE MARCO 1 após resultado empírico do baseline (W5)
+
+Decisão metodológica tomada imediatamente após a execução de `07_baseline.py` (22/05/2026, ~0,4s sobre `v3.parquet`). O baseline produziu resultado quantitativo que contradiz a premissa central do GATE MARCO 1 (formulado em 17/05 e registrado na entrada anterior — "Split temporal walk-forward jan-abr / mai / jun"), exigindo re-calibração explícita ANTES da execução do LightGBM v1 em `08_lightgbm.py`.
+
+- **ANTES (formulação de W4, 17/05/2026):** o GATE MARCO 1 tinha 2 critérios, assumindo implicitamente que o conjunto de teste (junho) seria mais difícil que validação (maio) devido ao drift quantificado pela Fig 8 (taxa de DG 1,62% em mai → 7,35% em jun, fator 4,5×):
+  - **Critério A:** LightGBM bate baseline em AUC-PR de val (mai).
+  - **Critério B:** LightGBM mantém AUC-PR razoável em test (jun) — *"queda ≤ 30% vs val (regime raro de mai vs anomalia RFB de jun são esperadamente difíceis; queda grande mas não catastrófica é aceitável)"*.
+
+  A formulação fazia sentido na época: como a Fig 8 mostrou que jun tem 4,5× a taxa de DG de mai, era natural pensar "test é o conjunto mais difícil — modelo precisa não cair muito ao mover-se de val para test". Mas a hipótese implícita ("um conjunto com mais positivos é mais difícil para o modelo") não tinha sido testada empiricamente.
+
+- **DEPOIS (re-calibração de 22/05, pós-baseline):** o resultado empírico do `07_baseline.py` **invalida diretamente a premissa do Critério B original**. AUC-PR do baseline:
+  - **VAL (mai): 0,2397** (lift 1,30× sobre random AP de 0,1837)
+  - **TEST (jun): 0,5803** (lift 3,43× sobre random AP de 0,1693)
+  - **Razão test / val: 2,42×** — test é **142% melhor** que val para a regra simples.
+
+  A curva detalhada de Precision/Recall/F1 por threshold confirma a magnitude da diferença:
+
+  | Threshold | VAL P / R / F1 | TEST P / R / F1 |
+  |---:|---:|---:|
+  | ≥ 1 | 0,2556 / 0,4025 / 0,3127 | 0,3436 / **0,6976** / 0,4604 |
+  | ≥ 2 | 0,2887 / 0,2740 / 0,2812 | 0,4060 / 0,5969 / 0,4833 |
+  | ≥ 3 | 0,3152 / 0,2226 / 0,2609 | 0,4651 / 0,5510 / 0,5044 |
+  | ≥ 5 | 0,3630 / 0,1654 / 0,2273 | **0,5905** / 0,4714 / **0,5243** |
+
+  Os critérios são revisados para:
+  - **Critério A — superar baseline em validação:** LightGBM v1 em val (mai) deve atingir **AUC-PR ≥ 0,2897** (baseline 0,2397 + 5 pontos percentuais de margem).
+  - **Critério B — superar baseline em teste (NOVA FORMULAÇÃO):** LightGBM v1 em test (jun) deve atingir **AUC-PR ≥ 0,6303** (baseline 0,5803 + 5 pontos percentuais de margem). A formulação anterior ("cair pouco") era incompatível com o regime empírico em que o baseline ganhou em test; a nova exige que o modelo justifique sua complexidade adicional adicionando valor genuíno sobre a regra simples.
+
+- **Justificativa empírica completa (por que test é mais fácil para a heurística simples):**
+
+  O resultado contra-intuitivo do baseline tem explicação mecânica clara via Obs 2.9 (resolvida na mesma sessão, antes do baseline): **82,2% dos DGs de jun (4.298 de 5.226) vêm exclusivamente do CA65926 em falha mecânica progressiva**. Quando esse equipamento dispara Críticos massivamente (a feature `Right Front Brake Temperature - Active` no CA65926 passou de 0–6 eventos por mês em jan–mai para 4.215 em junho — salto de aproximadamente 700×), a feature `count_critico_4h` atinge valores elevados consistentemente nos minutos pré-DG, e a heurística "conte Críticos recentes" tem **assinatura preditiva clara para detectar**.
+
+  Em maio, o regime é qualitativamente diferente: taxa de DG de 1,62% é a mais baixa do semestre, e os DGs estão distribuídos entre múltiplos equipamentos sem dominância única. Não há um "alvo claro" para a regra simples — performance apenas marginalmente acima de chance (lift 1,30×).
+
+  A consequência metodológica é importante e merece destaque: **o "drift mai → jun" não é uniformemente "test mais difícil"** — é **mudança qualitativa da natureza do problema**. Em junho, predizer DG vira predominantemente predizer "CA65926 em deterioração progressiva", uma tarefa com assinatura mecânica forte. Em maio, predizer DG vira predizer regime distribuído sem alvo claro, genuinamente mais difícil para qualquer modelo (incluindo o LightGBM).
+
+- **Impacto da re-calibração nas tasks de W5-W6:**
+  - **LightGBM v1 enfrenta teto alto em test (AUC-PR ≥ 0,6303 para passar o gate).** Não é trivial — significa adicionar valor genuíno sobre uma regra que já capta 70% do recall em jun com threshold = 1.
+  - **LightGBM v1 enfrenta espaço amplo em val (AUC-PR ≥ 0,2897)**, facilmente alcançável com 29 features vs uma única feature na regra simples.
+  - **Cenário esperado:** bate baseline em val (A = SIM) facilmente; pode falhar em test se super-otimizar para regime distribuído de mai. Nesse caso (A = SIM + B = NÃO), o gate bloqueia e a Mitigação 1 (TimeSeriesSplit CV em W6) entra antes do Optuna para reduzir overfitting ao regime específico de mai.
+  - **SHAP em W6 ganha relevância dupla:** além de validar a Obs 2.11 (acúmulo de criticidade vs volume), agora também precisa confirmar que LightGBM não está apenas reproduzindo o baseline — se `count_critico_4h` dominar sozinho o ranking de importância, o modelo não justifica sua complexidade. Esperamos especialmente Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) no topo.
+
+- **Onde o achado vira material de relatório:**
+  - **CM 6.1 (Insights Não Óbvios):** "heurísticas simples capturam bem padrões de drift localizado, mas têm desempenho mediano em regimes distribuídos. O baseline produziu AUC-PR 2,42× melhor em jun (regime concentrado) do que em mai (regime distribuído) — contra-intuitivamente, o conjunto de teste 'mais difícil' pela taxa de DG era na verdade o mais fácil para a regra simples por causa da assinatura mecânica clara do CA65926." Esse é candidato direto a *Insight Não Óbvio*, com narrativa convergente com a Obs 2.9 e com a H7.1 (equipamentos individuais problemáticos): a EDA agregada esconde heterogeneidades importantes; quando essas heterogeneidades emergem, métricas e modelos respondem de formas surpreendentes.
+  - **CM 5.x (Resultados):** o salto de AUC-PR 0,2397 → 0,5803 entre val e test não é resultado do modelo principal — é propriedade do problema. Reportar essa baseline em ambos os splits desde o início ancorará a discussão de "quanto o LightGBM efetivamente adicionou".
+  - **CM 6.2 (Limitações):** se LightGBM superar baseline em val mas falhar em test, a Limitação fica concreta — "o modelo se beneficia da diversidade de features em regime distribuído, mas em regime concentrado a regra simples já captura quase tudo". Material direto para a discussão de quando vale a pena substituir heurísticas por modelos de ML.
+
+- **Saídas anexadas:**
+  - `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 thresholds × 2 splits) — tabela canônica de referência para `08_lightgbm.py`.
+  - Detalhamento metodológico completo do achado em:
+    - `PLANEJAMENTO.md → W5 → Observações e Conclusões §4. Baseline heurístico`
+    - `rascunho.md → Metodologia — Parte 3: Modelagem → Baseline heurístico`
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

@@ -136,13 +136,15 @@ Tempo: ~35 segundos. Cria `Projeto/dados/intermediarios/telemetria_consolidado.p
 
 **Pipeline principal (rodar em ordem):**
 ```powershell
-uv run python Projeto/codigo/01_ingestao.py          # W1 - ingestão + consolida 6 parquets mensais → telemetria_consolidado.parquet (37,16M linhas)
-uv run python Projeto/codigo/02_correcao_tipos.py    # W1 - corrige tipos (datetime, float BR com vírgula decimal) → telemetria_tipada.parquet
-uv run python Projeto/codigo/03_limpeza.py           # W1+W3 - limpeza completa em 12 etapas (filtro Informacional, outliers, missings, sobreposições) → telemetria_limpa.parquet (544.885 linhas) + apontamentos_limpo.parquet + controle_alteracoes.csv
-uv run python Projeto/codigo/04_eda.py               # W2 - EDA visual (7 figuras fig02-fig06 + figExB + figExG) + tabela Q4 (dgs_por_frota_tipo_classe.csv)
-uv run python Projeto/codigo/05_features.py          # W3+W4 - 7 famílias de features (29 cols) + 3 targets (target_2h/4h/8h) → v1.parquet (5 básicas) + v2_parcial.parquet (19) + v2.parquet (29 + 3 targets, 22,4 MB) + documentacao_features.csv (CM 3.2) + sensibilidade_janela.csv
-uv run python Projeto/codigo/06_split.py             # W4 - split temporal walk-forward jan-abr / mai / jun + Fig 7 (janela predição) + Fig 8 (drift mensal) → v2_split.parquet (52 cols, 14,9 MB) + split_temporal.csv (CM 4.1)
-# ... 07_baseline (W5), 08_lightgbm (W5-W6), 09_sobrevivencia (W6), 10_evaluation (W7), 11_isolation_forest (W6)
+uv run python Projeto/codigo/01_ingestao.py             # W1 - ingestão + consolida 6 parquets mensais → telemetria_consolidado.parquet (37,16M linhas)
+uv run python Projeto/codigo/02_correcao_tipos.py       # W1 - corrige tipos (datetime, float BR com vírgula decimal) → telemetria_tipada.parquet
+uv run python Projeto/codigo/03_limpeza.py              # W1+W3 - limpeza completa em 12 etapas (filtro Informacional, outliers, missings, sobreposições) → telemetria_limpa.parquet (544.885 linhas) + apontamentos_limpo.parquet + controle_alteracoes.csv
+uv run python Projeto/codigo/04_eda.py                  # W2 - EDA visual (7 figuras fig02-fig06 + figExB + figExG) + tabela Q4 (dgs_por_frota_tipo_classe.csv)
+uv run python Projeto/codigo/05_features.py             # W3+W4 - 7 famílias de features (29 cols) + 3 targets (target_2h/4h/8h) → v1.parquet (5 básicas) + v2_parcial.parquet (19) + v2.parquet (29 + 3 targets, 22,4 MB) + documentacao_features.csv (CM 3.2) + sensibilidade_janela.csv
+uv run python Projeto/codigo/06_split.py                # W4 - split temporal walk-forward jan-abr / mai / jun + Fig 7 (janela predição) + Fig 8 (drift mensal) → v2_split.parquet (52 cols, 14,9 MB) + split_temporal.csv (CM 4.1)
+uv run python Projeto/codigo/06b_fix_encoding_leakage.py # W5 - fix do leakage subtil de frequency encoding (tag_freq, operador_freq recomputadas sobre treino apenas; categorias unknown recebem freq=0) → v3.parquet (52 cols, 14,9 MB, input canônico para modelagem)
+uv run python Projeto/codigo/07_baseline.py             # W5 - baseline heurístico para target_4h (count_critico_4h >= threshold) com métricas estratificadas mai vs jun (Mitigação 3) → baseline_metricas.csv (8 linhas: 4 thresholds × 2 splits)
+# ... 08_lightgbm (W5-W6), 09_sobrevivencia (W6), 10_evaluation (W7), 11_isolation_forest (W6)
 ```
 
 **Scripts auxiliares (investigações ad-hoc, rodam independentemente):**
@@ -150,6 +152,7 @@ uv run python Projeto/codigo/06_split.py             # W4 - split temporal walk-
 uv run python Projeto/codigo/exploracao_w2_obs.py             # W2 - investiga obs 2.1, 2.2, 2.5, 2.6, 2.7 (impressões no terminal)
 uv run python Projeto/codigo/exploracao_w3_sobreposicoes.py   # W3 - investiga 340 sobreposições → bug pontual no CA65789 (H1.4)
 uv run python Projeto/codigo/exploracao_w4_ca65924.py         # W4 - investiga H5.2 / Obs 2.3 → Fig Extra C (figExC_ca65924_cadeia.png) — refuta padrão "calmaria → acúmulo" universal; gera Obs 2.11 (sub-hipótese de acúmulo de criticidade)
+uv run python Projeto/codigo/exploracao_w5_obs_pendentes.py   # W5 - resolve Obs 2.4 (operador OP_067 não é outlier — Q3 respondida com sinal difuso) e Obs 2.9 (anomalia RFB jun é falha localizada do CA65926 — 98,5%) → obs24_taxa_dg_por_operador.csv + obs29_rfb_junho_decomposicao.csv
 uv run python Projeto/codigo/extrai_eventos_muito_alto.py     # W2 - extrai eventos_muito_alto.csv (CM 1.1, 82 regras CMA Muito Alto)
 ```
 
