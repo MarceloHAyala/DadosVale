@@ -52,8 +52,8 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 - A própria família de features regimais (`razao_severidade_14d_vs_60d`) já é uma operacionalização parcial dessa intuição em janela maior
 
 **Investigar (a fazer em W6, após o modelo LightGBM estar treinado):**
-- Análise SHAP global das 29 features de `v3.parquet` (matriz canônica atual após o *fix* de *encoding* em 22/05; mesmo conjunto de 29 features que estava em v2.parquet, com `tag_freq`/`operador_freq` recomputadas)
-- Comparar importância (mean |SHAP|) de `count_critico_1h` vs `count_total_1h`, `count_critico_4h` vs `count_total_4h`, `count_critico_24h` vs `count_total_24h`
+- Análise SHAP global das 35 features de `v3.parquet` (matriz canônica atual após o *fix* de *encoding* em 22/05 e a expansão da Família 1 em 23/05; conjunto expandido de 29 → 35 features pela adição das janelas 2h e 8h)
+- Comparar importância (mean |SHAP|) de `count_critico_Xh` vs `count_total_Xh` em **todas as 5 janelas** (1h, 2h, 4h, 8h, 24h após expansão em W5) — comparação mais robusta com mais pontos amostrais para detectar tendência
 - Hipótese a testar: `count_critico_*` aparece sistematicamente acima de `count_total_*` no ranking de importância
 - Se confirmada: validação empírica da reinterpretação de H5.2; entra como insight não óbvio em CM 6.1
 - Se não confirmada: registrar limitação e considerar features explícitas de "fração Crítico nos últimos N min" como adição opcional

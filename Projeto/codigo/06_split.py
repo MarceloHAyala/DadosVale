@@ -30,7 +30,7 @@ Comportamento de features na fronteira:
   leakage temporal.
 
 Entradas:
-  - Projeto/dados/features/v2.parquet (544.885 linhas x 51 colunas)
+  - Projeto/dados/features/v2.parquet (544.885 linhas x 57 colunas — 35 features + 3 targets + 19 originais)
 
 Saidas:
   - Projeto/dados/features/v2_split.parquet (mesmas linhas + coluna `split`)

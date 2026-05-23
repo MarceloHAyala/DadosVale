@@ -415,4 +415,54 @@ Decisão metodológica tomada imediatamente após a execução de `07_baseline.p
 
 ---
 
+### 2026-05-23 — Expansão das janelas da Família 1 (rolling) para alinhamento perfeito com Profundidade 1 (W5 pré-LightGBM)
+
+Decisão metodológica tomada após análise prévia da arquitetura do `08_lightgbm.py`, especificamente da Profundidade 1 (comparação preditiva entre 3 horizontes de *target*: `target_2h`, `target_4h`, `target_8h`).
+
+- **ANTES:** Família 1 do `05_features.py` produzia **9 features de rolling** combinando 3 criticidades (`critico`, `nao_critico`, `total`) × 3 janelas (`1h`, `4h`, `24h`). Para a Profundidade 1, o LightGBM v1 com `target_4h` teria *feature* alinhada perfeitamente (`count_critico_4h`), mas para `target_2h` a *feature* mais próxima seria `count_critico_1h` (cobre metade do horizonte, perde sinal em -2h..-1h) e para `target_8h` seria `count_critico_24h` (cobre 3× o horizonte, dilui sinal com ruído antigo). Isso enviesa a comparação a favor da Variante T4 (que teria a única *feature* perfeitamente alinhada do trio).
+- **DEPOIS:** Família 1 expandida para **15 features de rolling** com 5 janelas (`1h`, `2h`, `4h`, `8h`, `24h`). Cada variante da Profundidade 1 agora tem *feature* perfeitamente alinhada ao seu horizonte de *target*:
+  - Variante T2 → `count_critico_2h` (alinhamento 1:1)
+  - Variante T4 → `count_critico_4h` (alinhamento 1:1)
+  - Variante T8 → `count_critico_8h` (alinhamento 1:1)
+  - Adicionalmente, todas as variantes mantêm acesso a `count_critico_1h` (sub-cobertura) e `count_critico_24h` (super-cobertura) como contexto temporal complementar.
+
+- **Justificativa metodológica:**
+  - **Razão preditiva:** sem o alinhamento perfeito, a comparação de Profundidade 1 entre T2/T4/T8 ficaria contaminada pela assimetria de *features* — se T4 vencer, não saberíamos se é porque 4h é genuinamente o horizonte ótimo, ou porque T4 ganhou na largada com a única *feature* alinhada do trio. Com alinhamento perfeito em todos os horizontes, qualquer diferença observada nos AUC-PR vira evidência mais limpa de qual horizonte tem melhor sinal preditivo intrínseco.
+  - **Razão de qualidade analítica:** o usuário declarou explicitamente que prefere "modelos funcionais com parâmetros certos" em vez de "fazer só para falar que fez". Implementar Profundidade 1 com *features* mal-alinhadas seria o segundo cenário — exercício formal sem rigor metodológico. A discussão completa está em `notas_metodologicas.md` Seção 2 (decisão metodológica de não fazer Opção 3 sem aporte de *features* alinhadas) e em conversa de W5 pré-LightGBM (22-23/05).
+  - **Razão de coerência com baseline:** a heurística baseline implementada em `07_baseline.py` (22/05) usou `count_critico_4h` como score raw para `target_4h`, justificando o alinhamento perfeito como princípio metodológico. Aplicar o mesmo princípio para T2 e T8 mantém a comparação contra baseline coerente.
+
+- **Implementação técnica:**
+  - **Arquivo modificado:** `05_features.py` — função `criar_features_rolling` (etapa 4/11) e definição `FEATURES_AVANCADAS_W4_PARCIAL` (loop de configuração da Família 1).
+  - **Mudança de loop:** `for window in ["1h", "4h", "24h"]` → `for window in ["1h", "2h", "4h", "8h", "24h"]` (em dois pontos do arquivo).
+  - **Constantes atualizadas:** `N_FEATURES_AVANCADAS_PARCIAL` 14 → 20 (Famílias 1-4); `N_FEATURES_TOTAL` 29 → 35 (5 básicas + 20 avançadas parcial + 10 avançadas final).
+  - **Asserções defensivas:** atualizadas para 15 *rolling* e adicionada **nova asserção de monotonicidade** entre janelas (`count_X_1h ≤ count_X_2h ≤ count_X_4h ≤ count_X_8h ≤ count_X_24h` para cada criticidade X, válida em todos os 544.885 eventos).
+  - **Re-execução do pipeline canônico:** `05_features.py` → `06_split.py` → `06b_fix_encoding_leakage.py`, em sequência, regenerando `v1.parquet`, `v2_parcial.parquet`, `v2.parquet`, `v2_split.parquet` e `v3.parquet` com o novo schema. Tempo total de re-execução: aproximadamente 12 segundos.
+
+- **Impacto nos artefatos:**
+
+  | Artefato | ANTES | DEPOIS |
+  |---|---|---|
+  | `documentacao_features.csv` | 29 entradas | **35 entradas** |
+  | `v1.parquet` | 6,9 MB / 22 colunas | 6,9 MB / 27 colunas (5 básicas + 19 originais + 3 sem alteração) |
+  | `v2_parcial.parquet` | 19,6 MB / 38 cols (19 features + 19 originais) | **21,6 MB / 47 cols** (25 features Famílias 0-4 + 19 originais + 3 sem alteração) |
+  | `v2.parquet` | 22,4 MB / 51 cols (29 features + 3 targets + 19 originais) | **24,4 MB / 57 cols** (35 features + 3 targets + 19 originais) |
+  | `v2_split.parquet` | 14,9 MB / 52 cols | **16,3 MB / 58 cols** |
+  | `v3.parquet` | 14,9 MB / 52 cols | **16,3 MB / 58 cols** |
+
+  Os números de TAGs unknown, operadores unknown, e eventos afetados pelo *fix* de *encoding* permanecem **idênticos** após a expansão (12 eventos em val / 1.394 em test com `tag_freq = 0`; 154 / 418 com `operador_freq = 0`). Asserções defensivas do `06b_fix_encoding_leakage.py` validaram esses valores exatamente.
+
+- **Validação empírica (sanity check):**
+  - **Monotonicidade entre janelas:** asserção `count_critico_1h ≤ count_critico_2h ≤ count_critico_4h ≤ count_critico_8h ≤ count_critico_24h` (idem para `nao_critico` e `total`) passou em todos os 544.885 eventos. Confirma que a expansão é matematicamente consistente (janela maior contém todos os eventos da janela menor).
+  - **Coerência aritmética preservada:** `count_total_Xh = count_critico_Xh + count_nao_critico_Xh` continua exata em todas as 5 janelas (diff_max = 0).
+  - **DGs preservados:** 19.962 DGs em `Is_Dont_Go = 1` mantidos sem alteração.
+
+- **Onde o achado vira material de relatório:**
+  - **CM 3.2 (Dicionário de features):** tabela `documentacao_features.csv` ganha 6 novas entradas com motivação explícita ("Janelas 2h e 8h adicionadas em W5 para alinhamento perfeito com target_2h/target_8h — Profundidade 1").
+  - **CM 4.3 (Pré-processamento por modelo):** nota metodológica sobre o princípio de alinhamento feature-target — base para discussão de "como decidimos quais features incluir".
+  - **CM 6.1 (Insights Não Óbvios):** *opcional* — narrativa sobre como a investigação rigorosa antes de codar revelou um viés metodológico potencial e exigiu retrabalho preventivo, demonstrando atenção à qualidade.
+
+- **Decisão sobre Profundidade 1 originalmente registrada (PLANEJAMENTO.md → W5):** o "cenário de aprofundamento condicional" ("se T2 ou T8 ficar substancialmente abaixo de T4, voltar a `05_features.py` para adicionar features alinhadas") foi **antecipado preventivamente** com base em discussão de qualidade — em vez de descobrir o viés empiricamente depois do treino, removemos o viés antes. A condicional fica formalmente resolvida.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

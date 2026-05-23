@@ -2,18 +2,18 @@
 05_features.py - Feature engineering completo + target multi-janela
                  (W3 basicas + W4 completo + target CM 3.3).
 
-Pipeline em 11 etapas que constroi 29 features + 3 targets sobre o dataset
+Pipeline em 11 etapas que constroi 35 features + 3 targets sobre o dataset
 limpo de telemetria + apontamentos, gerando a matriz definitiva v2.parquet
 para modelagem em W5-W7.
 
-Familias implementadas (7 grupos = 29 features):
+Familias implementadas (7 grupos = 35 features):
 
 W3 (5 features basicas):
   - hora_dia, dia_semana, turno, mes (temporais)
   - valor_disponivel
 
-W4 — Familias 1-4 (14 features):
-  Familia 1 — Rolling windows (9): count_{critico/nao_critico/total}_{1h,4h,24h}
+W4 — Familias 1-4 (20 features):
+  Familia 1 — Rolling windows (15): count_{critico/nao_critico/total}_{1h,2h,4h,8h,24h}
   Familia 2 — Recencia (2): horas_desde_ultimo_DG, horas_desde_ultimo_critico
   Familia 3 — Estado pre-evento (1): estado_pre_evento via join_asof t-1h
   Familia 4 — Regimal (2): razao_alarme_7d_vs_30d_anterior, razao_severidade_14d_vs_60d
@@ -51,8 +51,8 @@ Entradas:
 
 Saidas:
   - Projeto/dados/features/v1.parquet            (5 features basicas — W3)
-  - Projeto/dados/features/v2_parcial.parquet    (19 features — W4 parcial)
-  - Projeto/dados/features/v2.parquet            (29 features + 3 targets — W4 completo)
+  - Projeto/dados/features/v2_parcial.parquet    (25 features — W4 parcial: Familias 0-4)
+  - Projeto/dados/features/v2.parquet            (35 features + 3 targets — W4 completo)
   - Projeto/relatorio/tabelas/documentacao_features.csv (CM 3.2, 29 entradas)
   - Projeto/relatorio/tabelas/sensibilidade_janela.csv  (sensibilidade descritiva
                                                         — comparacao preditiva
@@ -89,7 +89,7 @@ LINHAS_ESPERADAS = 544_885
 DGS_ESPERADOS = 19_962
 VALOR_NULLS_ESPERADOS = 237_443
 N_FEATURES_BASICAS = 5
-N_FEATURES_AVANCADAS_PARCIAL = 14   # Familias 1-4
+N_FEATURES_AVANCADAS_PARCIAL = 20   # Familias 1-4 (Familia 1 expandida em 22/05 para 5 janelas: 1h/2h/4h/8h/24h)
 N_FEATURES_AVANCADAS_FINAL = 10     # Familias 5-7
 N_FEATURES_TOTAL = (
     N_FEATURES_BASICAS + N_FEATURES_AVANCADAS_PARCIAL + N_FEATURES_AVANCADAS_FINAL
@@ -160,9 +160,12 @@ FEATURES_BASICAS_W3 = [
 ]
 
 FEATURES_AVANCADAS_W4_PARCIAL = []
-# Familia 1 — Rolling windows (9)
+# Familia 1 — Rolling windows (15 features = 3 criticidades x 5 janelas)
+# Janelas expandidas em 22/05/2026 (W5) para incluir 2h e 8h — alinhamento
+# perfeito com target_2h e target_8h da Profundidade 1 (comparacao preditiva
+# entre horizontes em 08_lightgbm.py). Antes eram apenas 3 janelas (1h, 4h, 24h).
 for criticidade in ["critico", "nao_critico", "total"]:
-    for window in ["1h", "4h", "24h"]:
+    for window in ["1h", "2h", "4h", "8h", "24h"]:
         FEATURES_AVANCADAS_W4_PARCIAL.append({
             "nome": f"count_{criticidade}_{window}",
             "tipo": "Int32",
@@ -176,9 +179,11 @@ for criticidade in ["critico", "nao_critico", "total"]:
             "motivacao": (
                 "Obs 2.5: 48% dos DGs vem de acumulacao (regra CMA QTD>1). "
                 "Rolling captura padrao temporal — family core. "
-                "count_total valida H5.2 / Obs 2.3 (padrao CA65924)."
+                "count_total valida H5.2 / Obs 2.3 (padrao CA65924). "
+                "Janelas 2h e 8h adicionadas em W5 para alinhamento perfeito "
+                "com target_2h/target_8h (Profundidade 1 — 08_lightgbm.py)."
             ),
-            "semana_criada": "W4 parcial",
+            "semana_criada": "W4 parcial (janelas 1h/4h/24h) + W5 (janelas 2h/8h)",
         })
 
 # Familia 2 — Recencia (2)
@@ -452,10 +457,13 @@ def criar_feature_valor_disponivel(df: pl.DataFrame) -> pl.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# [4/10] Familia 1 — Rolling windows (W4 parcial, 9 features)
+# [4/10] Familia 1 — Rolling windows (W4 parcial, 15 features)
+# Janelas: 1h / 2h / 4h / 8h / 24h (3 criticidades x 5 janelas = 15)
+# Janelas 2h e 8h adicionadas em 22/05/2026 (W5) para alinhamento perfeito
+# com target_2h e target_8h da Profundidade 1.
 # ---------------------------------------------------------------------------
 def criar_features_rolling(df: pl.DataFrame) -> pl.DataFrame:
-    print("\n[4/10] Familia 1 — Rolling windows (9 features)")
+    print("\n[4/10] Familia 1 — Rolling windows (15 features)")
     t0 = time.time()
     df = df.sort(["TAG", "Data_Evento"])
     df = df.with_columns([
@@ -463,7 +471,7 @@ def criar_features_rolling(df: pl.DataFrame) -> pl.DataFrame:
         (pl.col("Criticidade") == "Nao_Critico").cast(pl.Int32).alias("_is_nao_critico"),
         pl.lit(1).cast(pl.Int32).alias("_is_total"),
     ])
-    for window in ["1h", "4h", "24h"]:
+    for window in ["1h", "2h", "4h", "8h", "24h"]:
         df = df.with_columns([
             pl.col("_is_critico").rolling_sum_by(
                 by="Data_Evento", window_size=window, closed="left"
@@ -479,7 +487,7 @@ def criar_features_rolling(df: pl.DataFrame) -> pl.DataFrame:
               .alias(f"count_total_{window}"),
         ])
     df = df.drop("_is_critico", "_is_nao_critico", "_is_total")
-    print(f"  9 features rolling criadas ({time.time()-t0:.1f}s)")
+    print(f"  15 features rolling criadas ({time.time()-t0:.1f}s)")
     return df
 
 
@@ -938,14 +946,14 @@ def validar(df: pl.DataFrame) -> None:
 
     # Rolling
     for criticidade in ["critico", "nao_critico", "total"]:
-        for window in ["1h", "4h", "24h"]:
+        for window in ["1h", "2h", "4h", "8h", "24h"]:
             col = f"count_{criticidade}_{window}"
             assert df.get_column(col).null_count() == 0
             assert df.get_column(col).min() >= 0
-    print("  OK 9 rolling: 0 nulls, >= 0")
+    print("  OK 15 rolling: 0 nulls, >= 0")
 
     # Coerencia rolling
-    for window in ["1h", "4h", "24h"]:
+    for window in ["1h", "2h", "4h", "8h", "24h"]:
         diff = (
             df.get_column(f"count_critico_{window}")
             + df.get_column(f"count_nao_critico_{window}")
@@ -953,6 +961,20 @@ def validar(df: pl.DataFrame) -> None:
         ).abs().max()
         assert diff == 0
     print("  OK count_total = count_critico + count_nao_critico")
+
+    # Monotonicidade entre janelas (sanity check adicional):
+    # janela maior deve ter contagem >= janela menor para o mesmo evento
+    for criticidade in ["critico", "nao_critico", "total"]:
+        for w_menor, w_maior in [("1h", "2h"), ("2h", "4h"), ("4h", "8h"), ("8h", "24h")]:
+            diff = (
+                df.get_column(f"count_{criticidade}_{w_menor}")
+                - df.get_column(f"count_{criticidade}_{w_maior}")
+            ).max()
+            assert diff <= 0, (
+                f"Monotonicidade violada em count_{criticidade}: "
+                f"{w_menor} > {w_maior} (diff_max={diff})"
+            )
+    print("  OK monotonicidade entre janelas (1h <= 2h <= 4h <= 8h <= 24h)")
 
     # Recencia
     for col in ["horas_desde_ultimo_DG", "horas_desde_ultimo_critico"]:

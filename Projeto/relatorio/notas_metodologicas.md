@@ -14,7 +14,7 @@ A metodologia foi diferente para cada uma, refletindo a natureza das perguntas. 
 
 **Pergunta original:** o caso paradigma do `desenvolver_dontgo.xlsx` envolve o operador OP_067. Ele tem taxa de DG anormal? Por extensão: o comportamento do operador correlaciona com DG (Q3 do edital)?
 
-**Dado disponível:** `v2_split.parquet` (544.885 eventos × 52 colunas), com `Nome_Operador_Anon` e `Is_Dont_Go` para cada evento.
+**Dado disponível:** `v2_split.parquet` (544.885 eventos × 52 colunas no momento da investigação; matriz expandida posteriormente em 23/05 para 58 colunas após a adição das janelas 2h e 8h à Família 1 — mas a investigação de Obs 2.4 foi feita sobre o schema de 52 colunas), com `Nome_Operador_Anon` e `Is_Dont_Go` para cada evento.
 
 #### Passo 1 — Reformulação rigorosa da pergunta
 
@@ -59,7 +59,7 @@ Significância estatística da diferença OP_067 vs baseline (chi-quadrado, Wils
 
 **Pergunta original:** 4.247 eventos RFB-Active em junho vs média 28/mês jan-mai. Qual evento operacional disparou isso?
 
-**Dado disponível:** mesmo `v2_split.parquet`, filtrado para `Alarme == "Right Front Brake Temperature - Active"` e `split == "test"`.
+**Dado disponível:** mesmo `v2_split.parquet` (na versão de 52 colunas — pré-expansão da Família 1 que ocorreria em 23/05), filtrado para `Alarme == "Right Front Brake Temperature - Active"` e `split == "test"`.
 
 #### Passo 1 — Pré-formular hipóteses com assinatura empírica falsificável
 

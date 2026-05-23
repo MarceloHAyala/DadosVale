@@ -28,10 +28,10 @@ Casos de borda identificados pelo estudo de W5:
   - Total: 166 eventos / 2 DGs em val afetados (0,21% / 0,16%)
 
 Entradas:
-  - Projeto/dados/features/v2_split.parquet (544.885 x 52)
+  - Projeto/dados/features/v2_split.parquet (544.885 x 58 — 35 features + 3 targets + 19 originais + col split)
 
 Saidas:
-  - Projeto/dados/features/v3.parquet (544.885 x 52 — mesmas colunas,
+  - Projeto/dados/features/v3.parquet (544.885 x 58 — mesmas colunas,
     `tag_freq` e `operador_freq` recalculadas; input canonico de W5+)
 
 Executar (da raiz do repositorio):
@@ -55,7 +55,7 @@ ARQ_V3 = ROOT / "dados" / "features" / "v3.parquet"
 # ---------------------------------------------------------------------------
 LINHAS_ESPERADAS = 544_885
 DGS_ESPERADOS = 19_962
-COLUNAS_ESPERADAS = 52
+COLUNAS_ESPERADAS = 58  # 19 originais + 35 features + 3 targets + 1 split (era 52 antes da expansao da Familia 1 em 22/05 — janelas 2h e 8h adicionadas)
 N_TRAIN = 394_971
 N_VAL = 78_825
 N_TEST = 71_089
