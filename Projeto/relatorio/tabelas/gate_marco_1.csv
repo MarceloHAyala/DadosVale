@@ -1,0 +1,4 @@
+criterio,valor_minimo,valor_obtido,resultado
+A_val_min,0.2897,0.7523,PASS
+B_test_min,0.6303,0.8566,PASS
+verdict_geral,PASS,PASS,Avancar para W6 (tuning + sobrevivencia + Isolation Forest + SHAP)

@@ -1,0 +1,7 @@
+horizonte,target,variante_usada,split,n_positivos,auc_pr,precision_05,recall_05,f1_05
+T2,target_2h,T2,val,11084,0.7729,0.6688,0.6996,0.6838
+T2,target_2h,T2,test,10442,0.8378,0.806,0.8123,0.8091
+T4,target_4h,A,val,14481,0.7523,0.7759,0.5502,0.6439
+T4,target_4h,A,test,12038,0.8566,0.8187,0.7425,0.7787
+T8,target_8h,T8,val,19195,0.7421,0.7372,0.531,0.6173
+T8,target_8h,T8,test,14329,0.8211,0.8131,0.6693,0.7343

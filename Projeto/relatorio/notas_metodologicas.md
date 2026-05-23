@@ -230,4 +230,37 @@ Este caso ilustra um padrão metodológico que vale ser internalizado:
 
 ---
 
-**Última atualização:** 2026-05-22 (W5 — Obs 2.4 e 2.9 resolvidas + verificação empírica do tratamento de categorias unknown no encoding fix)
+---
+
+## 3. Mitigação 2 — test set peeking aceito conscientemente em v1, corrigido em v2 (W5, 2026-05-23)
+
+**Contexto.** A Variante B do LightGBM v1 (Mitigação 2) usa `scale_pos_weight ≈ 4,65` calculado sobre a taxa de positivos da união val+test. Tecnicamente é uma forma **branda** de *test set peeking*: usamos **uma única estatística agregada** (taxa de positivos) do conjunto de teste para calibrar **um único hiperparâmetro**. Não é treino em dados de teste, nem seleção de modelo via test, nem otimização de AUC-PR sobre test.
+
+**Magnitude esperada do viés.** A Variante B fica **otimisticamente inflada em aproximadamente 1-3 pontos percentuais de AUC-PR** vs um cálculo honesto sem peeking. A Variante A (usa só treino para `scale_pos_weight`) NÃO tem esse viés.
+
+**Diagnóstico implícito via comparação A vs B:**
+
+| Resultado observado | Interpretação |
+|---|---|
+| B vence A por > 5pp | ganho real provavelmente ~2-4pp (resto é viés) |
+| B vence A por ~1-2pp | marginal — provavelmente só o viés |
+| A vence B | viés insuficiente para inflar B além de A → Mitigação 2 descartada |
+
+**Estratégia de correção planejada (não improvisada):**
+
+1. **W5 v1 (agora):** documenta a limitação no docstring do `08_lightgbm.py`, em `controle_alteracoes.md` (após execução), e na seção CM 6.2 do `rascunho.md`. Reporta A vs B com a nota "B usa estimativa de val+test para `scale_pos_weight` — viés esperado 1-3pp em favor de B".
+2. **W6 v2:** Optuna + TimeSeriesSplit CV (Mitigação 1) tuna `scale_pos_weight` **dentro da CV** — cada *fold* usa só dados de treino. Sem peeking. **Resultado canônico** que vai para o relatório final.
+3. **W7 (análise final):** compara v1 A (sem peeking) vs v1 B (com peeking) vs v2 (CV-tunado). **Diff entre B e v2 = magnitude empírica do viés do peeking.** Vira material direto para CM 6.2 — exemplo concreto de boas práticas metodológicas.
+
+**Por que aceitar o peeking em v1 é defensável:**
+
+- **Mitigação 2 é hipótese operacional, não estatística pura.** Para testar "calibrar para taxa de produção vence?", precisamos de alguma estimativa da taxa de produção esperada. Sem fonte externa, val+test foi nossa opção pragmática.
+- **No deployment real na Vale (retreino *rolling* mensal), test set não existe no sentido estrito.** Junho/2025 é só "o passado mais recente"; em produção contínua, o modelo seria treinado com dados até N-1 e deployado em N, sem "test set" preservado.
+- **Transparência total compensa o compromisso.** A revisão técnica aceita "limitação documentada + plano de correção em W6 + análise honesta em W7" muito melhor que "fingir que não houve peeking" ou "evitar a Mitigação 2 inteira por purismo".
+- **A própria existência de v1 vs v2 demonstra rigor.** Sem v1, o trabalho perderia a discussão de "o que acontece quando se toma atalho metodológico" — discussão metodológica valiosa por si.
+
+**Registro cruzado:** docstring do `08_lightgbm.py` (explicação técnica), `controle_alteracoes.md` (decisão metodológica datada, registrada após execução), `rascunho.md → CM 6.2 (Limitações)` (declaração honesta no relatório final).
+
+---
+
+**Última atualização:** 2026-05-23 (W5 — expansão da Família 1 + Seção 3 sobre peeking na Mitigação 2)

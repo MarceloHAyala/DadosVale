@@ -1,0 +1,7 @@
+variante,target,split,auc_pr_baseline,auc_pr_lightgbm,diff_pp,bate_baseline_5pp
+A,target_4h,val,0.2397,0.7523,51.26,true
+A,target_4h,test,0.5803,0.8566,27.63,true
+B,target_4h,val,0.2397,0.735,49.53,true
+B,target_4h,test,0.5803,0.8517,27.14,true
+C,target_4h_producao,val,0.2397,0.7012,46.15,true
+C,target_4h_producao,test,0.5803,0.8533,27.3,true
