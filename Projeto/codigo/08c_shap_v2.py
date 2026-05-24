@@ -66,7 +66,8 @@ ARQ_MODELO_V2 = ROOT / "modelos" / "lightgbm_v2.txt"
 ARQ_SHAP_VALUES = ROOT / "modelos" / "shap_values_v2_test.npy"
 ARQ_SHAP_GLOBAL = ROOT / "relatorio" / "tabelas" / "shap_global_v2.csv"
 ARQ_SHAP_ESTRAT = ROOT / "relatorio" / "tabelas" / "shap_estratificado_v2.csv"
-ARQ_FIG_GLOBAL = ROOT / "relatorio" / "figuras" / "fig09_shap_global.png"
+ARQ_FIG_BAR = ROOT / "relatorio" / "figuras" / "fig09a_shap_bar.png"
+ARQ_FIG_BEESWARM = ROOT / "relatorio" / "figuras" / "fig09b_shap_beeswarm.png"
 ARQ_FIG_DEPEND = ROOT / "relatorio" / "figuras" / "fig10_shap_dependence_top3.png"
 
 
@@ -287,54 +288,70 @@ def analise_estratificada(shap_arr: np.ndarray, test: pl.DataFrame) -> pl.DataFr
 # ===========================================================================
 def gerar_figuras(shap_arr: np.ndarray, X: pd.DataFrame, df_ranking: pl.DataFrame) -> None:
     print()
-    print("Etapa 6/6 - Gerando figuras...")
-    ARQ_FIG_GLOBAL.parent.mkdir(parents=True, exist_ok=True)
+    print("Etapa 6/6 - Gerando figuras (3 arquivos separados para evitar conflito de layout)...")
+    ARQ_FIG_BAR.parent.mkdir(parents=True, exist_ok=True)
 
-    # Fig 9 — global: bar + beeswarm em 2 paineis
-    fig, axes = plt.subplots(1, 2, figsize=(15, 9))
-
-    # Painel A: bar plot (mean |SHAP|)
-    plt.sca(axes[0])
+    # Fig 9a — bar plot (mean |SHAP|) standalone
+    fig = plt.figure(figsize=(10, 8))
     shap.summary_plot(
         shap_arr, X, plot_type="bar", show=False, max_display=15,
         feature_names=FEATURES,
     )
-    axes[0].set_title("(A) Importancia global — mean |SHAP|", fontsize=12)
+    plt.title(
+        "Figura 9a — Importancia global das features (SHAP)\n"
+        "LightGBM v2 sobre test set (71.089 eventos)",
+        fontsize=12, fontweight="bold", pad=10,
+    )
+    plt.xlabel("mean(|SHAP value|)", fontsize=11)
+    plt.tight_layout()
+    plt.savefig(ARQ_FIG_BAR, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Salvo: {ARQ_FIG_BAR.relative_to(ROOT.parent)}")
 
-    # Painel B: beeswarm
-    plt.sca(axes[1])
+    # Fig 9b — beeswarm standalone
+    fig = plt.figure(figsize=(10, 8))
     shap.summary_plot(
         shap_arr, X, show=False, max_display=15,
         feature_names=FEATURES,
     )
-    axes[1].set_title("(B) Distribuicao dos SHAP values por feature", fontsize=12)
-
-    fig.suptitle(
-        "Figura 9 — Analise SHAP do LightGBM v2 (test set, 71.089 eventos)",
-        fontsize=13, fontweight="bold", y=1.00,
+    plt.title(
+        "Figura 9b — Distribuicao dos SHAP values por feature\n"
+        "(cor = valor da feature: azul=baixo, vermelho=alto)",
+        fontsize=12, fontweight="bold", pad=10,
     )
+    plt.xlabel("SHAP value (impact on model output)", fontsize=11)
     plt.tight_layout()
-    fig.savefig(ARQ_FIG_GLOBAL, dpi=130, bbox_inches="tight")
+    plt.savefig(ARQ_FIG_BEESWARM, dpi=130, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Salvo: {ARQ_FIG_GLOBAL.relative_to(ROOT.parent)}")
+    print(f"  Salvo: {ARQ_FIG_BEESWARM.relative_to(ROOT.parent)}")
 
-    # Fig 10 — dependence plots das 3 features mais importantes
+    # Fig 10 — dependence plots das 3 features mais importantes (vertical, melhor aspect)
     top3 = df_ranking.head(3)["feature"].to_list()
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
+    fig, axes = plt.subplots(3, 1, figsize=(11, 14))
     for ax, feat_name in zip(axes, top3):
         plt.sca(ax)
         shap.dependence_plot(
             feat_name, shap_arr, X, show=False,
             ax=ax, feature_names=FEATURES,
-            interaction_index=None,  # sem coloracao por feature secundaria
+            interaction_index=None,
         )
-        ax.set_title(f"{feat_name}", fontsize=11)
+        rank_idx = df_ranking.filter(pl.col("feature") == feat_name)
+        rank = rank_idx["rank"][0]
+        pct = rank_idx["pct_total"][0]
+        ax.set_title(
+            f"#{rank}  —  {feat_name}  ({pct:.1f}% do peso global)",
+            fontsize=11, fontweight="bold", pad=8,
+        )
+        ax.set_ylabel(f"SHAP value", fontsize=10)
+        ax.set_xlabel(f"valor de {feat_name}", fontsize=10)
+        ax.axhline(0, color="gray", linewidth=0.7, alpha=0.5, linestyle="--")
     fig.suptitle(
-        "Figura 10 — Dependence plots das 3 features mais importantes",
-        fontsize=13, fontweight="bold", y=1.02,
+        "Figura 10 — Dependence plots das 3 features mais importantes\n"
+        "(como o valor da feature impacta a predicao)",
+        fontsize=13, fontweight="bold", y=0.995,
     )
     plt.tight_layout()
-    fig.savefig(ARQ_FIG_DEPEND, dpi=130, bbox_inches="tight")
+    plt.savefig(ARQ_FIG_DEPEND, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print(f"  Salvo: {ARQ_FIG_DEPEND.relative_to(ROOT.parent)}")
 

@@ -575,7 +575,121 @@ Critério B (test ≥ 0,6303): **0,8618 ✓** (folga +23,1pp).
 
 ---
 
-*(Próximas seções a desenvolver em W6-W8: Análise SHAP global + estratificada sobre v2, modelo de sobrevivência Weibull AFT + Isolation Forest diagnóstico (W6), Avaliação e Resultados estratificada (W7), Conclusão (W8).)*
+### Análise SHAP do LightGBM v2 (`08c_shap_v2.py`)
+
+A análise SHAP (SHapley Additive exPlanations) do modelo canônico v2 foi a etapa de **validação de qualidade** prometida desde o GATE MARCO 1 — sem ela, a AUC-PR de 0,8618 em test ficaria sem explicação. Computada via TreeSHAP sobre o test set completo (71.089 eventos, ~47 s de execução), produziu a matriz canônica `shap_values_v2_test.npy` (19 MB, [71.089 × 35]) que vira o substrato para todas as análises de interpretabilidade subsequentes.
+
+> 📘 **Detalhes técnicos (algoritmo TreeSHAP, configuração, decisões de subgrupos estratificados):** ver [`notas_metodologicas.md` Seção 10](notas_metodologicas.md). **Script:** `Projeto/codigo/08c_shap_v2.py`. **Saídas:** matriz SHAP completa + 2 tabelas (`shap_global_v2.csv`, `shap_estratificado_v2.csv`) + 3 figuras (Fig 9a bar, Fig 9b beeswarm, Fig 10 dependence plots).
+
+#### Ranking de importância global
+
+[Figura 9a — Importância global das features (SHAP)](figuras/fig09a_shap_bar.png)
+[Figura 9b — Distribuição dos SHAP values por feature](figuras/fig09b_shap_beeswarm.png)
+
+| Rank | Feature | Família | mean(\|SHAP\|) | % do peso |
+|---:|---|---|---:|---:|
+| **1** | `horas_desde_ultimo_DG` | 2 — Recência | 0,968 | **39,3%** |
+| **2** | `qtd_alarmes_nivel_muito_alto_360min` | 6 — Regra de Negócio | 0,767 | **31,1%** |
+| **3** | `razao_alarme_7d_vs_30d_anterior` | 4 — Regimal | 0,211 | **8,6%** |
+| 4 | `tipo_caminhao` | 7 — Encoding | 0,122 | 5,0% |
+| 5 | `tag_freq` | 7 — Encoding | 0,041 | 1,7% |
+| 6 | `count_total_24h` | 1 — Rolling | 0,028 | 1,1% |
+| 7 | `horas_desde_ultimo_critico` | 2 — Recência | 0,026 | 1,0% |
+| 8 | `razao_severidade_14d_vs_60d` | 4 — Regimal | 0,025 | 1,0% |
+| 9 | `mes` | 0 — Básicas | 0,022 | 0,9% |
+| 10 | `count_nao_critico_8h` | 1 — Rolling | 0,021 | 0,8% |
+
+**Top 2 features explicam 70% do peso; top 10 explicam 91%.** Três famílias dominam o ranking — Recência (Família 2), Regra de Negócio (Família 6) e Regimal (Família 4) somam **79% do peso** do modelo.
+
+#### Quatro perguntas centrais respondidas pelo SHAP
+
+**1. v2 NÃO é "baseline glorificado".** A *feature* `count_critico_4h` — núcleo do baseline heurístico (W5) — aparece apenas no **rank #29**. O LightGBM v2 aprendeu sinal qualitativamente diferente, justificando empiricamente os +27,6 pp de AUC-PR sobre baseline em test.
+
+**2. Família 4 regimal funciona exatamente como previsto.** `razao_alarme_7d_vs_30d_anterior` (rank #3, 8,6%) foi desenhada em W4 especificamente para detectar a anomalia RFB do CA65926 (Obs 2.6/2.9). O modelo confirma empiricamente que essa decisão de *feature engineering* foi acertada — feature com fundamentação observacional forte ficou no topo.
+
+**3. Obs 2.11 fracamente refutada.** A hipótese de W4 propunha que `count_critico_*` apareceria acima de `count_total_*` no ranking (acúmulo de criticidade > acúmulo de volume). Resultado misto: em janelas 2h/4h, criticidade vence; em 1h/8h/24h, total vence. **Mas o achado mais importante é que TODAS as 15 features de rolling counts ficaram em rank #15-#31** — o modelo não dependeu fortemente desse padrão. A versão "domain-specific" (`qtd_alarmes_muito_alto_360min` da Família 6, que conta APENAS alarmes nas 82 regras CMA Muito Alto) venceu a versão genérica (Família 1) em magnitude (31,1% vs cumulativo ~5% das 15 rolling).
+
+**4. Famílias 4 + 6 + 2 dominam (79% do peso conjunto):** três lógicas qualitativamente distintas — recência temporal, *lookup* de regras CMA, e detecção de anomalia regimal. **Nenhuma delas é "conte críticos recentes"** (que seria o baseline). O modelo aprende padrões mais sofisticados do que o esperado.
+
+#### Análise estratificada — CA65926 vs resto do test
+
+| Rank | CA65926 (9,96% do test) | Resto do test (90,04%) |
+|---:|---|---|
+| 1 | `horas_desde_ultimo_DG` (36,9%) | `horas_desde_ultimo_DG` (39,6%) |
+| 2 | `qtd_alarmes_muito_alto` (34,1%) | `qtd_alarmes_muito_alto` (30,6%) |
+| 3 | `razao_alarme_7d_vs_30d` (10,1%) | `razao_alarme_7d_vs_30d` (8,3%) |
+| 4 | `tipo_caminhao` (2,0%) | `tipo_caminhao` (5,4%) |
+| 5 | `horas_desde_ultimo_critico` (1,9%) | `tag_freq` (1,8%) |
+
+**Top 3 idênticos** entre os dois subgrupos. O modelo usa **a mesma estratégia** para predizer DGs do CA65926 e do resto — não há divisão em "regras específicas para o equipamento problemático". A diferença é apenas de **peso relativo**: CA65926 dá levemente mais importância a `qtd_alarmes_muito_alto` (34% vs 31%) e `razao_alarme_7d_vs_30d` (10% vs 8%), coerente com a Obs 2.9 (anomalia mecânica progressiva detectada por features de acumulação e regimais).
+
+#### Achado crítico — `horas_desde_ultimo_DG` é predição de cascata, não de primeiro DG
+
+O fato da feature #1 do modelo ter 39% do peso e ser `horas_desde_ultimo_DG` motivou diagnóstico dedicado. Inspeção da matriz SHAP nos 12.038 positivos do test:
+
+| Métrica | Resultado |
+|---|---|
+| Top 10% eventos com maior SHAP+ em `horas_desde_ultimo_DG` (7.109 eventos) | 100% têm DG anterior em ≤ 2h; mediana = 1 minuto |
+| Desses, quantos são DG real? | 94,2% (6.696 positivos) |
+| 9.475 positivos preditos corretamente (TPs) | 84,7% têm DG anterior em ≤ 1h; 93,1% em ≤ 4h |
+| Eventos SEM DG anterior (NULL ou > 24h) — 3.919 casos | Dos 101 positivos reais, **apenas 1 é predito corretamente (1%)** |
+
+**Implicação:** o LightGBM v2 é, em essência, um **detector de continuação de cascatas**. Quando há DG recente (cascata em curso), prediz bem; quando não há histórico, falha quase totalmente. O AUC-PR de 0,8618 em test reflete majoritariamente *cascade recovery*, não *first DG prediction*.
+
+**Para a Vale operacionalmente:** o caso de maior valor é antecipar o **primeiro** DG (evitar que a rajada aconteça); pegar o terceiro ou quarto DG na cascata é tarde demais para mitigação. O modelo atual entrega o oposto.
+
+Esse achado motivou uma **decisão metodológica adicional**: treinar variante v3 sem `horas_desde_ultimo_DG` (`08e_lightgbm_v2_no_cascade.py`) para **quantificar empiricamente** o trade-off entre "predição de cascata" e "predição de primeiro DG". Os resultados dessa análise serão integrados a esta seção quando o experimento concluir.
+
+#### Achados laterais com força para CM 6.1 e CM 6.2
+
+- **`tipo_caminhao` no top 5 (rank #4, 5,0%):** o modelo usa essa *feature* binária (1=Caminhão / 0=Escavadeira) para **ajustar a probabilidade base de DG por tipo de equipamento**. Confirma empiricamente a H4.1 (frota LeTourneau L 1850 tem perfil radicalmente distinto, ~22× menos DGs por equipamento). O modelo aprendeu a tratar as duas frotas como populações estatisticamente diferentes.
+
+- **`operador_freq` no rank #13 (0,72%):** confirma a Q3 do edital — operador correlaciona com DG, mas de **forma difusa**, consistente com o achado da Obs 2.4 (W5, 152 operadores em faixa comparável a OP_067). O modelo usa a feature mas não a prioriza.
+
+- **`mes` no rank #9 (0,89%):** **limitação CM 6.2.** O modelo aprendeu que o mês correlaciona com taxa de DG (provavelmente capturando o *drift* mai → jun via Obs 2.6). Em *deployment* com `mes` fora de [1, 6] (julho/agosto/etc.), o LightGBM extrapola implicitamente — trataria `mes = 7` como "`mes >= 5,5`" (igual a junho). Magnitude do problema é pequena (0,89% do peso), e a recomendação de **retreino *rolling* mensal** já registrada em CM 6.3 endereça a limitação por construção: em deployment real, o modelo é treinado nos últimos N meses, então `mes` nunca extrapola.
+
+- **Família 1 (15 features rolling) virtualmente ignorada pelo modelo:** todas em rank #15-#31. **Lição metodológica:** *features* genéricas (contar eventos em janelas temporais) podem perder para versões *domain-specific* da mesma ideia (contar APENAS alarmes nas regras CMA Muito Alto). Material direto para CM 6.1 — exemplo de como engenharia de *features* com fundamentação no domínio supera engenharia agnóstica.
+
+#### Síntese para o relatório final
+
+O SHAP entrega três contribuições para o relatório:
+
+- **Interpretabilidade (CM 5.2):** ranking explícito + dependence plots permitem ao leitor entender exatamente como o modelo decide.
+- **Insights Não Óbvios (CM 6.1):** quatro narrativas convergentes — Família 4 regimal valida engenharia em W4; cascade detection é o que o modelo realmente faz; H4.1 confirmada via `tipo_caminhao`; features domain-specific vencem genéricas.
+- **Limitações (CM 6.2):** cascade-only prediction, `mes` como extrapolação implícita, Obs 2.11 fracamente refutada.
+
+A Variante v3 (sem `horas_desde_ultimo_DG`) está em execução no momento desta sessão. Os resultados comparativos v2 vs v3 vão informar se o modelo canônico para o relatório permanece v2 (mantendo a limitação documentada) ou se v3 substitui/complementa v2 (Opção D — *deployment* paralelo).
+
+---
+
+### Síntese parcial de limitações identificadas (rascunho para CM 6.2)
+
+Esta subseção consolida as limitações metodológicas identificadas até o final de W6 que devem entrar formalmente em **CM 6.2 (Limitações)** durante a escrita do relatório em W8. Cada item é registrado com magnitude, evidência, e — quando aplicável — caminho de mitigação ou trabalho futuro associado.
+
+**L1 — `horas_desde_ultimo_DG` codifica "predição de cascata", não "predição de primeiro DG":**
+A *feature* #1 do LightGBM v2 (39% do peso global) opera em prática como detector de continuação de rajadas — não de primeiro DG. Evidência: top 10% dos eventos com maior SHAP+ dessa *feature* têm 100% DG anterior em ≤ 2h (mediana 1 minuto); apenas 1% dos primeiros DGs (sem histórico recente) são detectados. **Magnitude:** significativa — o AUC-PR de 0,8618 em test reflete majoritariamente *cascade recovery*, não *first DG prediction*. **Mitigação experimental:** treinada variante v3 sem essa *feature* (`08e_lightgbm_v2_no_cascade.py`) para quantificar trade-off; resultados pendentes. **Trabalho Futuro (CM 6.3):** deployment paralelo de v2 (alerta de cascata em curso) + v3 (alerta de primeiro DG) se v3 mostrar performance competitiva em primeiros DGs.
+
+**L2 — Feature `mes` introduz dependência temporal implícita:**
+O modelo aprendeu que `mes` correlaciona com taxa de DG (rank #9, 0,89% do peso) — provavelmente capturando o *drift* mai → jun (Obs 2.6) e a anomalia localizada do CA65926 em junho (Obs 2.9). Em *deployment* com `mes` fora de [1, 6] (julho/agosto/etc.), o LightGBM extrapola implicitamente — trataria `mes = 7` como "`mes >= 5,5`" (igual a junho). **Magnitude:** pequena (0,89% do peso). **Mitigação por construção:** a recomendação de **retreino *rolling* mensal** já registrada em CM 6.3 endereça a limitação — em *deployment* real, o modelo é treinado nos últimos N meses, então `mes` nunca está fora da faixa vista no treino.
+
+**L3 — Obs 2.11 (acúmulo de criticidade > volume) fracamente refutada:**
+A Família 1 (15 *features* rolling counts) foi a maior família do projeto, motivada pela Obs 2.5 (W2) e pela hipótese de que `count_critico_*` superaria `count_total_*` no ranking. **Resultado SHAP:** todas as 15 *features* em rank #15-#31; comparação `count_critico_Xh` vs `count_total_Xh` deu resultado misto (3 de 5 janelas). A hipótese não é falsa nem verdadeira — é simplesmente **irrelevante para o modelo**, que preferiu a versão *domain-specific* da Família 6 (`qtd_alarmes_muito_alto_360min`). **Implicação metodológica para CM 6.1:** *features* genéricas podem perder para versões *domain-specific* da mesma ideia — lição transferível para projetos futuros.
+
+**L4 — Drift quantificado e direcional jan-abr → jun (já registrado, reforçado pelo SHAP):**
+Taxa de DG: 3,41% (treino) / 1,62% (val mai) / 7,35% (test jun) — fator 4,5× entre val e test. Causa mecânica identificada (Obs 2.9): anomalia RFB localizada no CA65926. Modelo aprendeu a usar `mes` (L2) e `razao_alarme_7d_vs_30d_anterior` (rank #3) para capturar o regime; em *deployment* contínuo, o regime pode mudar novamente. **Mitigação:** análise estratificada mensal em W7 + retreino *rolling* (CM 6.3).
+
+**L5 — *Test set peeking* na Mitigação 2 do v1 (registrado e descartado):**
+Variante B do v1 usou `scale_pos_weight` calibrado sobre val+test (*peeking* branda). Foi posteriormente descartada empiricamente (B−A < 0 em ambos os splits) e o Optuna do v2 escolheu `scale_pos_weight = 0,513` (direção oposta da Mitigação 2 original). Limitação efetivamente resolvida em v2 — mas vale registrar no relatório como demonstração de boa prática (testar hipótese metodológica e refutá-la com dados).
+
+**L6 — Limitações da Família 5 — operador correlaciona difusamente com DG (Q3 do edital):**
+Resposta empírica robusta (Obs 2.4 W5 + SHAP `operador_freq` rank #13): há sinal real (variação 30× entre quartis), mas distribuído entre 394 operadores sem 1-2 outliers claros. **Implicação:** intervenções de RH baseadas em "operador X é problemático" precisam ser cuidadosas — o sinal é estatístico difuso, não pontual.
+
+**L7 — *Censoring* no target (102.602 eventos, 18,83%):**
+*Target_4h* trata eventos sem DG futuro observado como `y = 0`, o que é aproximação razoável mas não rigorosa (esses eventos poderiam ter DG após o horizonte observado). **Mitigação parcial:** o modelo de sobrevivência Weibull AFT (`09_sobrevivencia.py`, em planejamento) oferece tratamento rigoroso do *censoring* como dado adicional — segunda leitura do problema.
+
+---
+
+*(Próximas seções a desenvolver em W6-W8: análise comparativa v2 vs v3 — pendente da execução do `08e_lightgbm_v2_no_cascade.py`; modelo de sobrevivência Weibull AFT + Isolation Forest diagnóstico (W6); Avaliação e Resultados estratificada (W7); Conclusão e Trabalhos Futuros (W8).)*
 
 ---
 
@@ -621,9 +735,11 @@ A versão do Python (3.13) está fixada em `.python-version`. Todas as dependên
 | 13 | `Projeto/codigo/07_baseline.py` | W5 | ✅ | Modelo baseline heurístico: `DG_predito = 1 se count_critico_4h ≥ threshold` aplicado a `target_4h` (canônica do CM 1.2). Score raw para AUC-PR: `count_critico_4h` (alinhamento perfeito ao horizonte do *target*). Thresholds binários para P/R/F1: 1, 2, 3, 5. Estratificação obrigatória mai vs jun (Mitigação 3). **Resultado contra-intuitivo:** AUC-PR test (jun) = 0,5803 é **2,42× maior** que AUC-PR val (mai) = 0,2397 — *recall* de 70% em test com *threshold* = 1 mesmo sem modelo de ML. Explicação mecânica: 82,2% dos DGs de jun vêm do CA65926 em deterioração progressiva (Obs 2.9), criando assinatura clara para a regra simples; mai é regime distribuído sem alvo único. Forçou re-calibração do GATE MARCO 1 (registrada em `controle_alteracoes.md` 2026-05-22). Saída: `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 thresholds × 2 splits, com TP/FP/FN/TN, P/R/F1, AUC-PR, Random AP). Tempo: 0,4s |
 | 14 | `Projeto/codigo/08_lightgbm.py` | W5 | ✅ | LightGBM v1 com 5 variantes (A/B/C/T2/T8) e parâmetros *default* sobre `v3.parquet`. Variante A canônica para GATE MARCO 1. **Resultados:** A val=0,7523 / test=0,8566 (GATE PASS, +51,3pp / +27,6pp vs baseline). Mitigação 2 (B) e Obs 2.7 (C) **empiricamente descartadas**. Profundidade 1 (T2/T4/T8): T8 pior, T2 vs T4 indistinguíveis (ranking inverte val↔test, magnitude na faixa de ruído). Saídas: 5 modelos em `Projeto/modelos/lightgbm_v1_*.txt` + 4 tabelas (`lightgbm_v1_metricas.csv`, `lightgbm_v1_vs_baseline.csv`, `comparacao_horizontes_lightgbm.csv`, `gate_marco_1.csv`). Tempo: 17,5s. Ver `notas_metodologicas.md` Seção 8. |
 | 15 | `Projeto/codigo/08b_lightgbm_v2.py` | W6 | ✅ | **LightGBM v2 — modelo canônico do relatório.** Optuna (50 trials, TPE seed=42) + TimeSeriesSplit CV de 4 folds expandidos (Mitigação 1) + determinismo estrito (`deterministic=True` + `force_col_wise=True`). Espaço de busca: 7 hiperparâmetros (`scale_pos_weight ∈ [0,5; 3,0]` refinado após refutação da Mitigação 2). **Resultados:** AUC-PR train=0,9658 / val=0,7801 / test=0,8618 (best CV=0,8834 trial #34). Ganho sobre v1 A: val +2,78pp, test +0,52pp. **GATE MARCO 1 re-confirmado PASS.** Optuna escolheu `scale_pos_weight=0,513` — contradiz a direção da Mitigação 2 (que propunha cima para 4,65). Saídas: `Projeto/modelos/lightgbm_v2.txt` + `optuna_study_v2.pkl` + 3 tabelas (`lightgbm_v2_metricas.csv`, `lightgbm_v2_hiperparametros.csv`, `optuna_trials.csv`). Tempo: 28,7 min. Ver `notas_metodologicas.md` Seção 9. |
-| 16 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Modelo de Sobrevivência (Weibull AFT principal, *fallback* Cox PH se Weibull não convergir) com biblioteca `lifelines`. Trata o *censoring* (102.602 eventos sem DG futuro observado) rigorosamente como dado adicional, oferecendo segunda leitura do problema independente de *threshold* de classificação. Saídas: `modelos/sobrevivencia.joblib` + tabela de *hazard ratios* + Fig Extra A (curva Kaplan-Meier por estado pré-evento). |
-| 17 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico — treinado sobre o mesmo dataset **sem usar `Is_Dont_Go`**; mede a sobreposição entre DGs reais e *score* de anomalia. Teste empírico único do Risco 3.3 (viés do *label* CMA). Saídas: `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv`. |
-| 18 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas (mês × frota × estado operacional × top-5 alarmes) + figuras 9-13 do relatório + análise de erro por contexto + curva *precision-recall* com limiar operacional calibrado por custo-benefício explícito. |
+| 16 | `Projeto/codigo/08c_shap_v2.py` | W6 | ✅ | **Análise SHAP do LightGBM v2** via TreeSHAP sobre os 71.089 eventos do test (~1 min). Gera matriz SHAP completa para auditoria + ranking global + estratificações (CA65926 vs resto, conhecidos vs unknown). **Top 3 features:** `horas_desde_ultimo_DG` (39,3%) / `qtd_alarmes_nivel_muito_alto_360min` (31,1%) / `razao_alarme_7d_vs_30d_anterior` (8,6%) — soma 79% do peso. **Achados:** v2 NÃO é baseline glorificado; Família 4 regimal funciona como previsto; Obs 2.11 fracamente refutada; **modelo é predição de cascata, não primeiro DG** (mini-diagnose ad-hoc revelou que top 10% SHAP+ em `horas_desde_ultimo_DG` tem 100% DG anterior em ≤2h; apenas 1% dos primeiros DGs detectados). Motivou treino de v3 (linha 17). Saídas: `Projeto/modelos/shap_values_v2_test.npy` (19 MB) + 2 tabelas + 3 figuras (9a/9b/10). Ver `notas_metodologicas.md` Seção 10. |
+| 17 | `Projeto/codigo/08e_lightgbm_v2_no_cascade.py` | W6 | 🔄 em execução | **Variante v3 sem `horas_desde_ultimo_DG`** — clone do `08b_lightgbm_v2.py` com 34 features (em vez de 35). Mesma configuração Optuna + TimeSeriesSplit CV + determinismo. **Objetivo:** quantificar trade-off "cascade prediction vs first DG prediction" via comparação estratificada em 3 subgrupos (geral / primeiro_DG / cascata). Decisão **Opção D** (deploy paralelo de v2 e v3) condicional ao resultado. Saídas planejadas: `Projeto/modelos/lightgbm_v2_no_cascade.txt` + study Optuna + 3 tabelas (`lightgbm_v2_no_cascade_metricas.csv`, `lightgbm_v2_no_cascade_hiperparametros.csv`, `v2_vs_v2_no_cascade.csv` comparativo crítico). Tempo estimado: ~30 min. |
+| 18 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Modelo de Sobrevivência (Weibull AFT principal, *fallback* Cox PH se Weibull não convergir) com biblioteca `lifelines`. Trata o *censoring* (102.602 eventos sem DG futuro observado) rigorosamente como dado adicional, oferecendo segunda leitura do problema independente de *threshold* de classificação. Saídas: `modelos/sobrevivencia.joblib` + tabela de *hazard ratios* + Fig Extra A (curva Kaplan-Meier por estado pré-evento). |
+| 19 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico — treinado sobre o mesmo dataset **sem usar `Is_Dont_Go`**; mede a sobreposição entre DGs reais e *score* de anomalia. Teste empírico único do Risco 3.3 (viés do *label* CMA). Saídas: `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv`. |
+| 20 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas (mês × frota × estado operacional × top-5 alarmes) + figuras 9-13 do relatório + análise de erro por contexto + curva *precision-recall* com limiar operacional calibrado por custo-benefício explícito. |
 
 **Comando de execução padrão:**
 ```powershell

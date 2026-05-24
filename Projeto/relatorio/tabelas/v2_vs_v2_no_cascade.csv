@@ -1,0 +1,13 @@
+split,subgrupo,n_eventos,n_positivos,modelo,auc_pr,recall_05
+val,geral,78825,14481,v2,0.7801,0.4959
+val,geral,78825,14481,v3_no_cascade,0.7132,0.5303
+val,primeiro_DG (sem DG <= 24h ou NULL),51821,2250,v2,0.2015,0.0333
+val,primeiro_DG (sem DG <= 24h ou NULL),51821,2250,v3_no_cascade,0.2178,0.1836
+val,cascata (DG <= 4h),14009,9163,v2,0.9245,0.7578
+val,cascata (DG <= 4h),14009,9163,v3_no_cascade,0.8976,0.7326
+test,geral,71089,12038,v2,0.8618,0.6803
+test,geral,71089,12038,v3_no_cascade,0.8556,0.7527
+test,primeiro_DG (sem DG <= 24h ou NULL),52514,1705,v2,0.1876,0.0434
+test,primeiro_DG (sem DG <= 24h ou NULL),52514,1705,v3_no_cascade,0.1964,0.2106
+test,cascata (DG <= 4h),11228,9035,v2,0.97,0.8836
+test,cascata (DG <= 4h),11228,9035,v3_no_cascade,0.9691,0.9185

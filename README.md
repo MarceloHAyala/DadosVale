@@ -146,6 +146,8 @@ uv run python Projeto/codigo/06b_fix_encoding_leakage.py # W5 - fix do leakage s
 uv run python Projeto/codigo/07_baseline.py             # W5 - baseline heurístico para target_4h (count_critico_4h >= threshold) com métricas estratificadas mai vs jun (Mitigação 3) → baseline_metricas.csv (8 linhas: 4 thresholds × 2 splits)
 uv run python Projeto/codigo/08_lightgbm.py             # W5 - LightGBM v1 (5 variantes A/B/C/T2/T8) com parâmetros default → 5 modelos em modelos/lightgbm_v1_*.txt + 4 tabelas (métricas, vs baseline, horizontes, GATE). GATE MARCO 1: PASS. Tempo: ~17,5s
 uv run python Projeto/codigo/08b_lightgbm_v2.py         # W6 - LightGBM v2 canônico: Optuna 50 trials + TimeSeriesSplit CV 4 folds + deterministic=True → lightgbm_v2.txt + optuna_study_v2.pkl + 3 tabelas. AUC-PR val=0,7801 / test=0,8618. Tempo: ~28,7 min
+uv run python Projeto/codigo/08c_shap_v2.py             # W6 - Análise SHAP do v2 via TreeSHAP sobre 71.089 eventos → matriz shap_values_v2_test.npy (19 MB) + 2 tabelas + 3 figuras (9a/9b/10). Top 3 features: horas_desde_ultimo_DG (39%) / qtd_alarmes_muito_alto (31%) / razao_alarme_7d_vs_30d (8,6%). Tempo: ~1 min
+uv run python Projeto/codigo/08e_lightgbm_v2_no_cascade.py # W6 - Variante v3 sem horas_desde_ultimo_DG (clone de 08b com 34 features). Quantifica trade-off "predição de cascata vs primeiro DG" via análise estratificada. Tempo: ~30 min
 # ... 09_sobrevivencia (W6), 10_evaluation (W7), 11_isolation_forest (W6)
 ```
 

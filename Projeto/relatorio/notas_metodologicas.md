@@ -530,4 +530,116 @@ Ganho modesto em test (+0,52pp) — esperado, pois o regime de teste já era fá
 
 ---
 
-**Última atualização:** 2026-05-24 (W6 — Seções 4-9 adicionadas: manual técnico dos scripts do pipeline)
+---
+
+## 10. Como a análise SHAP é computada e interpretada (`08c_shap_v2.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Análise SHAP do LightGBM v2".
+
+**Script:** `Projeto/codigo/08c_shap_v2.py` (6 etapas)
+**Comando:** `uv run python Projeto/codigo/08c_shap_v2.py`
+**Tempo:** ~1 min (TreeSHAP é eficiente em LightGBM)
+
+**Entradas:**
+- `dados/features/v3.parquet` (filtro pelo `split == 'test'` interno, 71.089 eventos)
+- `modelos/lightgbm_v2.txt` (modelo canônico salvo por `08b`)
+
+**Saídas:**
+- `modelos/shap_values_v2_test.npy` (19 MB) — matriz SHAP completa [71.089 × 35], formato NumPy auditável
+- `relatorio/tabelas/shap_global_v2.csv` (35 linhas — ranking global)
+- `relatorio/tabelas/shap_estratificado_v2.csv` (50 linhas — 5 subgrupos × top 10)
+- `relatorio/figuras/fig09a_shap_bar.png` — bar plot importância
+- `relatorio/figuras/fig09b_shap_beeswarm.png` — distribuição SHAP por feature
+- `relatorio/figuras/fig10_shap_dependence_top3.png` — 3 dependence plots (vertical)
+
+### Como TreeSHAP computa as importâncias
+
+TreeSHAP (Lundberg et al., 2018) é o algoritmo nativo de SHAP para modelos baseados em árvore — é **exato** (não aproximação como KernelSHAP) e **eficiente** (complexidade polinomial no número de nós das árvores). Para cada predição individual, decompõe o *log-odds* da saída do LightGBM em **contribuições aditivas de cada *feature***. A soma das contribuições + valor base = saída do modelo (verificação por *additivity check*).
+
+Implementação no script:
+
+```python
+explainer = shap.TreeExplainer(booster)
+shap_arr = explainer.shap_values(X, check_additivity=False)
+```
+
+O parâmetro `check_additivity=False` desabilita o check porque pode causar warnings com features categóricas. A consistência é garantida pela formulação do TreeSHAP.
+
+**Saída:** matriz `shap_arr` com shape `[N, F]` onde `N` é o número de eventos e `F` é o número de features. `shap_arr[i, j]` = contribuição da *feature j* para a predição do evento `i` (em escala log-odds).
+
+### Como derivamos o ranking global
+
+```python
+mean_abs_shap = np.abs(shap_arr).mean(axis=0)  # [N, F] -> [F]
+ranking = np.argsort(mean_abs_shap)[::-1]
+```
+
+**Interpretação:** `mean(|SHAP|)` mede o impacto médio da feature na predição, independente da direção (positivo ou negativo). É a métrica padrão de importância global na literatura SHAP.
+
+### Estratificações aplicadas (5 subgrupos)
+
+Cada subgrupo recebe seu próprio ranking top-10 para identificar mudanças de comportamento do modelo entre regimes:
+
+1. **`test_completo`** (71.089 eventos) — baseline
+2. **`CA65926`** (7.083 eventos, 9,96%) — equipamento dominante em junho via Obs 2.9
+3. **`resto_test (sem CA65926)`** (64.006 eventos) — para comparação direta
+4. **`categorias_conhecidas (treino)`** (69.277 eventos) — onde o modelo viu as TAGs/operadores
+5. **`categorias_unknown (1.812 eventos, 2,55%)`** — TAGs (`CA65791`, `CA65916`) ou operadores que não estão no treino
+
+A estratificação responde duas perguntas:
+- O modelo usa **a mesma estratégia** para predizer DGs do CA65926 vs resto? (resposta SHAP: sim, top 3 idênticos; só pesos relativos mudam)
+- O modelo extrapola **diferente** para categorias unknown? (a análise stratificada por unknown está nos dados; pequena diferença observada — material para W7)
+
+### Como a mini-diagnose de cascata foi feita
+
+Quando o SHAP revelou que `horas_desde_ultimo_DG` tinha 39% do peso (rank #1), surgiu suspeita de "predição de cascata" (modelo prevê DG porque o último DG foi recente — autocorrelação trivial da regra CMA `QTD > 1`).
+
+Diagnóstico (inline, ~10 linhas de Python):
+
+```python
+shap_horas = shap_arr[:, IDX_HORAS]                # SHAP da feature problemática
+horas_vals = test['horas_desde_ultimo_DG'].to_numpy()
+y_true = test['target_4h'].to_numpy()
+
+# Top 10% eventos com maior SHAP POSITIVO de horas_desde_ultimo_DG
+mask_top = shap_horas >= np.percentile(shap_horas, 90)
+horas_top = horas_vals[mask_top]
+# -> 100% têm horas_desde_ultimo_DG <= 2h, mediana = 1 minuto
+# -> 94% são DG real -> modelo está acertando, mas via cascata
+
+# Eventos SEM DG anterior (NULL): modelo consegue prever?
+mask_null = np.isnan(horas_vals)
+positivos_null = y_true[mask_null].sum()  # 101 positivos sem histórico
+shap_total_null_pos = shap_arr[mask_null & (y_true==1)].sum(axis=1)
+recovery = (shap_total_null_pos >= 0).mean()  # 1% — modelo cego sem histórico
+```
+
+**Interpretação dos números:**
+- Top 10% SHAP+ → 100% tem DG recente → modelo decide via cascata
+- Sem histórico → 1% recall → modelo cego para "primeiro DG"
+
+Esse diagnóstico é o que motivou a decisão de treinar v3 sem essa feature (`08e_lightgbm_v2_no_cascade.py`).
+
+### Quando re-rodar `08c_shap_v2.py`
+
+- Quando o modelo `lightgbm_v2.txt` mudar (re-tuning, novas features, novo split)
+- Quando v3 estiver pronto: rodar `08c_shap_v3.py` (clone) para comparar rankings v2 vs v3
+- A matriz `shap_values_v2_test.npy` deve ser regenerada sempre que o modelo mudar
+
+### Padrão metodológico: SHAP como teste de qualidade
+
+O SHAP foi mais que análise de interpretabilidade — funcionou como **teste empírico das hipóteses metodológicas do projeto**:
+
+| Hipótese de W4-W5 | Teste SHAP | Resultado |
+|---|---|---|
+| Família 4 regimal capturaria a anomalia RFB | razao_alarme_7d_vs_30d no top 3? | ✅ Sim, rank #3 (8,6%) |
+| Modelo não seria "baseline glorificado" | count_critico_4h fora do top? | ✅ Sim, rank #29 |
+| Obs 2.11 (criticidade > volume) | count_critico_*h ranqueia melhor que count_total_*h? | ⚠️ Misto (3 de 5 janelas) |
+| H4.1 (LeTourneau distinta) | tipo_caminhao tem peso relevante? | ✅ Sim, rank #4 (5,0%) |
+| Q3 (operador correlaciona difusamente com DG) | operador_freq baixo no ranking mas não nulo? | ✅ Sim, rank #13 (0,72%) |
+
+Cinco hipóteses metodológicas testadas em uma única análise — eficiência rara.
+
+---
+
+**Última atualização:** 2026-05-24 (W6 — Seção 10 adicionada: SHAP do LightGBM v2 + mini-diagnose de cascata)

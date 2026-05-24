@@ -582,4 +582,74 @@ Hipótese explicativa: os positivos compartilham assinatura mecânica forte (CA6
 
 ---
 
+### 2026-05-24 — Análise SHAP do LightGBM v2 + descoberta de "predição de cascata" + decisão de treinar variante v3 sem `horas_desde_ultimo_DG`
+
+Aplicada por `Projeto/codigo/08c_shap_v2.py` (~1 min) + mini-diagnose ad hoc da matriz SHAP. Análise revela como o modelo canônico v2 realmente funciona — e identifica fragilidade operacional significativa.
+
+**ANTES:** LightGBM v2 era o modelo canônico (AUC-PR test=0,8618, val=0,7801, GATE MARCO 1 PASS) mas sem interpretabilidade. Não sabíamos quais *features* dirigem as predições nem se o modelo está aprendendo sinal genuíno ou apenas padrões superficiais.
+
+**DEPOIS:** SHAP global sobre os 71.089 eventos do test (matriz `shap_values_v2_test.npy`, 19 MB) revela ranking de importância das 35 *features*:
+
+| Rank | Feature | Família | % do peso |
+|---:|---|---|---:|
+| 1 | `horas_desde_ultimo_DG` | 2 — Recência | **39,3%** |
+| 2 | `qtd_alarmes_nivel_muito_alto_360min` | 6 — Regra de Negócio | **31,1%** |
+| 3 | `razao_alarme_7d_vs_30d_anterior` | 4 — Regimal | **8,6%** |
+| 4 | `tipo_caminhao` | 7 — Encoding | 5,0% |
+| 5-10 | demais | várias | < 2% cada |
+
+**Top 2 explicam 70% do peso. Top 10 explicam 91%.**
+
+**Achados (4 perguntas respondidas pelo SHAP):**
+
+1. **v2 NÃO é "baseline glorificado":** `count_critico_4h` (feature core do baseline) está no **rank #29** — modelo aprendeu sinal qualitativamente diferente.
+2. **Família 4 regimal funciona como previsto:** `razao_alarme_7d_vs_30d_anterior` rank #3 — feature desenhada em W4 especificamente para a anomalia do CA65926 ficou no topo.
+3. **Obs 2.11 fracamente refutada:** TODAS as 15 features rolling estão em rank #15-#31. O modelo NÃO usou fortemente o padrão "acúmulo de criticidade vs volume" hipotetizado. A versão "domain-specific" (`qtd_alarmes_muito_alto_360min` — Família 6) venceu a versão genérica (Família 1).
+4. **Família 4 + 6 + 2 dominam:** três famílias com lógicas distintas (recência + lookup de regras + anomalia regimal) somam 79% do peso — modelo aprende padrões sofisticados.
+
+**ACHADO CRÍTICO via mini-diagnose:** `horas_desde_ultimo_DG` (#1 com 39%) não é sinal preditivo genuíno — é **predição de cascata**. Inspeção da matriz SHAP nos 12.038 positivos do test revela:
+
+- **Top 10% eventos com maior SHAP positivo dessa feature:** **100% têm DG anterior em < 2h**, mediana = 1 minuto. **94% são DG real.**
+- **9.475 positivos preditos corretamente (TPs):** 84,7% têm DG anterior em ≤ 1h; 93,1% em ≤ 4h.
+- **Eventos SEM DG anterior (3.919 casos, NULL ou > 24h):** dos 101 que são positivos reais, **apenas 1 é predito corretamente (1%)**.
+
+**Implicação:** o modelo é **detector de continuação de cascatas**, não preditor de primeiro DG. O AUC-PR 0,8618 mascara fragilidade operacional grave — pegar o **primeiro** DG (caso de maior valor para a Vale) está fora do alcance atual do modelo.
+
+**Decisão metodológica:** treinar variante v3 sem `horas_desde_ultimo_DG` (`08e_lightgbm_v2_no_cascade.py`) com mesma configuração do v2 (Optuna 50 trials + TimeSeriesSplit CV + determinismo). Comparar v2 (com cascade) vs v3 (sem) em 3 estratificações:
+- Geral
+- Subgrupo "primeiro DG" (`horas_desde_ultimo_DG` NULL ou > 24h)
+- Subgrupo "cascata" (`horas_desde_ultimo_DG` ≤ 4h)
+
+Aprovação do usuário registrada: **Opção B confirmada, com promessa de avançar para Opção D (v2 e v3 paralelos canônicos) se v3 mostrar performance competitiva**. Resultados do v3 pendentes (execução em background no momento do registro).
+
+**Limitação adicional documentada — `mes` como feature (rank #9, 0,89% do peso):**
+
+O modelo aprendeu que o `mes` correlaciona com DG (provavelmente capturando o drift mai → jun). Em deployment com `mes` fora de [1, 6] (julho/agosto), o LightGBM extrapola implicitamente — trataria `mes = 7` como "mes >= 5,5" (igual junho). **Não é catastrófico** dado o peso baixo da feature, mas é limitação real. Resolvida por construção pela recomendação de **retreino *rolling* mensal** já em CM 6.3 (entrada controle_alteracoes 2026-05-22). Documentado em CM 6.2.
+
+**Achados laterais para CM 6.1 (Insights Não Óbvios):**
+
+- **`tipo_caminhao` no top 5 (5%):** modelo usa essa feature para ajustar baseline por tipo de equipamento — confirma empiricamente H4.1 (LeTourneau tem perfil radicalmente distinto).
+- **`operador_freq` rank #13 (0,72%):** confirma Q3 do edital — operador correlaciona com DG mas de forma difusa (consistente com Obs 2.4 de W5).
+- **Família 1 (rolling counts, 15 features) virtualmente ignorada:** modelo prefere a versão domain-specific (`qtd_alarmes_muito_alto_360min` da Família 6) que conta APENAS alarmes nas 82 regras CMA Muito Alto. **Lição metodológica para CM 6.1:** features genéricas podem perder para versões domain-specific da mesma ideia.
+
+**Saídas geradas:**
+
+| Arquivo | Conteúdo |
+|---|---|
+| `Projeto/modelos/shap_values_v2_test.npy` (19 MB) | Matriz SHAP completa [71.089 × 35] — auditável |
+| `relatorio/tabelas/shap_global_v2.csv` | 35 features × rank, mean(\|SHAP\|), %total |
+| `relatorio/tabelas/shap_estratificado_v2.csv` | 5 subgrupos × top 10 (test completo / CA65926 / resto / conhecidos / unknown) |
+| `relatorio/figuras/fig09a_shap_bar.png` | Bar plot importância global (top 15) |
+| `relatorio/figuras/fig09b_shap_beeswarm.png` | Beeswarm distribuição SHAP por feature |
+| `relatorio/figuras/fig10_shap_dependence_top3.png` | Dependence plots das 3 features top (vertical, layout corrigido) |
+
+**Onde os achados viram material de relatório:**
+
+- **CM 5.2 (Interpretabilidade):** ranking SHAP + dependence plots, Fig 9a/9b/10.
+- **CM 6.1 (Insights Não Óbvios):** (a) v2 não é baseline glorificado; (b) Família 6 domain-specific venceu Família 1 genérica; (c) modelo é detector de cascata, não primeiro DG; (d) H4.1 confirmada via `tipo_caminhao`.
+- **CM 6.2 (Limitações):** (a) cascade-only prediction (modelo cego para primeiros DGs); (b) `mes` como feature implícita; (c) Obs 2.11 fracamente refutada.
+- **CM 6.3 (Trabalhos Futuros):** já registrado retreino rolling mensal — agora reforçado pela limitação do `mes`.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->
