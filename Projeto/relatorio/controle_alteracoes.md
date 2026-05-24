@@ -465,4 +465,62 @@ Decisão metodológica tomada após análise prévia da arquitetura do `08_light
 
 ---
 
+### 2026-05-23 — Resultados do LightGBM v1 (W5) — GATE MARCO 1 PASS + 3 conclusões metodológicas
+
+Aplicada por `Projeto/codigo/08_lightgbm.py` (6 etapas, ~17,5s de execução), treinando 5 variantes do LightGBM com parâmetros *default* (100 iterações, learning_rate=0,1, num_leaves=31, sem *early stopping* nem Optuna) sobre `v3.parquet` (35 features + 3 *targets* + col `split`). Cada variante responde a uma pergunta analítica distinta consolidada no W5.
+
+**Resultados consolidados:**
+
+| Variante | Target | `scale_pos_weight` | AUC-PR val (mai) | AUC-PR test (jun) |
+|---|---|---:|---:|---:|
+| **A** (canônica) | `target_4h` | 1,972 (treino) | **0,7523** | **0,8566** |
+| **B** (Mitigação 2) | `target_4h` | 4,653 (val+test, peeking) | 0,7350 | 0,8517 |
+| **C** (Obs 2.7) | `target_4h_producao` | 2,096 (treino) | 0,7012 | 0,8533 |
+| **T2** (Profundidade 1) | `target_2h` | 2,360 (treino) | 0,7729 | 0,8378 |
+| **T8** (Profundidade 1) | `target_8h` | 1,585 (treino) | 0,7421 | 0,8211 |
+
+**Conclusão 1 — GATE MARCO 1: PASS:**
+
+- **ANTES:** GATE MARCO 1 exigia AUC-PR Variante A ≥ 0,2897 em val e ≥ 0,6303 em test (re-calibrado em 22/05 após resultado do baseline). Cenário esperado: passar A=SIM em val (regime distribuído, espaço amplo), incerto em test (teto alto do baseline 0,5803).
+- **DEPOIS:** Variante A atinge **AUC-PR val = 0,7523** (folga de +46,3pp sobre o mínimo) e **AUC-PR test = 0,8566** (folga de +22,6pp). Ambos os critérios passam com folga grande. **Verdict: PASS — avançar para W6** (tuning + sobrevivência + Isolation Forest + SHAP).
+- **Sobre o salto vs baseline:** LightGBM A adiciona **+27,6pp de AUC-PR sobre o baseline em test** (0,5803 → 0,8566) e **+51,3pp em val** (0,2397 → 0,7523). O salto em val é o esperado (baseline mediano em regime distribuído, LightGBM com 35 *features* tem muito a ganhar); o salto em test é o achado mais relevante — o LightGBM não está apenas "replicando o baseline mais sofisticado" porque a folga é grande demais para ser explicada pela duplicação da heurística simples sobre `count_critico_4h`. Validação obrigatória via SHAP em W6: confirmar que outras *features* da Família 4 regimal, Família 2 recência e Família 1 (janelas 2h/8h adicionadas em 23/05) aparecem no ranking.
+
+**Conclusão 2 — Mitigação 2 DESCARTADA empiricamente:**
+
+- **Hipótese da Mitigação 2:** calibrar `scale_pos_weight` para taxa de produção (estimada via val+test) em vez de taxa de treino melhora performance.
+- **Resultado empírico:** **B perde para A em ambos os splits** (B−A = −1,73pp em val, −0,50pp em test). Pela análise prévia registrada em `notas_metodologicas.md` Seção 3, o cenário "B−A ≤ 0" é precisamente o caso em que **o viés do *test set peeking* (estimado em 1-3pp em favor de B) foi insuficiente para inflar B além de A** — o que significa que a Mitigação 2 não tem valor preditivo real. Calibrar `scale_pos_weight` para a taxa de treino é melhor que calibrar para taxa de produção neste *dataset*.
+- **Implicação para W6:** **Optuna não precisa tunar `scale_pos_weight` agressivamente para cima de 2,0.** Pode-se restringir o espaço de busca a `scale_pos_weight ∈ [0.5, 3.0]` em vez de `[0.5, 6.0]`, economizando *trials* e focando em outros hiperparâmetros (num_leaves, learning_rate, min_child_samples). Decisão a ser implementada no `08b_lightgbm_v2.py` em W6.
+- **Implicação para o relatório (CM 6.2):** o achado de que a Mitigação 2 não ajuda é **achado empírico positivo**, não fracasso — registrar como exemplo de hipótese metodológica testada e rejeitada com rigor. Reforça a credibilidade analítica do trabalho.
+
+**Conclusão 3 — Obs 2.7 — filtrar DGs em Manutenção PIORA o modelo (variante C descartada):**
+
+- **Hipótese:** os 1.460 DGs em estado `Manutenção` introduzem ruído contextual; treinar com `target_4h_producao` (excluindo esses DGs do target) melhora performance.
+- **Resultado empírico:** **C perde para A em ambos os splits** (C−A = −5,11pp em val, −0,33pp em test). Em val a perda é substancial.
+- **Interpretação:** os DGs em Manutenção são **DGs reais** (reativações de teste do equipamento, alarmes legítimos de Engine Coolant, Brake Temperatures), não falsos positivos de bancada. Filtrá-los do *target* não remove ruído — remove sinal. **Confirma empiricamente a reinterpretação da H5.1** já documentada em `hipoteses_eda.md` (W2, Obs 2.7 resolvida): contexto Manutenção é DG legítimo, com semântica distinta mas informação preditiva válida.
+- **Implicação para W6:** **não treinar variante `Is_Dont_Go_producao` em v2.** Manter `target_4h` original como *target* canônico. Análise estratificada por estado operacional em W7 pode quantificar a diferença de *performance* dentro de Manutenção vs Operando (Profundidade C original), mas não justifica filtrar o *target*.
+
+**Conclusão 4 — Profundidade 1 — T4 é o vencedor canônico, mas com nuance importante:**
+
+- **Resultado bruto:** T4 (=A, target_4h) vence em test (0,8566 > T2 0,8378 > T8 0,8211); **mas T2 vence em val** (0,7729 > T4 0,7523 > T8 0,7421).
+- **Interpretação:** o ranking val vs test **inverte parcialmente** entre T2 e T4. T8 é claramente pior em ambos os splits (consistente). A inversão T2 ↔ T4 entre val e test sugere que **as diferenças são pequenas o suficiente para serem influenciadas por características específicas de cada regime** (val = regime distribuído de mai; test = anomalia localizada de jun no CA65926).
+- **Análise de significância:** **as diferenças entre T2 e T4 (1,73pp em val, 1,88pp em test) estão na margem de ruído esperado** para LightGBM com parâmetros fixos e seed único — sem CV ou bootstrap, não é possível afirmar com confiança que T4 é genuinamente superior a T2. **O que pode ser afirmado com confiança:** T8 (8h) é empiricamente o pior dos três horizontes em ambos os splits — diferenças de 3,55pp em test e 1,02pp em val, mais consistentes. **O que NÃO pode ser afirmado:** "T4 é o melhor horizonte" — afirmação mais honesta é "T4 está na zona de melhor desempenho, e a escolha operacional de 4h (CM 1.2) é empiricamente compatível com os melhores resultados".
+- **Implicação para W6:** **manter T4 como horizonte canônico operacional** (motivação operacional do CM 1.2 já é suficiente; análise empírica confirma que está na faixa boa). **Optuna tuna apenas o modelo T4** em W6, sem repetir a comparação entre horizontes. **Em W7**, se sobrar tempo, repetir Profundidade 1 com TimeSeriesSplit CV de 4 folds — dá variância sobre os 3 horizontes e permite afirmação mais robusta. Caso contrário, registrar limitação em CM 6.2 ("Profundidade 1 com single-fold não tem variância para diferenciar T2 de T4; CV recomendado como Trabalho Futuro").
+
+**Saídas geradas:**
+- **5 modelos** em `Projeto/modelos/`: `lightgbm_v1_{A,B,C,T2,T8}.txt` (formato texto nativo LightGBM, ~350 KB cada).
+- **4 tabelas** em `Projeto/relatorio/tabelas/`:
+  - `lightgbm_v1_metricas.csv` (10 linhas: 5 variantes × 2 splits, com AUC-PR, P/R/F1 em threshold=0,5, tempo de treino)
+  - `lightgbm_v1_vs_baseline.csv` (6 linhas: A/B/C × val/test contra baseline)
+  - `comparacao_horizontes_lightgbm.csv` (6 linhas: T2/T4/T8 × val/test)
+  - `gate_marco_1.csv` (verdict + critérios)
+
+**Próximos passos para W6:**
+
+1. **Optuna + TimeSeriesSplit CV (Mitigação 1)** com espaço de busca refinado: `scale_pos_weight ∈ [0.5, 3.0]` (em vez de `[0.5, 6.0]`, dada a refutação da Mitigação 2), `num_leaves ∈ [15, 127]`, `learning_rate ∈ [0.01, 0.3]`, `min_child_samples ∈ [10, 100]`.
+2. **Análise SHAP global** do LightGBM v2 — confirmar que `count_critico_4h` não domina sozinho (se dominar, modelo é só baseline glorificado), e validar a Obs 2.11 (acúmulo de criticidade — `count_critico_*` no topo do ranking vs `count_total_*`).
+3. **Modelo de sobrevivência Weibull AFT** (`09_sobrevivencia.py`) — segunda leitura do problema.
+4. **Isolation Forest diagnóstico** (`11_isolation_forest.py`) — teste empírico único do Risco 3.3 (viés do *label* CMA).
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->
