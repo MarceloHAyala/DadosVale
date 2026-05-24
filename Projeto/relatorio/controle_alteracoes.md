@@ -523,4 +523,63 @@ Aplicada por `Projeto/codigo/08_lightgbm.py` (6 etapas, ~17,5s de execução), t
 
 ---
 
+### 2026-05-24 — Resultados do LightGBM v2 (W6) — GATE MARCO 1 re-confirmado + Mitigação 2 contraditada pelo Optuna
+
+Aplicada por `Projeto/codigo/08b_lightgbm_v2.py` (7 etapas, 28,7 min de execução total), entregando o **modelo canônico final** que vai para o relatório. Refina o LightGBM v1 (Variante A) com três mudanças simultâneas: Optuna (50 trials), TimeSeriesSplit CV de 4 folds expandidos (Mitigação 1) e determinismo estrito.
+
+**ANTES (v1, executado em 23/05):**
+- Parâmetros default (100 iter, lr=0,1, num_leaves=31, scale_pos_weight=1,972)
+- Validação single-fold (só mai)
+- `n_jobs=-1` sem determinismo (variação microscópica entre runs)
+- AUC-PR val=0,7523 / test=0,8566
+
+**DEPOIS (v2, executado em 24/05):**
+- 50 trials Optuna (TPESampler, seed=42) sobre 7 hiperparâmetros (espaço refinado: `scale_pos_weight ∈ [0,5; 3,0]` em vez de [0,5; 6,0])
+- TimeSeriesSplit CV de 4 folds expandidos (Mitigação 1): jan→fev, jan-fev→mar, jan-fev-mar→abr, jan-abr→mai
+- `deterministic=True` + `force_col_wise=True` (reprodutibilidade bit-exact)
+- **AUC-PR train=0,9658 / val=0,7801 / test=0,8618** (CV média best=0,8834)
+
+**Hiperparâmetros encontrados pelo Optuna (trial #34 vencedor):**
+
+| Hiperparâmetro | v1 (default) | v2 (Optuna best) | Direção |
+|---|---:|---:|---|
+| `n_estimators` | 100 | 199 | +99% |
+| `learning_rate` | 0,1 | 0,013 | **−87%** (muito mais lento) |
+| `num_leaves` | 31 | 61 | +97% |
+| `min_child_samples` | 20 | 60 | +200% (regularização) |
+| `scale_pos_weight` | 1,972 | **0,513** | **−74% (downweight!)** |
+| `lambda_l1` | 0 | 0,32 | regularização L1 |
+| `lambda_l2` | 0 | 1,82 | regularização L2 |
+
+**Ganho de v2 sobre v1 A:** val +2,78pp / test +0,52pp. **GATE MARCO 1 re-confirmado em PASS** (folga val +49,0pp, folga test +23,1pp).
+
+**Achado central — Mitigação 2 contraditada pelo Optuna:**
+
+O Optuna escolheu `scale_pos_weight = 0,513` — **menor que 1**, **MUITO menor** que a fórmula clássica `(1-taxa)/taxa = 1,97` usada em v1 A, e na **direção exatamente oposta** da Mitigação 2 original (que propunha calibrar para cima para ~4,65 baseado na taxa de produção esperada). Isso reforça com evidência empírica forte a refutação da Mitigação 2 em W5 (registrada em entrada 2026-05-23): **pesar positivos para cima neste dataset não ajuda — o ótimo está abaixo do valor "neutro"**.
+
+Hipótese explicativa: os positivos compartilham assinatura mecânica forte (CA65926 dominando jun pela Obs 2.9), tornando-os "fáceis" de detectar mesmo com peso reduzido. Pesar para cima força o modelo a fazer mais predições positivas, prejudicando a curva precision-recall.
+
+**Achado metodologicamente importante:** se a Mitigação 2 tivesse sido implementada sem investigação prévia (W5 v1), o projeto teria adotado `scale_pos_weight ≈ 4,65` e provavelmente perdido performance. A combinação **"testar antes de aplicar + Optuna sem viés de premissa"** evitou esse caminho. Material direto para CM 6.1 (Insights Não Óbvios) e CM 6.2 (boas práticas metodológicas) do relatório final.
+
+**Saídas geradas:**
+- `Projeto/modelos/lightgbm_v2.txt` (modelo canônico, formato texto nativo LightGBM)
+- `Projeto/modelos/optuna_study_v2.pkl` (study completo, 50 trials, abrir via `pickle.load`)
+- `relatorio/tabelas/lightgbm_v2_metricas.csv` (4 linhas: train/val/test/CV)
+- `relatorio/tabelas/lightgbm_v2_hiperparametros.csv` (7 hiperparâmetros: espaço de busca + best value)
+- `relatorio/tabelas/optuna_trials.csv` (50 linhas — todos os trials para auditoria)
+
+**Próximos passos para W6:**
+
+1. **Análise SHAP global** sobre v2 — confirmar que `count_critico_4h` não domina sozinho o ranking; esperamos Família 4 regimal e Família 2 recência no topo.
+2. **Análise SHAP estratificada** por categoria unknown (`tag_freq=0` ou `operador_freq=0` em test) — diagnostica como o modelo extrapola para categorias nunca vistas.
+3. **`09_sobrevivencia.py`** — Weibull AFT como segunda leitura do problema (independente do LightGBM).
+4. **`11_isolation_forest.py`** — diagnóstico do Risco 3.3 (viés do label CMA).
+
+**Status do pipeline canônico após W6 parcial:**
+- Pipeline de dados: 01 → 02 → 03 → 04 → 05 → 06 → 06b → `v3.parquet` (canônico)
+- Modelo canônico: `lightgbm_v2.txt` (treinado sobre `v3.parquet`, sem peeking, com tuning rigoroso)
+- `v1` preservado como referência metodológica (comparação default vs tunado + diagnóstico do peeking da Mitigação 2)
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

@@ -144,7 +144,9 @@ uv run python Projeto/codigo/05_features.py             # W3+W4+W5 - 7 famílias
 uv run python Projeto/codigo/06_split.py                # W4 - split temporal walk-forward jan-abr / mai / jun + Fig 7 (janela predição) + Fig 8 (drift mensal) → v2_split.parquet (58 cols, 16,3 MB) + split_temporal.csv (CM 4.1)
 uv run python Projeto/codigo/06b_fix_encoding_leakage.py # W5 - fix do leakage subtil de frequency encoding (tag_freq, operador_freq recomputadas sobre treino apenas; categorias unknown recebem freq=0) → v3.parquet (58 cols, 16,3 MB, input canônico para modelagem)
 uv run python Projeto/codigo/07_baseline.py             # W5 - baseline heurístico para target_4h (count_critico_4h >= threshold) com métricas estratificadas mai vs jun (Mitigação 3) → baseline_metricas.csv (8 linhas: 4 thresholds × 2 splits)
-# ... 08_lightgbm (W5-W6), 09_sobrevivencia (W6), 10_evaluation (W7), 11_isolation_forest (W6)
+uv run python Projeto/codigo/08_lightgbm.py             # W5 - LightGBM v1 (5 variantes A/B/C/T2/T8) com parâmetros default → 5 modelos em modelos/lightgbm_v1_*.txt + 4 tabelas (métricas, vs baseline, horizontes, GATE). GATE MARCO 1: PASS. Tempo: ~17,5s
+uv run python Projeto/codigo/08b_lightgbm_v2.py         # W6 - LightGBM v2 canônico: Optuna 50 trials + TimeSeriesSplit CV 4 folds + deterministic=True → lightgbm_v2.txt + optuna_study_v2.pkl + 3 tabelas. AUC-PR val=0,7801 / test=0,8618. Tempo: ~28,7 min
+# ... 09_sobrevivencia (W6), 10_evaluation (W7), 11_isolation_forest (W6)
 ```
 
 **Scripts auxiliares (investigações ad-hoc, rodam independentemente):**

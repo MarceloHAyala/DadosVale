@@ -1,0 +1,5 @@
+split,n_eventos,n_positivos,auc_pr,precision_05,recall_05,f1_05
+train,394971,132877,0.9658,0.9534,0.8391,0.8926
+val,78825,14481,0.7801,0.8496,0.4959,0.6263
+test,71089,12038,0.8618,0.9272,0.6803,0.7848
+cv_mean_4folds,N/A,N/A,0.8834,N/A,N/A,N/A

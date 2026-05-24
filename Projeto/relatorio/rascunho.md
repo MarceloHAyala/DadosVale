@@ -2,7 +2,7 @@
 
 Documento de escrita progressiva que vai consolidando as seções do relatório final ao longo das semanas W2→W8. Será migrado para `Desenvolver_Template.docx` em W9.
 
-**Status atual:** seções preenchidas até o **início da Modelagem (W5 baseline)** — **Introdução**, **Entendimento do Negócio** (CM 1.1 + CM 1.2), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5), **Metodologia Parte 2** (Preparação dos Dados — W3 limpeza + W3-W4-W5 *feature engineering* completo: 7 famílias de *features* (35 colunas, com Família 1 expandida em 23/05 para 5 janelas 1h/2h/4h/8h/24h) + 3 *targets* multi-janela + *split* temporal *walk-forward* jan-abr / mai / jun + *fix* de *leakage* subtil de *encoding* em W5, totalizando matriz canônica `v3.parquet` com 544.885 × 58 colunas) e **Metodologia Parte 3** (Modelagem — começa em W5 com baseline heurístico via `count_critico_4h` aplicado a `target_4h`; achado contra-intuitivo de AUC-PR 2,42× melhor em test vs val explicado pela anomalia localizada do CA65926). Figuras 7 (janela de predição), 8 (drift mensal) e Extra C (refutação H5.2) integradas à narrativa. GATE MARCO 1 re-calibrado em 22/05 após resultado do baseline. Material a ser refinado em W8. Pendentes: LightGBM v1 + v2 (W5-W6), Sobrevivência + Isolation Forest + SHAP (W6), Avaliação (W7) e Conclusão (W8).
+**Status atual:** seções preenchidas até **W6 parcial (LightGBM v2 canônico treinado)** — **Introdução**, **Entendimento do Negócio** (CM 1.1 + CM 1.2), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5), **Metodologia Parte 2** (Preparação dos Dados — limpeza + 7 famílias de *features* (35 cols, com Família 1 expandida em W5 para 5 janelas) + 3 *targets* multi-janela + *split* temporal *walk-forward* + *fix* de *leakage* de *encoding*, totalizando matriz canônica `v3.parquet` com 544.885 × 58 colunas) e **Metodologia Parte 3** (Modelagem — baseline heurístico W5, LightGBM v1 W5 com 5 variantes + GATE MARCO 1 PASS, **LightGBM v2 W6** com Optuna + TimeSeriesSplit CV + determinismo: AUC-PR test 0,8618). Figuras 7, 8 e Extra C integradas. Refatoração 24/05: detalhes técnicos dos scripts movidos para `notas_metodologicas.md` Seções 4-9 — `rascunho.md` mantém narrativa + resultados + interpretação, com referências aos detalhes computacionais. **Pendentes:** Análise SHAP sobre v2 (W6), Sobrevivência Weibull AFT + Isolation Forest (W6), Avaliação estratificada (W7), Conclusão (W8).
 
 ---
 
@@ -229,105 +229,44 @@ O resultado dessa fase é um par de datasets canônicos: `telemetria_limpa.parqu
 
 O pipeline `05_features.py` constrói **35 features documentadas + 3 targets multi-janela** a partir do dataset limpo, organizadas em 8 famílias semânticas (1 família básica de W3 numerada como Família 0, 4 famílias avançadas de W4 parcial — Famílias 1 a 4, 3 famílias avançadas de W4 completo — Famílias 5 a 7, e a construção do target em etapa separada — Família 8 conceitualmente). A Família 1 (rolling) foi expandida em W5 (23/05) para incluir as janelas de 2h e 8h, garantindo alinhamento perfeito com a Profundidade 1 do LightGBM (ver `controle_alteracoes.md` entrada de 2026-05-23).
 
-#### Entradas e saídas
+**As 7 famílias de *features* + 1 família conceitual de *targets*:**
 
-**Entradas:**
-- `Projeto/dados/intermediarios/telemetria_limpa.parquet` — 544.885 eventos de telemetria (Crítico e Não-Crítico, após filtro de Informacional)
-- `Projeto/dados/intermediarios/apontamentos_limpo.parquet` — 377.907 ciclos de apontamento operacional (estados Operando / Parado / Manutenção / Hibernando)
+| Família | # cols | Pergunta operacional respondida | Motivação |
+|---|---:|---|---|
+| **0 — Básicas** | 5 | "Quando o evento ocorreu? Tem medição numérica?" | Q5 (Fig 6); 3 regimes temporais; 43,58% de eventos sem `Valor` |
+| **1 — Rolling windows** (W4 + W5) | 15 | "Quantos eventos no mesmo TAG nas últimas N horas? (1h, 2h, 4h, 8h, 24h × Critico / Nao_Critico / Total)" | Obs 2.5: 48% dos DGs vêm de acumulação. **Janelas 2h e 8h adicionadas em W5** para alinhamento perfeito com a Profundidade 1 do LightGBM |
+| **2 — Recência** | 2 | "Há quantas horas foi o último DG / Crítico desse equipamento?" | Padrão clássico de manutenção preditiva. Achado lateral: 5.104 eventos com `horas_desde_ultimo_critico = 0` indicam cascata de alarmes simultâneos |
+| **3 — Estado pré-evento** | 1 | "O que o equipamento estava fazendo 1h antes?" | Obs 2.7: 12,65% dos DGs em estado Manutenção são DGs legítimos (re-ativações de teste) |
+| **4 — Regimal** | 2 | "Este alarme está disparando muito mais que o baseline histórico dele neste equipamento?" | Obs 2.6: anomalia RFB de jun (151,7× sobre média), anomalia Engine Coolant fev-mar |
+| **5 — Operador** | 2 | "Este operador tem taxa de DG alta? Faz muitos bypasses recentes?" | Q3 do edital; H1.2 (bypass como flag latente) |
+| **6 — Regra de negócio** | 1 | "Quantos alarmes 'Muito Alto' (das 82 regras CMA) ocorreram nas últimas 6h?" | Obs 2.5: ~48% dos DGs vêm de regras de acumulação CMA |
+| **7 — Encoding categórico** | 7 | (codifica TAG, Frota, Tipo, Operador para o LightGBM consumir) | Pré-condição técnica do modelo; H4.1 (LeTourneau distinta) |
+| Total features | **35** | — | — |
+| **Targets multi-janela** (CM 3.3) | 3 | `target_2h`, `target_4h`, `target_8h` — DG no horizonte (t, t+Nh]? | Janela operacional de 4h (CM 1.2) + sensibilidade |
 
-**Saídas:**
-- `Projeto/dados/features/v1.parquet` — versão com apenas as 5 features básicas (compatibilidade retroativa, 6,9 MB)
-- `Projeto/dados/features/v2_parcial.parquet` — 5 básicas + 20 avançadas (Famílias 1-4) = 25 features (21,6 MB; expandido em W5 de 19,6 MB para acomodar as janelas 2h e 8h adicionadas à Família 1)
-- `Projeto/relatorio/tabelas/documentacao_features.csv` — uma linha por feature com nome, tipo, descrição, fórmula, motivação e semana de criação (formato CM 3.2)
+> 📘 **Detalhes técnicos do cálculo de cada família (algoritmos Polars exatos, asserções defensivas, justificativas de fórmulas):** ver [`notas_metodologicas.md` Seção 4](notas_metodologicas.md). **Script gerador:** `Projeto/codigo/05_features.py`. **Saídas:** `dados/features/v1.parquet`, `v2_parcial.parquet`, `v2.parquet` (35 features + 3 targets, 24,4 MB) + `relatorio/tabelas/documentacao_features.csv` (35 entradas no formato CM 3.2) + `sensibilidade_janela.csv`.
 
-#### Família 0 — Features básicas (W3, 5 colunas)
+#### Achado lateral relevante para o relatório: cascata de alarmes simultâneos
 
-Construídas a partir de extração temporal direta sobre `Data_Evento` (`hora_dia`, `dia_semana`, `mes`) e sobre `Inicio_Turno` (`turno` ∈ {`Diurno`, `Noturno`}, derivado da hora de início do turno operacional de 12 horas), além da feature binária `valor_disponivel` que captura se o evento possui medição numérica em `Valor` ou se é alarme do tipo `Active/Inactive` sem leitura instantânea (43,58% dos eventos relevantes não têm Valor numérico — achado central da etapa 8 da limpeza). Motivações ancoradas nos achados da EDA: padrão hora × dia da semana (Pergunta 5 / Figura 6); 3 regimes temporais distintos no semestre (Observação 2.6); 43,58% de eventos sem medição como categoria potencialmente preditiva.
+A Família 2 (recência) revelou **5.104 eventos (0,94% do dataset) com `horas_desde_ultimo_critico = 0`** — ~10× mais que `horas_desde_ultimo_DG = 0` (479 eventos, 0,10%). Isso indica **cascata de alarmes simultâneos**: múltiplos sensores disparando no mesmo instante em resposta a uma única falha física (e.g., queda súbita de pressão hidráulica que aciona simultaneamente alarmes de temperatura de transmissão, vibração e nível de fluido). **Não é *leakage* temporal** — é sinal preditivo legítimo de cascata em curso, comportamento que o modelo aprenderá a reconhecer. Esse padrão informa diretamente a discussão de CM 6.1 (Insights Não Óbvios).
 
-#### Família 1 — Rolling windows (W4 + W5, 15 colunas)
+#### Pergunta 3 do edital (Q3) respondida via Obs 2.4
 
-A pergunta operacional que esta família responde é: *"Quantos eventos ocorreram no MESMO equipamento nas últimas N horas?"*. Para cada evento, o script olha para trás em **cinco janelas** (1 hora, 2 horas, 4 horas, 8 horas e 24 horas) e conta os eventos do mesmo equipamento, separadamente por criticidade:
+A investigação em W5 (Obs 2.4 resolvida via `exploracao_w5_obs_pendentes.py`) sobre o operador OP_067 do caso paradigma CA65924 produziu **resposta empírica para a Pergunta 3 do edital**. Resumo:
 
-- `count_critico_1h`, `count_critico_2h`, `count_critico_4h`, `count_critico_8h`, `count_critico_24h`
-- `count_nao_critico_1h`, `count_nao_critico_2h`, `count_nao_critico_4h`, `count_nao_critico_8h`, `count_nao_critico_24h`
-- `count_total_1h`, `count_total_2h`, `count_total_4h`, `count_total_8h`, `count_total_24h` (= soma das duas anteriores; asserção exata `diff_max = 0`)
+- **OP_067 NÃO é outlier extremo:** taxa 6,338% (1,73× o baseline global de 3,664%), rank #76 de 394 operadores, com 152 outros operadores em faixa estatisticamente comparável.
+- **OP_029 é o caso com maior massa estatística problemática:** 1.016 DGs absolutos sobre 3.125 eventos (taxa 32,5%).
+- **Resposta a Q3:** o comportamento do operador correlaciona com DG, **mas de forma difusa** — há um *continuum* de variação ~30× entre p25 e p95, sem 1-2 operadores "ruins" carregando o problema.
 
-A implementação técnica usa `polars.Expr.rolling_sum_by(by="Data_Evento", window_size, closed="left").over("TAG")`. O parâmetro `closed="left"` é crítico para prevenção de *data leakage*: a janela é definida como `[t - N horas, t)`, excluindo o próprio evento da contagem — o modelo só vê o passado, nunca o presente nem o futuro.
+H5.3 fica formalmente refutada com reinterpretação em `hipoteses_eda.md`. Tabela `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas) é o entregável direto para a seção CM 5 do relatório final.
 
-A motivação central vem da Observação 2.5: 48% dos DGs do semestre são gerados por **acumulação** (regra CMA `QTD > 1`, isto é, múltiplos alarmes do mesmo tipo em janela temporal definida). Equipamentos que acumulam muitos eventos em pouco tempo têm probabilidade significativamente maior de gerar um DG por acumulação. A versão `count_total` valida adicionalmente a Hipótese 5.2 (padrão "calmaria → acúmulo → disparo" do caso CA65924 é universal) — disponibiliza ao modelo o total agregado para análise direta em W7.
+> 📘 **Metodologia completa da investigação de Obs 2.4 (operacionalização de "outlier", quantis da distribuição, análise por volume vs por taxa):** ver [`notas_metodologicas.md` Seção 1](notas_metodologicas.md). **Script:** `Projeto/codigo/exploracao_w5_obs_pendentes.py`.
 
-**Expansão de janelas em W5 (23/05/2026):** as janelas de 2h e 8h foram adicionadas posteriormente, antes da execução do `08_lightgbm.py`, especificamente para fornecer **alinhamento perfeito** com `target_2h` e `target_8h` na Profundidade 1 (comparação preditiva entre horizontes do *target*). Sem essas duas janelas adicionais, a Variante T4 do LightGBM teria a única *feature* `count_critico_4h` alinhada ao seu horizonte, enquanto T2 e T8 dependeriam de janelas adjacentes (`count_critico_1h` para T2; `count_critico_24h` para T8), introduzindo viés metodológico a favor de T4 na comparação. A decisão de expandir preventivamente está documentada em `controle_alteracoes.md` (entrada de 2026-05-23) e implementa o princípio de "modelos funcionais com parâmetros certos" estabelecido em discussão de qualidade no W5 pré-LightGBM. Uma asserção adicional de **monotonicidade entre janelas** foi introduzida em `05_features.py` (`count_critico_1h ≤ count_critico_2h ≤ count_critico_4h ≤ count_critico_8h ≤ count_critico_24h` para cada criticidade) e passou em todos os 544.885 eventos.
+#### Limitação conhecida do encoding (corrigida em W5)
 
-#### Família 2 — Recência (W4, 2 colunas)
+As *features* `tag_freq` e `operador_freq` da Família 7 foram computadas sobre o *dataset* global (treino + val + teste) em W4 — *leakage* temporal subtil de magnitude pequena (volumes mensais estáveis) mas tecnicamente presente. **Corrigido em W5 via `06b_fix_encoding_leakage.py` (22/05/2026)**, gerando `v3.parquet` (matriz canônica de modelagem). Casos específicos identificados: 2 TAGs (`CA65791`, `CA65916`) e 13 operadores aparecem em val/teste mas não em treino — recebem `freq = 0` no `v3.parquet` (decisão Opção C-1).
 
-A pergunta operacional aqui é: *"Faz quanto tempo desde o último DG (ou último Crítico) deste equipamento?"*.
-
-- `horas_desde_ultimo_DG` — horas decorridas desde o evento mais recente com `Is_Dont_Go = 1` no mesmo TAG (NULL se não houve DG anterior naquela TAG)
-- `horas_desde_ultimo_critico` — análogo, mas para o evento mais recente com `Criticidade = Critico`
-
-A implementação usa `shift(1).forward_fill().over("TAG")` sobre uma coluna auxiliar que contém o timestamp apenas dos eventos-alvo e NULL nos demais. O `shift(1)` garante exclusão do evento corrente; o `forward_fill` propaga o timestamp do último evento-alvo para todos os eventos subsequentes daquela TAG.
-
-A motivação é o padrão clássico em manutenção preditiva — a recência da última falha é fator preditivo aceito no campo: equipamento que acabou de ter um DG (ou Crítico) tem perfil de risco diferente das próximas horas. O modelo poderá aprender, por exemplo, que `horas_desde_ultimo_DG < 2h` é fator agravante para um próximo DG iminente.
-
-Um achado lateral relevante apareceu nesta família: **5.104 eventos têm `horas_desde_ultimo_critico = 0`** (0,94% do dataset), aproximadamente 10× mais que `horas_desde_ultimo_DG = 0` (479 eventos, 0,10%). Isso sugere **cascata de alarmes simultâneos** — múltiplos sensores disparando no mesmo instante em resposta a uma única falha física (por exemplo, queda súbita de pressão hidráulica dispara simultaneamente alarmes de temperatura de transmissão, vibração e nível de fluido). Não é leakage temporal — é sinal preditivo legítimo da existência de uma cascata em curso, comportamento que o modelo poderá aprender a reconhecer.
-
-#### Família 3 — Estado pré-evento (W4, 1 coluna)
-
-A pergunta operacional é: *"O que o equipamento estava fazendo na hora anterior a este evento?"*.
-
-Para cada evento de telemetria com timestamp `t`, o script faz um *join* temporal `join_asof(strategy="backward")` com a tabela de apontamentos, procurando o ciclo de apontamento ativo no instante `t - 1h`. A coluna resultante `estado_pre_evento` assume os valores `Operando`, `Parado`, `Manutenção`, `Hibernando` ou `SEM_APONTAMENTO` (sentinela quando o evento ocorre fora de qualquer ciclo de apontamento da mesma TAG — situação rara, observada em apenas 106 eventos = 0,02% do dataset).
-
-A motivação direta é a Observação 2.7: 12,65% dos DGs ocorrem em estado `Manutenção`, são alertas legítimos disparados durante reativações operacionais de teste (não falsos positivos de bancada). A feature `estado_pre_evento` permitirá ao modelo, em W5-W7, distinguir entre "DG durante operação real" e "DG durante teste de manutenção" — categorias com semântica operacional distinta que devem ser tratadas separadamente na análise estratificada em W7. A distribuição global dos 544.885 eventos por estado pré-evento é Operando 73,7% / Parado 17,8% / Manutenção 8,3% / Hibernando 0,2% / SEM_APONTAMENTO 0,02%; o estado `Manutenção` tem proporção de DGs ~1,5× maior que sua representação no dataset (12,65% / 8,3%), confirmando empiricamente a hipótese H5.1.
-
-#### Família 4 — Regimal (W4, 2 colunas)
-
-Esta família surgiu empiricamente como resposta ao achado central da Observação 2.6 e sua extensão: o alarme `Right Front Brake Temperature - Active` registrava entre 3 e 67 ocorrências mensais de janeiro a maio, e explodiu para **4.247 ocorrências em junho** — um salto de 151,7× sobre a média histórica do próprio alarme. Sem alguma feature que capture explicitamente esse tipo de anomalia, o modelo treinado em janeiro-abril não terá como antecipar o alarme dominante do conjunto de teste de junho.
-
-- **`razao_alarme_7d_vs_30d_anterior`** — para cada evento, compara a frequência do mesmo alarme no mesmo equipamento nos últimos 7 dias contra a frequência nos últimos 30 dias, normalizada por dias. Fórmula: `(count_7d / 7) / (count_30d / 30)`. Uma razão de 5 significa "este alarme está disparando 5 vezes mais que o baseline histórico dele neste equipamento". A feature é calculada apenas para os 19 alarmes que geraram pelo menos um DG no semestre (decisão metodológica documentada — 99,6% dos alarmes do dataset são irrelevantes para o target, decisão consolidada na hipótese H2.1).
-
-- **`razao_severidade_14d_vs_60d`** — para cada evento, compara a proporção Crítico/Não-Crítico em 14 dias recentes contra a mesma proporção em 60 dias do mesmo equipamento. Detecta inversões de severidade como a observada no Engine Coolant Level entre janeiro e fevereiro (de 83% Crítico para 6% Crítico, simultaneamente com aumento de volume — Observação 2.6, candidata à Observação 2.8 sobre mudança de regra CMA em fevereiro).
-
-A interpretação dos resultados confirma o desenho: `razao_alarme_7d_vs_30d_anterior` retorna `NULL` em 74,3% do dataset (eventos cujo `Alarme` não está nos 19 priorizados) — comportamento correto por construção; os 25,7% restantes (~140.000 eventos) cobrem 100% dos DGs do semestre porque por definição todos os DGs derivam de algum dos 19 alarmes. `razao_severidade_14d_vs_60d` retorna `NULL` em apenas 0,2% dos eventos (1.234 ocorrências no início do semestre, sem 60 dias de histórico anterior disponível).
-
-#### Família 5 — Operador (W4, 2 colunas)
-
-Esta família responde diretamente à **Pergunta 3 do edital** ("o comportamento do operador correlaciona com a ocorrência de alertas DG?") e materializa o achado central da Hipótese H1.2 da W1 — que identificou `Id_Criticidade = 4` como **flag latente de bypass manual do operador** (87% concentrados em alarmes de `Channel Forced` e demais bypasses operacionais), não uma quarta categoria de severidade como inicialmente hipotetizado. A intuição operacional subjacente é que operadores recorrentes em bypass — ou em histórico recente de DGs — são candidatos a preditor de comportamento de risco, sob a hipótese de que pressão operacional excessiva ou perfil individual de risco se traduz em alertas Don't Go futuros.
-
-- **`taxa_DG_operador_30d`** — taxa de DG do operador nos 30 dias anteriores ao evento, definida como `n_DGs_operador_30d / n_eventos_operador_30d`. Para cada evento, considera apenas eventos do mesmo operador (chave `Matricula_Operador_Hash`) ocorridos no intervalo `[t - 30 dias, t)` — janela estritamente exclusiva (`closed="left"`) que garante prevenção de leakage temporal análoga às demais features de rolling. Resposta direta à Q3: se a taxa estiver substancialmente acima da média global do treino, o modelo aprenderá a tratá-la como sinal de risco; se a distribuição for uniforme entre operadores, Q3 perde força e a feature funciona como controle informativo. A implementação técnica usa `rolling_sum_by(Is_Dont_Go, by=Data_Evento, window_size="30d", closed="left").over("Matricula_Operador_Hash")` dividido pela contagem total análoga.
-
-- **`n_bypasses_operador_7d`** — contagem absoluta de bypasses manuais (`Id_Criticidade = 4`) feitos pelo operador nos 7 dias anteriores ao evento. A computação envolve um passo adicional não-trivial: como os bypasses tipicamente caem em `Criticidade = Informacional` (e, portanto, foram removidos do dataset filtrado pela decisão de W3), a feature precisa ser computada sobre `telemetria_tipada.parquet` (pré-filtro de Informacional) e em seguida propagada para os eventos pós-filtro via *join* por operador. A escolha de 7 dias (mais curta que `taxa_DG_operador_30d`) captura padrão recente de comportamento; uma janela mais longa diluiria o sinal em médias suaves.
-
-A interpretação combinada das duas features deixa o modelo distinguir entre "operador historicamente associado a DGs" (taxa de 30d alta — sinal de longo prazo, padrão estrutural) e "operador em rampa recente de bypasses" (n_bypasses_7d alto — sinal de curto prazo, comportamento agudo). A distribuição empírica esperada de `n_bypasses_operador_7d` concentra-se em zero (95% dos eventos — operadores tipicamente não fazem bypass), com cauda longa fortemente associada à frota LeTourneau L 1850, que concentra 95% dos bypasses do semestre — **4ª evidência independente do padrão emergente H4.1** (problemas sistêmicos de instrumentação e/ou viés CMA nessa frota).
-
-A consulta direta sobre `v2_split.parquet` (Observação 2.4, resolvida em W5 via `exploracao_w5_obs_pendentes.py`, antes do *fix* de *encoding* gerar `v3.parquet`) ofereceu **a resposta empírica para a Pergunta 3 do edital** ("o comportamento do operador correlaciona com a ocorrência de alertas DG?"). A taxa global de DG no dataset filtrado é de 3,664%; o operador OP_067 do caso paradigma CA65924 apresenta taxa de 6,338% (1,73× o *baseline*), ocupando o rank #76 entre os 394 operadores únicos — top 19%, mas longe do extremo, com 152 outros operadores em faixa estatisticamente comparável (±50% da taxa de OP_067). A distribuição é fortemente assimétrica (mediana 2,99%, p95 10,87%, máximo 83,77%), mas os extremos têm baixo volume — o caso de comportamento operacional realmente preocupante é o operador OP_029, com 1.016 DGs absolutos sobre 3.125 eventos (taxa 32,5%), único com massa estatística suficiente para virar sinal preditivo robusto. **A resposta empírica a Q3 é portanto: sim, o comportamento do operador correlaciona com DG, mas de forma difusa** — não há um ou dois operadores "ruins" carregando o problema; há um *continuum* de variação aproximadamente 30 vezes entre o quartil inferior e o p95. A Hipótese H5.3 ("OP_067 tem taxa anormal") fica formalmente refutada com reinterpretação em `hipoteses_eda.md`, e a tabela `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas) vira material direto para a seção CM 5 do relatório final. **Implicação para SHAP em W6:** a feature `taxa_DG_operador_30d` é informativa mas não deve dominar o ranking; interpretações do tipo "operador X é problemático" precisarão sempre ser estratificadas por volume de exposição para distinguir sinal real de ruído de pequena amostra.
-
-#### Família 6 — Regra de negócio (W4, 1 coluna)
-
-Esta família é qualitativamente distinta de todas as anteriores: enquanto Famílias 1 a 5 olham para o **histórico estatístico do equipamento e do operador**, esta lê a **estrutura interna da regra CMA** — o sistema de monitoramento da Vale e dos fabricantes que rotula `Is_Dont_Go` a partir de regras catalogadas. O catálogo completo das regras de nível "Muito Alto" está consolidado em `relatorio/tabelas/eventos_muito_alto.csv` (entregável CM 1.1 do Estudo Guiado, 82 entradas extraídas da sheet CMA do dicionário `Alarmes - Regra de Negocio.xlsx`).
-
-- **`qtd_alarmes_nivel_muito_alto_360min`** — contagem de eventos do mesmo equipamento, nos 360 minutos anteriores (seis horas, `closed="left"`), cujo `Alarme` corresponde a alguma das 82 regras com nível "Muito Alto". A escolha de 360 minutos vem de inspeção direta do catálogo CMA: as regras do tipo acumulação (`QTD > 1`, `TEMPO > 0`) registram janelas `TEMPO` predominantemente entre 180 e 360 minutos — esta última cobre o limite superior observado e ainda permanece dentro da escala da janela de predição de 4 horas do *target* (consistência operacional). Implementação: pré-cálculo da lista de alarmes "Muito Alto" via filtro da sheet CMA, depois `is_muito_alto = pl.col("Alarme").is_in(lista_muito_alto)` seguido de `rolling_sum_by(is_muito_alto, by=Data_Evento, window_size="360m", closed="left").over("TAG")`.
-
-A feature responde a uma pergunta operacional muito específica que nenhuma outra família captura: *"o equipamento está se aproximando do limiar de acumulação de alguma regra CMA Muito Alto?"*. Se a contagem está alta — digamos, quatro dos cinco alarmes Nível 2 necessários para uma regra de acumulação típica já ocorreram nos últimos 360 minutos — o modelo aprende a antecipar o quinto. É a **operacionalização direta da Observação 2.5** (W2): aproximadamente 48% dos DGs do semestre vêm de regras CMA de acumulação (`QTD > 1`), não de disparo imediato (`QTD = 1`). Sem esta feature, metade do mecanismo de geração do *target* fica fora do alcance do modelo. A distribuição empírica esperada concentra-se em valores baixos (zero a cinco) na grande maioria dos eventos, com cauda longa correspondendo a equipamentos em deterioração progressiva — exatamente o regime onde a antecipação de DG tem maior valor operacional.
-
-#### Família 7 — Encoding categórico (W4, 7 colunas)
-
-Cinco colunas categóricas do dataset (`TAG`, `Tag_Frota`, `Tipo`, `Nome_Operador_Anon`, `Classe`) precisam ser codificadas numericamente antes de alimentarem o LightGBM. A decisão metodológica desta família foi adotar **frequency encoding + one-hot** em vez de **target encoding** propriamente dito — escolha registrada em `controle_alteracoes.md` (entrada de 2026-05-17 — "Encoding categórico em W4: frequency + one-hot, target encoding adiado"). A justificativa é estritamente temporal: na sessão de implementação das Famílias 5-7 o *target* real `target_4h` ainda não havia sido construído (Etapa 11 do `05_features.py`, posterior); fazer *target encoding* sobre `Is_Dont_Go` (rótulo do evento atual, e não do horizonte futuro) introduziria *leakage* temporal massivo — o modelo aprenderia "TAG X tem taxa histórica de DG de Y%" calculada inclusive sobre o próprio evento que está tentando prever. A versão refinada, *target encoding* com KFold temporal sobre o treino, está formalmente agendada para W5 (`PLANEJAMENTO.md → W5`) e dependerá tanto do *target* construído quanto do *split* temporal estabelecido (ambos finalizados em W4).
-
-- **`tag_freq`** — frequência relativa do equipamento no dataset filtrado: `count(TAG = x) / 544.885`. Aplicada às 33 TAGs presentes no dataset pós-filtro. Captura o "volume operacional" do equipamento — equipamentos mais ativos têm frequência mais alta e tendem a ter mais DGs por exposição maior — sem assumir qualquer ordem entre TAGs.
-
-- **`frota_793D_2S`, `frota_793D_3S`, `frota_793D_4S`, `frota_793D_5S`** — quatro colunas *one-hot* derivadas de `Tag_Frota` (cinco valores no total, com `LeTourneau L 1850` como referência implícita pela soma das quatro *dummies* igual a zero). A escolha de *one-hot* sobre *frequency* se justifica pela baixa cardinalidade e pela importância estrutural conhecida da variável: 793-D 5S concentra 46,8% dos DGs do semestre, 4S concentra 32,1%, e a frota LeTourneau L 1850 tem perfil radicalmente distinto — aproximadamente 22 vezes menos DGs por equipamento (4ª evidência independente da H4.1). *One-hot* deixa o modelo aprender pesos diferentes para cada frota sem assumir ordem entre categorias estruturalmente distintas.
-
-- **`tipo_caminhao`** — binário, valor 1 para `Tipo = 'Caminhão'` e 0 para `Tipo = 'Escavadeira'`. Apenas dois valores possíveis no dataset; tecnicamente redundante com a soma das quatro *dummies* de frota (caminhões → uma das quatro dummies = 1; escavadeira → soma = 0), mas mantido como coluna independente por interpretabilidade direta na análise SHAP de W6.
-
-- **`operador_freq`** — frequência relativa do operador no dataset filtrado, análoga a `tag_freq`. Aplicada aos 394 operadores únicos do dataset (alta cardinalidade, identificadores anonimizados pela Vale via *hash*). Complementa a feature `taxa_DG_operador_30d` da Família 5: `operador_freq` captura o "volume operacional" do operador (operador veterano em alta exposição vs operador raro em baixa exposição — sinal estrutural de longo prazo), enquanto `taxa_DG_operador_30d` captura a "qualidade preditiva" (taxa de DG histórica recente — sinal dinâmico de curto prazo). As duas operam em planos complementares.
-
-A coluna `Classe` da telemetria (valores `Activate` / `null`, semântica de "status do alarme") foi **omitida da matriz nesta família**: cardinalidade efetiva de dois valores e semântica redundante com a feature `valor_disponivel` da Família 0 (que já distingue alarmes com / sem medição numérica). A decisão está documentada em `documentacao_features.csv` apenas como informação metodológica; não há feature derivada de `Classe` na matriz canônica `v3.parquet`.
-
-**Limitação conhecida e *fix* agendado para W5:** as duas features de *frequency encoding* (`tag_freq` e `operador_freq`) foram computadas sobre o dataset **global** (treino + validação + teste). Para um evento de janeiro-abril, a feature `tag_freq` embute conhecimento dos volumes de maio e junho — *leakage* temporal subtil de magnitude pequena (volumes mensais por equipamento são empiricamente estáveis), mas tecnicamente presente. O *fix* correto é recalcular essas frequências **apenas sobre o treino** e aplicá-las à validação e ao teste; está agendado como primeira sub-tarefa do `08_lightgbm.py` em W5, integrado à rotina mais ampla de substituição por *target encoding* com KFold temporal. Casos específicos identificados pós-*split* tornam o problema mais concreto: duas TAGs (`CA65791`, `CA65916`) aparecem em validação ou teste mas não em treino; treze operadores em validação ou teste estão ausentes do treino — o *leakage* é mais intenso para esses casos de borda, ainda que a magnitude global agregada seja pequena. A correção em W5 elimina o efeito por completo sem alterar a arquitetura nem o *split*.
-
-### Coerência interna e validações defensivas
-
-O `05_features.py` aplica **oito grupos de asserções defensivas** na função `validar()` ao final do pipeline: *shape* esperado (544.885 linhas), preservação dos 19.962 DGs após todas as operações de *join* e cálculo, zero `null` nas features básicas e nas 15 features de *rolling*, coerência aritmética `count_total = count_critico + count_nao_critico` (diferença máxima exatamente zero em todas as 544.885 linhas e nas cinco janelas 1h / 2h / 4h / 8h / 24h), **monotonicidade entre janelas** `count_X_1h ≤ count_X_2h ≤ count_X_4h ≤ count_X_8h ≤ count_X_24h` para cada criticidade X (asserção nova adicionada em W5 quando da expansão da Família 1; garante consistência matemática entre janelas — janela maior contém todos os eventos da janela menor), valores positivos ou zero nas features de recência quando não-NULL (proibindo apenas valores estritamente negativos, que seriam *leakage* temporal real), domínio fechado de `estado_pre_evento` ∈ {Operando, Parado, Manutenção, Hibernando, SEM_APONTAMENTO}, e razões não-negativas nas features regimais quando não-NULL. As asserções foram desenhadas para falhar explicitamente caso uma regressão futura seja introduzida — uma alteração que quebre qualquer um dos oito grupos gera exceção imediata em vez de gerar dados silenciosamente corruptos.
+> 📘 **Análise teórica e empírica do *fix* (verificação de magnitude antes da decisão, comparação Opção 1 vs 3, justificativa metodológica):** ver [`notas_metodologicas.md` Seção 2](notas_metodologicas.md). **Script:** `Projeto/codigo/06b_fix_encoding_leakage.py`. **Saída:** `v3.parquet` (544.885 × 58, 16,3 MB) — *input* canônico de toda a Modelagem em W5+.
 
 ### Estado da matriz de features
 
@@ -505,35 +444,20 @@ Adicionalmente, em W6 será treinado um **Isolation Forest diagnóstico** sobre 
 
 ### Baseline heurístico (`07_baseline.py`)
 
-#### Definição operacional
+A heurística canônica é deliberadamente simples: `DG_predito = 1` se houve evento `Critico` nas últimas 4 horas do mesmo equipamento — formalizada como `predito = (count_critico_4h ≥ threshold).cast(Int8)`. Para AUC-PR (que não depende de threshold), usa-se `count_critico_4h` como *score* contínuo. Foco em `target_4h` apenas; análise de sensibilidade entre horizontes (T2/T4/T8) migra para o LightGBM. Quatro thresholds (1, 2, 3, 5) mapeiam a curva operacional. Estratificação val/test obrigatória (Mitigação 3).
 
-A heurística canônica é: `DG_predito = 1` se houve evento `Critico` nas últimas 4 horas do mesmo equipamento. A formalização usa a *feature* `count_critico_4h` da Família 1 (rolling de 4h com `closed="left"`, ou seja, exclusiva do evento corrente): `predito = (count_critico_4h ≥ threshold).cast(Int8)`. Para AUC-PR (métrica que não depende de *threshold*), usa-se o próprio `count_critico_4h` como *score* contínuo, com interpretação direta — "quanto mais Críticos recentes no mesmo equipamento, maior a probabilidade estimada de DG nas próximas 4 horas".
+> 📘 **Cálculo, decisões de escopo e algoritmo:** ver [`notas_metodologicas.md` Seção 7](notas_metodologicas.md). **Script:** `Projeto/codigo/07_baseline.py`. **Saída:** `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 thresholds × 2 splits).
 
-A construção é deliberadamente simples. O baseline serve para responder: *"qual é o desempenho preditivo já contido na regra operacional óbvia, antes de qualquer modelo de ML?"*. Sem essa referência, o ganho do LightGBM v1 fica sem contexto — não saberíamos se o desempenho final é resultado da complexidade do modelo ou apenas do sinal preditivo inerente à regra simples.
+#### Resultados
 
-#### Decisões de escopo
-
-Três decisões metodológicas foram registradas na fase pré-execução do `07_baseline.py`, todas baseadas em discussão de qualidade e documentadas em `notas_metodologicas.md`:
-
-**Foco em `target_4h` apenas.** O *target* canônico, definido em CM 1.2 e CM 3.3, é a janela operacional de 4 horas — compatível com o tempo de mobilização de peças e equipe de manutenção em Itabira. A análise de sensibilidade entre horizontes alternativos (`target_2h`, `target_8h`, Profundidade 1 do plano) **não entra no baseline**: incluir esses horizontes exigiria *features* adjacentes mal-alinhadas (e.g., `count_critico_1h` para predizer `target_2h`, ou `count_critico_24h` para predizer `target_8h`) que introduziriam viés metodológico não-corrigível — o baseline seria artificialmente fraco nos horizontes não-canônicos. A análise de sensibilidade migra para a fase do LightGBM (`08_lightgbm.py`), onde três variantes do modelo com hiperparâmetros idênticos podem ser comparadas em pé de igualdade (o modelo tem acesso a todas as 29 *features* e escolhe quais usar para cada *target*).
-
-**Quatro *thresholds* binários para mapear a curva operacional.** A heurística "qualquer Crítico recente" (*threshold* = 1) é máximaalmente permissiva — gera muitas predições positivas com precisão baixa. A heurística mais restritiva (*threshold* = 5, "pelo menos cinco Críticos em quatro horas") gera menos predições mas mais precisas. Reportamos *thresholds* em 1, 2, 3 e 5 para que o leitor possa escolher o ponto operacional adequado ao cenário (mais conservador ou mais agressivo) com base no *trade-off* explícito. AUC-PR é *threshold*-independente e captura toda a curva de uma vez.
-
-**Estratificação obrigatória mai vs jun.** Em linha com a Mitigação 3 derivada da análise de *drift* da Figura 8 (W4), todas as métricas são reportadas separadamente para validação (maio) e teste (junho) desde o baseline. A motivação é detectar problemas cedo: se já o baseline apresenta degradação severa entre os dois meses, o LightGBM herdará o problema; se a degradação é leve, fica mais difícil para o LightGBM superar.
-
-#### Resultado quantitativo
-
-A heurística foi executada em 0,4 segundos sobre os 149.914 eventos de val + teste. Os resultados consolidados em duas tabelas:
-
-| Métrica | VAL (mai) | TEST (jun) | Razão test / val |
+| Métrica | VAL (mai) | TEST (jun) | Razão test/val |
 |---|---:|---:|---:|
 | Eventos | 78.825 | 71.089 | — |
 | Positivos `target_4h` | 14.481 (18,37%) | 12.038 (16,93%) | — |
 | **AUC-PR** | **0,2397** | **0,5803** | **2,42×** |
-| Random AP (chance) | 0,1837 | 0,1693 | — |
-| Lift sobre random | 1,30× | **3,43×** | — |
+| Lift sobre random AP | 1,30× | **3,43×** | — |
 
-Matriz de Precision / Recall / F1 por *threshold*:
+Precision / Recall / F1 por *threshold*:
 
 | Threshold | VAL P / R / F1 | TEST P / R / F1 |
 |---:|---:|---:|
@@ -542,134 +466,116 @@ Matriz de Precision / Recall / F1 por *threshold*:
 | ≥ 3 | 0,3152 / 0,2226 / 0,2609 | 0,4651 / 0,5510 / 0,5044 |
 | ≥ 5 | 0,3630 / 0,1654 / 0,2273 | **0,5905** / 0,4714 / **0,5243** |
 
-Em validação, o F1 fica na faixa estreita 0,23–0,31 entre os quatro *thresholds* — sem um *sweet spot* claro. Em teste, o F1 cresce monotonicamente com o *threshold*, atingindo o máximo de 0,5243 em *threshold* = 5 (alta precisão de 0,59 com *recall* ainda razoável de 0,47). Para AUC-PR, o *lift* sobre o classificador aleatório é de 1,30× em val e 3,43× em test — diferença substancial que merece análise.
+#### Achado central — contra-intuitivo
 
-#### Interpretação: o achado contra-intuitivo
+**O baseline performa 2,42× melhor em teste do que em validação** — exatamente o **oposto** do que a Figura 8 do W4 sugeria. O drift mai→jun foi quantificado como aumento da taxa de DG (1,62% → 7,35%), e a leitura prévia era "teste é mais difícil". Mas:
 
-O resultado central do baseline é que **o desempenho em teste é 2,42 vezes maior que em validação**, medido por AUC-PR. Esse resultado é exatamente o **oposto** do que a Figura 8 do W4 sugeria. O *drift* entre maio e junho foi quantificado como aumento de taxa de DG por evento (de 1,62% para 7,35%, fator 4,5×), e a interpretação corrente, registrada em `controle_alteracoes.md` (entrada de 2026-05-17 — "Split temporal walk-forward"), era que o teste seria o conjunto mais difícil: "modelo treinado em jan-abr terá que generalizar para um regime de prevalência três a quatro vezes maior, em que o alarme dominante (Right Front Brake Temperature) era estatisticamente invisível no treino". Por que então o baseline performa melhor exatamente no conjunto supostamente mais difícil?
+- **98,53%** dos eventos RFB-Active de jun e **82,2%** dos DGs de jun vêm do CA65926 (Obs 2.9, W5).
+- O CA65926 disparou Críticos massivamente — 0-6 eventos RFB/mês (jan-mai) → 4.215 em jun (salto de ~700×).
+- Quando um equipamento dispara Críticos com essa intensidade pré-DG, a *feature* `count_critico_4h` fica alta consistentemente — a heurística "conte Críticos recentes" tem assinatura clara para detectar.
 
-A resposta vem do achado da Observação 2.9 (W5, resolvida em 22/05): a anomalia RFB de junho não é regime distribuído entre equipamentos — é **falha mecânica progressiva de um único equipamento, o CA65926**. Os números reforçam essa interpretação com clareza:
+**Em maio, regime distribuído:** taxa de DG 1,62% (mais baixa do semestre), DGs espalhados entre equipamentos, sem alvo único. A heurística performa apenas marginalmente acima de chance (lift 1,30×).
 
-- **98,53%** dos 4.278 eventos `Right Front Brake Temperature - Active` de junho vêm exclusivamente do CA65926.
-- **82,2%** de todos os DGs de junho (4.298 de 5.226) vêm do mesmo equipamento.
-- O CA65926 disparou Críticos massivamente — `Right Front Brake Temperature - Active` no equipamento passou de 0–6 eventos por mês (jan-mai) para 4.215 em junho, salto de aproximadamente 700 vezes sobre o *baseline* do próprio equipamento.
+**A consequência metodológica é importante:** o "drift mai→jun" não é uniformemente "teste mais difícil" — é **mudança qualitativa da natureza do problema**. Em jun, predizer DG vira "antecipar CA65926 em deterioração" (assinatura mecânica clara). Em mai, predizer DG vira regime distribuído sem alvo claro (genuinamente mais difícil para qualquer modelo).
 
-Quando um equipamento dispara Críticos com essa intensidade nos minutos e horas que antecedem um DG, a *feature* `count_critico_4h` atinge valores elevados consistentemente nesses eventos. A heurística "conte Críticos recentes" tem **assinatura clara para detectar esse padrão concentrado** — é o cenário ideal para uma regra simples baseada em contagem.
+#### Implicações para LightGBM e re-calibração do GATE MARCO 1
 
-Em maio, o cenário é qualitativamente diferente: a taxa de DG de 1,62% é a mais baixa do semestre, e os DGs estão distribuídos entre múltiplos equipamentos sem dominância única. Não há um "alvo claro" para a heurística — a regra simples performa apenas marginalmente acima de chance (*lift* 1,30×).
+O resultado força revisão do GATE MARCO 1, originalmente formulado assumindo que test seria mais difícil. Re-calibração formal em `controle_alteracoes.md` (2026-05-22):
 
-A consequência metodológica é importante e merece destaque: **o "drift mai → jun" não é uniformemente "test mais difícil"**. É **mudança qualitativa da natureza do problema**. Em junho, predizer DG vira predominantemente predizer "CA65926 em deterioração progressiva", uma tarefa com assinatura preditiva forte em *features* simples. Em maio, predizer DG vira predizer regime distribuído sem alvo claro — genuinamente mais difícil para qualquer modelo (incluindo o LightGBM).
+1. **Teto alto em test (AUC-PR baseline 0,5803):** LightGBM precisa atingir **≥ 0,6303** (baseline + 5pp) em jun para justificar complexidade adicional.
+2. **Espaço amplo em val (AUC-PR baseline 0,2397):** LightGBM com 35 *features* deve facilmente superar **≥ 0,2897** (baseline + 5pp).
+3. **Risco de super-otimização para mai:** critério dual (A *e* B simultâneos) protege contra modelo que ganha em val e perde em test.
+4. **SHAP em W6 vira teste central:** se `count_critico_4h` dominar o ranking sozinha, o LightGBM está reproduzindo o baseline; o valor agregado precisa vir de outras *features*, especialmente Família 4 regimal.
 
-#### Exemplo concreto da diferença entre os dois regimes
+#### Candidato a CM 6.1 (Insight Não Óbvio)
 
-Para tornar a interpretação concreta, considere um evento `e` qualquer no *dataset*:
-
-- **Em junho:** se `e` é do CA65926 e ocorre em 28/jun (auge da anomalia, antes do pico de 30/jun com 1.087 eventos RFB no equipamento), o valor de `count_critico_4h` para `e` está provavelmente alto — 5, 10, ou 30+ Críticos recentes — porque a cascata de RFB-Active já está em curso há horas ou dias. A heurística com *threshold* = 1 prediz `target_4h = 1` corretamente, e o predito acerta porque o CA65926 realmente vai disparar um DG nas próximas 4 horas. Em junho, **70% dos eventos com `target_4h = 1` são detectados pela heurística em *threshold* = 1** (recall 0,6976) — sem precisar do LightGBM. Quando o *threshold* sobe para 5, a precisão sobe para 59% e a *recall* cai para 47% — ainda performance robusta.
-- **Em maio:** se `e` é de qualquer equipamento, o valor de `count_critico_4h` para `e` pode estar baixo (0, 1, ou 2) mesmo para eventos que efetivamente precederão um DG nas próximas 4 horas. Os DGs em maio não vêm com cascata pré-existente — vêm de eventos isolados sem padrão claro de acumulação. A heurística tem dificuldade em distinguir "vai dar DG" de "não vai dar DG" porque o sinal não está nas contagens recentes. Em maio, **apenas 40% dos positivos são detectados** mesmo com o *threshold* mínimo. Subir o *threshold* só piora — em *threshold* = 5, apenas 17% dos positivos de maio são detectados (recall 0,1654).
-
-Essa diferença qualitativa é o que produz o salto de AUC-PR de 0,2397 (val) para 0,5803 (test). Não é o modelo ficando "melhor" entre os dois conjuntos — é o problema ficando mais previsível para uma regra simples no mês específico de teste, por causa da assinatura mecânica do CA65926.
-
-#### Implicações para o LightGBM (W5–W6) — re-calibração do GATE MARCO 1
-
-O resultado do baseline força uma revisão do GATE MARCO 1, originalmente formulado em W4 com a expectativa de que o teste seria mais difícil. A re-calibração formal está registrada em `controle_alteracoes.md` (entrada 2026-05-22 — "Re-calibração do Critério B do GATE MARCO 1") e em `PLANEJAMENTO.md → W5`. Quatro implicações operacionais foram derivadas e merecem destaque:
-
-**1. Teto alto em teste.** O LightGBM precisa superar AUC-PR de 0,5803 em junho com margem mínima de 5 pontos percentuais para justificar a complexidade adicional sobre a regra simples (Critério B re-calibrado: ≥ 0,6303). Não é trivial — significa adicionar valor genuíno sobre uma regra que já capta 70% do *recall* em jun.
-
-**2. Espaço amplo em validação.** Baseline em maio (AUC-PR 0,2397) é baixo. LightGBM com 29 *features* deve facilmente superar — Critério A do *gate* (≥ 0,2897) é o mais fácil de bater. Mas é necessário não confundir "facilidade de bater baseline em val" com "boa generalização" — se LightGBM se especializa no regime distribuído de mai, pode perder em test (regime concentrado), invertendo o ganho.
-
-**3. Risco de super-otimização para mai.** O critério dual (A *e* B simultâneos) protege contra esse cenário. Em caso de A = SIM + B = NÃO, a Mitigação 1 (TimeSeriesSplit CV em W6) entra antes do Optuna para reduzir o *overfitting* ao regime específico de maio. A formulação revisada do *gate* torna essa proteção explícita.
-
-**4. SHAP em W6 vira teste central de qualidade do modelo.** Se a análise de importância das *features* mostrar `count_critico_4h` dominando o *ranking*, o LightGBM está praticamente reproduzindo o baseline; o valor agregado precisa estar em outras *features*. Esperamos especialmente a Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) no topo, pois ela foi desenhada para detectar exatamente a explosão RFB do CA65926. Caso ela não apareça, é sinal de que o modelo está usando *proxies* menos diretas (provavelmente `count_critico_24h` e `horas_desde_ultimo_DG`), e a Obs 2.11 (acúmulo de criticidade) ganha relevância adicional.
-
-#### Candidato a CM 6.1 (Insight Não Óbvio) do relatório final
-
-O achado tem força narrativa direta. A história é: *"uma heurística simples pode parecer melhor que um modelo complexo num regime específico se esse regime tem assinatura preditiva mecânica clara; o trabalho rigoroso de comparação revela quando o ganho de complexidade vale e quando não vale"*. Em termos mais concretos:
-
-- O baseline simples "conte Críticos nas últimas 4 horas" produziu AUC-PR 2,42 vezes melhor em junho (regime concentrado pela anomalia RFB do CA65926) do que em maio (regime distribuído).
-- Contra-intuitivamente, o conjunto de teste — que tinha 4,5× a taxa de DG da validação — era o **mais fácil** para a regra simples, justamente porque a alta prevalência vinha de UM equipamento com assinatura preditiva clara, não de um regime difuso.
-- A comparação rigorosa contra baseline revelou essa heterogeneidade. Sem o baseline, o resultado do LightGBM em jun (esperadamente alto pela natureza concentrada do problema) seria atribuído à qualidade do modelo principal, quando na verdade boa parte é simplesmente captura do padrão óbvio do CA65926.
-
-Esse tipo de honestidade analítica — em que o trabalho explicitamente compara modelos contra heurísticas simples e identifica quando o ganho vem do modelo vs do problema — é o tipo de elemento que diferencia trabalho de alta qualidade. O achado entra na seção CM 6.1 como narrativa convergente com a Obs 2.9 (causa localizada do *drift*) e com a H7.1 (equipamentos individuais problemáticos): a EDA agregada esconde heterogeneidades importantes; quando essas heterogeneidades emergem, métricas e modelos respondem de formas surpreendentes que exigem interpretação cuidadosa.
-
-A tabela `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 *thresholds* × 2 *splits*, com TP / FP / FN / TN / Precision / Recall / F1 / AUC-PR / Random AP para cada combinação) é o entregável canônico de referência que será usado para comparação com o LightGBM v1 em `08_lightgbm.py`.
+A história: *"uma heurística simples pode parecer melhor que um modelo complexo num regime específico se esse regime tem assinatura mecânica clara; comparação rigorosa contra baseline revela quando o ganho de complexidade vale"*. Narrativa convergente com Obs 2.9 (drift localizado), H7.1 (equipamentos individuais problemáticos) e Fig 8 (drift mensal): a EDA agregada esconde heterogeneidades; quando elas emergem, modelos respondem de formas surpreendentes que exigem interpretação cuidadosa.
 
 ---
 
-### LightGBM v1 (`08_lightgbm.py`) — modelo principal de classificação supervisionada
+### LightGBM v1 (`08_lightgbm.py`) — modelo principal de classificação
 
-#### Configuração metodológica
+O modelo principal de classificação é o **LightGBM** (gradient boosting com *histogram-based* tree learning). A versão 1 usa parâmetros *default* (100 iterações, `learning_rate=0,1`, `num_leaves=31`, `random_state=42`) — sem Optuna nem *early stopping*. Serve como referência simples para o GATE MARCO 1 e como ponto de partida para o tuning de v2 em W6. Matriz de entrada: `v3.parquet` (35 *features*; 19 colunas originais excluídas para evitar *label leakage*). Categóricas `turno` e `estado_pre_evento` são passadas como `pd.Categorical` para que o LightGBM aplique *split handling* otimizado.
 
-O modelo principal de classificação adotado é o **LightGBM** (gradient boosting com *histogram-based* tree learning, biblioteca `lightgbm`). A escolha foi feita pelas razões usuais — eficiência computacional, suporte nativo a *features* categóricas via *split handling* específico (sem necessidade de *one-hot* manual), boa performance em problemas de classificação binária com mistura de *features* numéricas e categóricas, e robustez a valores ausentes (não exige imputação prévia). A versão 1 (v1) usa **parâmetros default** (100 iterações, `learning_rate=0,1`, `num_leaves=31`, `min_child_samples=20`, `random_state=42`) sem *early stopping* nem Optuna — esses dois ficam reservados para a versão 2 (v2) em W6 com TimeSeriesSplit CV (Mitigação 1). A versão 1 serve como **modelo de referência simples** para o GATE MARCO 1 e como ponto de partida para o *tuning* de W6.
+O *script* treina **5 variantes** com parâmetros idênticos, diferindo apenas em *target* ou `scale_pos_weight` — cada variante responde a uma pergunta analítica distinta consolidada nas semanas anteriores.
 
-A matriz de entrada é `v3.parquet` com as **35 features documentadas** em `documentacao_features.csv` (CM 3.2). As 19 colunas originais do *dataset* limpo (identificadores, *timestamps* brutos, *label* do evento corrente `Is_Dont_Go`) são deliberadamente excluídas — incluí-las poderia introduzir *label leakage* (no caso de `Is_Dont_Go`) ou redundância com *features* já engenheiradas (no caso de `Tipo`, `Tag_Frota`, `Criticidade`). As duas *features* categóricas em formato String — `turno` e `estado_pre_evento` — são convertidas para `pd.Categorical` e passadas via parâmetro `categorical_feature` para que o LightGBM aplique *split handling* otimizado.
-
-O *script* `08_lightgbm.py` treina **cinco variantes** do modelo com parâmetros *default* idênticos, diferindo apenas em *target* ou em `scale_pos_weight`. Cada variante responde a uma pergunta analítica distinta consolidada nas semanas anteriores:
-
-- **Variante A (canônica):** *target* = `target_4h`, `scale_pos_weight` = 1,972 (calibrado para taxa de positivos do treino, sem *peeking*). Esta é a variante usada para o GATE MARCO 1.
-- **Variante B (Mitigação 2):** *target* = `target_4h`, `scale_pos_weight` = 4,653 (calibrado para taxa de positivos da união val + teste, *test set peeking* branda — limitação registrada em `notas_metodologicas.md` Seção 3 e em `controle_alteracoes.md` 2026-05-22). Compara contra A para responder *"calibrar para taxa de produção esperada vence?"*.
-- **Variante C (Obs 2.7):** *target* = `target_4h_producao` (reconstruído inline excluindo os 1.460 DGs em estado `Manutenção` da definição de "próximo DG"), `scale_pos_weight` = 2,096. Compara contra A para responder *"filtrar DGs em Manutenção melhora o modelo?"*.
-- **Variante T2 (Profundidade 1):** *target* = `target_2h`, `scale_pos_weight` = 2,360. Compara contra T4 (= A) para a análise de sensibilidade da janela de predição.
-- **Variante T8 (Profundidade 1):** *target* = `target_8h`, `scale_pos_weight` = 1,585. Idem.
-
-A execução completa das 5 variantes (preparação de dados + treino + avaliação em val e teste + persistência de modelos + geração de tabelas) leva aproximadamente **17,5 segundos** em *hardware* de desenvolvimento — Polars + LightGBM operam eficientemente nessa escala.
+> 📘 **Configuração detalhada, espaço de busca, justificativa das 5 variantes e formato das saídas:** ver [`notas_metodologicas.md` Seção 8](notas_metodologicas.md). **Script:** `Projeto/codigo/08_lightgbm.py` (~17,5 s). **Saídas:** 5 modelos em `Projeto/modelos/lightgbm_v1_{A,B,C,T2,T8}.txt` + 4 tabelas em `relatorio/tabelas/` (`lightgbm_v1_metricas.csv`, `lightgbm_v1_vs_baseline.csv`, `comparacao_horizontes_lightgbm.csv`, `gate_marco_1.csv`).
 
 #### Resultados consolidados
 
-| Variante | Target | `scale_pos_weight` | AUC-PR val (mai) | AUC-PR test (jun) | Tempo |
-|---|---|---:|---:|---:|---:|
-| **A** (canônica) | `target_4h` | 1,972 | **0,7523** | **0,8566** | 3,3 s |
-| **B** (Mitigação 2) | `target_4h` | 4,653 | 0,7350 | 0,8517 | 3,1 s |
-| **C** (Obs 2.7) | `target_4h_producao` | 2,096 | 0,7012 | 0,8533 | 2,8 s |
-| **T2** (Profundidade 1) | `target_2h` | 2,360 | 0,7729 | 0,8378 | 3,2 s |
-| **T8** (Profundidade 1) | `target_8h` | 1,585 | 0,7421 | 0,8211 | 2,9 s |
+| Variante | Target | `scale_pos_weight` | AUC-PR val (mai) | AUC-PR test (jun) |
+|---|---|---:|---:|---:|
+| **A** (canônica) | `target_4h` | 1,972 (taxa treino) | **0,7523** | **0,8566** |
+| **B** (Mitigação 2) | `target_4h` | 4,653 (taxa val+test, *peeking*) | 0,7350 | 0,8517 |
+| **C** (Obs 2.7) | `target_4h_producao` | 2,096 | 0,7012 | 0,8533 |
+| **T2** (Profundidade 1) | `target_2h` | 2,360 | 0,7729 | 0,8378 |
+| **T8** (Profundidade 1) | `target_8h` | 1,585 | 0,7421 | 0,8211 |
 
 #### GATE MARCO 1: PASS
 
-A Variante A (canônica) atinge **AUC-PR de 0,7523 em validação** (mínimo do critério A: 0,2897 — folga de aproximadamente 46 pontos percentuais) e **AUC-PR de 0,8566 em teste** (mínimo do critério B: 0,6303 — folga de aproximadamente 23 pontos percentuais). Ambos os critérios são superados com folga substancial, e o GATE retorna **verdict PASS** — projeto avança para W6 (tuning de hiperparâmetros com Optuna + TimeSeriesSplit CV, modelo de sobrevivência Weibull AFT, Isolation Forest diagnóstico, análise SHAP).
+Variante A atinge **AUC-PR 0,7523 em val** (≥ 0,2897 do critério A, folga +46,3pp) e **0,8566 em test** (≥ 0,6303 do critério B, folga +22,6pp). **Verdict: PASS** — avança para W6. Sobre o baseline: +51,3pp em val, +27,6pp em test — folga substancial justifica empiricamente a complexidade do modelo. A análise SHAP em W6 fica como teste de qualidade obrigatório: se `count_critico_4h` dominar isoladamente, parte do desempenho é apenas "réplica sofisticada do baseline"; esperamos especialmente a Família 4 regimal no topo do ranking.
 
-O salto vs *baseline* heurístico merece destaque. Em validação, o LightGBM A adiciona **+51,3 pontos percentuais de AUC-PR** sobre o *baseline* (0,2397 → 0,7523) — o regime distribuído de maio era exatamente onde a heurística simples mais sofria, e o modelo com 35 *features* extrai sinal substancial das outras 34 *features* além de `count_critico_4h`. Em teste, o salto é **+27,6 pontos percentuais** (0,5803 → 0,8566) — mais modesto em magnitude relativa porque o *baseline* já era forte em jun (anomalia localizada do CA65926 com assinatura mecânica clara), mas a folga continua substancial e justifica empiricamente a complexidade adicional do modelo de gradient boosting sobre a regra simples.
+#### 3 conclusões analíticas
 
-A análise SHAP em W6 fica como **teste de qualidade obrigatório** da v1. Se o *ranking* de importância das *features* mostrar `count_critico_4h` ou `count_critico_24h` dominando isoladamente, parte substancial do desempenho é "modelo replica o *baseline* mais sofisticado" — esperaríamos nesse caso ver outras *features* (especialmente Família 4 regimal, Família 2 recência, Família 3 estado pré-evento) também no topo, evidenciando que o modelo aprendeu sinal genuíno além da regra simples.
+**Mitigação 2 descartada empiricamente.** Variante B perde para A em ambos os splits (B−A = −1,73pp val, −0,50pp test). O *peeking* foi insuficiente para inflar B além de A — `scale_pos_weight` calibrado para taxa de produção via val+test **não tem valor preditivo neste dataset**. Para W6: restringir busca Optuna a `scale_pos_weight ∈ [0,5; 3,0]`. Vira material de CM 6.2 (hipótese refutada com rigor).
 
-#### Conclusão analítica 1 — Mitigação 2 descartada empiricamente
+**DGs em Manutenção contêm sinal, não ruído** (Obs 2.7 confirmada). Variante C perde para A em ambos os splits (C−A = −5,11pp val, −0,33pp test). Filtrar os 1.460 DGs em estado Manutenção **remove sinal preditivo legítimo** — confirma reinterpretação da H5.1 já documentada em `hipoteses_eda.md`. Para W6: manter `target_4h` original; **não treinar variante `Is_Dont_Go_producao`** em v2.
 
-A hipótese da Mitigação 2 (registrada no `PLANEJAMENTO.md` em 17/05 a partir do *drift* da Figura 8) era: *calibrar `scale_pos_weight` para a taxa de produção esperada — estimada via união val + teste — em vez da taxa de treino pode melhorar o desempenho*. O *test set peeking* implícito nessa estimativa foi aceito conscientemente como compromisso pragmático (`notas_metodologicas.md` Seção 3), com viés esperado de aproximadamente 1 a 3 pontos percentuais em favor da Variante B.
+**Profundidade 1 — T8 é o pior, T2/T4 indistinguíveis.** Ranking val: T2 (0,7729) > T4 (0,7523) > T8 (0,7421). Ranking test: T4 (0,8566) > T2 (0,8378) > T8 (0,8211). O **ranking entre T2 e T4 inverte entre val e test** — diferenças (~1,9pp) estão na faixa de ruído amostral para LightGBM single-fold. **T8 é robustamente o pior** (consistente em ambos os splits, magnitude maior). Afirmação honesta: **T2 e T4 são estatisticamente indistinguíveis** com esta configuração; a escolha operacional de 4h (CM 1.2) é **empiricamente compatível** com os melhores resultados, mas não singularmente vencedora. Para W6: manter T4 canônico, tunar apenas o modelo T4. Em W7, repetir com TimeSeriesSplit CV se sobrar tempo (variância robusta sobre os 3 horizontes).
 
-**O resultado empírico é o oposto do esperado:** a Variante B perde para a Variante A em **ambos** os *splits* — B−A = −1,73 pp em validação e −0,50 pp em teste. Esse é precisamente o cenário em que o viés do *peeking* foi insuficiente para inflar B além de A: a Mitigação 2 fica **empiricamente descartada**. Calibrar `scale_pos_weight` para taxa de produção via val + teste **não tem valor preditivo neste *dataset***. A explicação mais provável é que a taxa de treino (33,64% de positivos no `target_4h` graças à amostragem por janela temporal) já oferece distribuição suficientemente balanceada para o LightGBM aprender — o *re-weighting* mais agressivo (`scale_pos_weight` = 4,65) acaba por enviesar excessivamente o modelo para predições positivas, prejudicando a curva precision-recall em ambos os regimes.
+> 📘 **Análise estatística completa da significância das diferenças T2 vs T4 (variabilidade esperada de AUC-PR, fontes de ruído amostral, recomendação metodológica):** ver `notas_metodologicas.md` Seção 8 (subseção "Profundidade 1 — análise de significância").
 
-Para W6, a consequência operacional é restringir o espaço de busca do Optuna no hiperparâmetro `scale_pos_weight` à faixa `[0.5, 3.0]` em vez de `[0.5, 6.0]` — concentrando *trials* em regiões empiricamente promissoras. Esse achado também tem valor narrativo: hipótese metodológica testada com rigor, refutada com dados, e a refutação documentada honestamente vira material de qualidade analítica para CM 6.2 do relatório final.
-
-#### Conclusão analítica 2 — DGs em Manutenção contêm sinal, não ruído (Obs 2.7 confirmada empiricamente)
-
-A hipótese da Variante C (registrada após a Obs 2.7 em W2) era: *os 1.460 DGs ocorrendo em estado `Manutenção` introduzem ruído contextual; um modelo treinado com target alternativo `target_4h_producao` (que exclui esses DGs do conjunto de positivos) deve performar melhor para DGs operacionais reais*.
-
-**O resultado empírico é fortemente contrário à hipótese:** a Variante C perde para a Variante A em ambos os splits — C−A = −5,11 pp em validação e −0,33 pp em teste. Em validação a perda é substancial. **Filtrar DGs em Manutenção remove sinal, não ruído.** Esse resultado confirma empiricamente a reinterpretação da Hipótese H5.1 já documentada em `hipoteses_eda.md` desde W2: os DGs em estado `Manutenção` são reativações de teste do equipamento com alarmes legítimos (Engine Coolant, Brake Temperatures), não falsos positivos de bancada. O contexto Manutenção tem semântica distinta mas informação preditiva genuína.
-
-Para W6, a consequência é **não treinar variante `Is_Dont_Go_producao` em v2** — manter `target_4h` original como *target* canônico. A análise estratificada por estado operacional permanece prevista para W7 (Profundidade C original do PLANEJAMENTO) e pode quantificar a diferença de desempenho do modelo em DGs em Manutenção vs DGs em Operando, mas não justifica filtrar o *target*.
-
-#### Conclusão analítica 3 — Profundidade 1: horizonte de 4h está na zona ótima, sem dominância clara sobre 2h
-
-A Profundidade 1 do plano (registrada inicialmente em W4 e refinada em W5 com a expansão da Família 1 para incluir as janelas 2h e 8h) compara as três variantes T2 / T4 / T8 com hiperparâmetros idênticos e *features* perfeitamente alinhadas ao horizonte de cada *target* (graças à adição das janelas 2h e 8h em 23/05). O resultado bruto mostra:
-
-| Horizonte | AUC-PR val (mai) | AUC-PR test (jun) | Ranking val | Ranking test |
-|---|---:|---:|:-:|:-:|
-| T2 (`target_2h`) | **0,7729** | 0,8378 | 1º | 2º |
-| T4 (`target_4h`) | 0,7523 | **0,8566** | 2º | 1º |
-| T8 (`target_8h`) | 0,7421 | 0,8211 | 3º | 3º |
-
-**O ranking entre T2 e T4 inverte entre validação e teste.** Em validação T2 vence T4 por 2,06 pp; em teste T4 vence T2 por 1,88 pp. **T8 é consistentemente o pior dos três** em ambos os splits (3,55 pp atrás do vencedor em teste, 3,08 pp atrás em validação) — esse é o único achado robusto da Profundidade 1 com a configuração atual.
-
-A afirmação simples *"T4 é o melhor horizonte"* — que seria a leitura direta do ranking em teste — **não se sustenta rigorosamente** porque (i) o ranking em validação é o oposto, (ii) as diferenças entre T2 e T4 (1,73 pp em val, 1,88 pp em teste) estão na faixa de variação esperada para LightGBM com semente fixa e parâmetros default, e (iii) sem validação cruzada ou *bootstrap*, não há estimativa de variância para distinguir sinal genuíno de ruído amostral.
-
-A afirmação mais honesta e defensável é: **T8 (8h) é empiricamente o pior dos três horizontes** (achado robusto, consistente em ambos os splits, magnitude de diferença maior). **T2 e T4 são estatisticamente indistinguíveis** com a configuração atual — ambos estão na zona de melhor desempenho. **A escolha operacional de 4h (justificada no CM 1.2 por tempo de mobilização de peças e equipe) é empiricamente compatível com os melhores resultados**, mas não é singularmente vencedora.
-
-Para W6, a recomendação operacional é **manter T4 como horizonte canônico** (já justificado operacionalmente) e tunar apenas o modelo T4 com Optuna, sem repetir a comparação entre horizontes. Em W7, caso haja tempo, repetir a Profundidade 1 com **TimeSeriesSplit CV de 4 folds** dá variância sobre os três horizontes e permite afirmação estatisticamente robusta. Caso contrário, registrar a limitação no CM 6.2 como Trabalho Futuro.
-
-Esse achado é candidato a CM 6.1 (Insights Não Óbvios) do relatório final com narrativa convergente com o achado contra-intuitivo do *baseline*: o ranking val-teste de modelos pode inverter por causa de diferenças qualitativas entre os dois regimes (val = regime distribuído de mai, teste = anomalia localizada do CA65926 em jun), e afirmações sobre "qual horizonte é melhor" precisam ser cuidadosas em problemas com *drift* qualitativo.
+Os 3 achados convergem para candidato CM 6.1 (Insights Não Óbvios): hipóteses metodológicas testadas com rigor e refutadas/refinadas com dados; comparações honestas que distinguem ganho real de ruído ou viés de regime.
 
 ---
 
-*(Próximas seções a desenvolver em W6-W8: LightGBM v2 com Optuna + TimeSeriesSplit CV + SHAP (W6), modelo de sobrevivência Weibull AFT + Isolation Forest diagnóstico (W6), Avaliação e Resultados estratificada (W7), Conclusão (W8).)*
+### LightGBM v2 (`08b_lightgbm_v2.py`) — Optuna + TimeSeriesSplit CV + determinismo
+
+A versão 2 é o **modelo canônico para o relatório final**. Refina o v1 por três mudanças simultâneas:
+
+1. **Optuna com 50 *trials*** sobre 7 hiperparâmetros (espaço refinado pela conclusão da Mitigação 2 — `scale_pos_weight ∈ [0,5; 3,0]`).
+2. **TimeSeriesSplit CV de 4 *folds* expandidos** (Mitigação 1): `jan→fev`, `jan-fev→mar`, `jan-fev-mar→abr`, `jan-abr→mai`. Métrica de *tuning*: AUC-PR média dos 4 *folds*. Teste (jun) **nunca** entra na CV — só na avaliação final.
+3. **Determinismo estrito** via `deterministic=True` + `force_col_wise=True`: dois runs produzem AUC-PR *bit-exact* até a última casa decimal — requisito para auditoria do trabalho.
+
+> 📘 **Espaço de busca completo dos 7 hiperparâmetros, configuração do Optuna TPE Sampler, estrutura dos 4 *folds* e justificativa do determinismo:** ver [`notas_metodologicas.md` Seção 9](notas_metodologicas.md). **Script:** `Projeto/codigo/08b_lightgbm_v2.py` (~28,7 min — Optuna 28,5 min + treino final 8 s). **Saídas:** modelo `Projeto/modelos/lightgbm_v2.txt` + study completo `Projeto/modelos/optuna_study_v2.pkl` (auditoria) + 3 tabelas em `relatorio/tabelas/` (`lightgbm_v2_metricas.csv`, `lightgbm_v2_hiperparametros.csv`, `optuna_trials.csv` com os 50 *trials*).
+
+#### Resultados
+
+| Métrica | Valor | Comparação |
+|---|---:|---|
+| AUC-PR train | 0,9658 | gap de 0,19 vs val → overfitting moderado |
+| AUC-PR val (mai) | **0,7801** | **+2,78pp vs v1 A** (+54,0pp vs baseline) |
+| AUC-PR test (jun) | **0,8618** | **+0,52pp vs v1 A** (+28,2pp vs baseline) |
+| AUC-PR CV média (4 folds) | 0,8834 | métrica usada pelo Optuna |
+| Melhor *trial* | #34 de 50 | — |
+| Tempo total | 28,7 min | Optuna 28,5 min + treino final 8 s |
+
+**Hiperparâmetros encontrados pelo Optuna (vs default do v1):**
+
+| Hiperparâmetro | v1 (default) | v2 (best) | Direção |
+|---|---:|---:|---|
+| `n_estimators` | 100 | 199 | +99% (mais árvores) |
+| `learning_rate` | 0,1 | 0,013 | **−87% (muito mais lento)** |
+| `num_leaves` | 31 | 61 | +97% (árvores mais complexas) |
+| `min_child_samples` | 20 | 60 | +200% (regularização) |
+| `scale_pos_weight` | 1,972 | **0,513** | **−74% (downweight de positivos!)** |
+| `lambda_l1` | 0 | 0,32 | regularização L1 |
+| `lambda_l2` | 0 | 1,82 | regularização L2 |
+
+#### Achado importante: Optuna escolheu `scale_pos_weight = 0,513`
+
+Optuna selecionou *downweight* de positivos (`scale_pos_weight ≈ 0,5`), **menor** que o valor "neutro" calculado pela fórmula clássica `(1-taxa)/taxa = 1,97` do v1 A. Isso **reforça a conclusão empírica da Mitigação 2** (W5): pesar positivos para cima não ajuda — o ótimo está **abaixo** do que sairia da heurística clássica. Provavelmente porque os positivos compartilham assinatura mecânica forte do CA65926 em test (Obs 2.9), tornando-os "fáceis" e exigindo menos peso explícito. **A Mitigação 2 estava propondo a direção exatamente oposta da ótima** — a investigação rigorosa em W5 evitou um caminho que teria piorado o modelo.
+
+#### GATE MARCO 1 re-confirmado em v2
+
+Critério A (val ≥ 0,2897): **0,7801 ✓** (folga +49,0pp).
+Critério B (test ≥ 0,6303): **0,8618 ✓** (folga +23,1pp).
+
+**v2 é o modelo canônico** para o relatório final — combina tuning rigoroso, validação cruzada honesta (sem *test set peeking*) e reprodutibilidade *bit-exact*. **v1 fica preservado como referência metodológica** (efeito comparativo "default vs tunado" + diagnóstico do peeking de Mitigação 2). A análise SHAP em W6 será feita sobre v2.
+
+---
+
+*(Próximas seções a desenvolver em W6-W8: Análise SHAP global + estratificada sobre v2, modelo de sobrevivência Weibull AFT + Isolation Forest diagnóstico (W6), Avaliação e Resultados estratificada (W7), Conclusão (W8).)*
 
 ---
 
@@ -713,10 +619,11 @@ A versão do Python (3.13) está fixada em `.python-version`. Todas as dependên
 | 11 | `Projeto/codigo/06b_fix_encoding_leakage.py` | W5 | ✅ | *Fix* do *leakage* subtil de *frequency encoding* da Família 7. Recomputa `tag_freq` e `operador_freq` sobre o *split* de treino apenas (394.971 eventos, antes vinha do *dataset* global em `05_features.py`) e propaga para val/teste; categorias unknown no treino (2 TAGs: `CA65791`, `CA65916`; 13 operadores) recebem `freq = 0` por convenção (Opção C-1 — análise teórica + empírica em `notas_metodologicas.md` Seção 2 mostra que feature binária `is_unknown` seria inerte em *single-fold* de W5). Asserções defensivas validam 12 eventos com `tag_freq = 0` em val e 1.394 em test; 154 e 418 com `operador_freq = 0` em val/test. Saída: `dados/features/v3.parquet` (544.885 × 58 colunas, 16,3 MB — **input canônico de toda a Modelagem em W5+**). Diff médio pós-fix: `tag_freq` +1,4%, `operador_freq` -1,0% (confirma que *leakage* era subtil mas presente). Tempo: 1,5s |
 | 12 | `Projeto/codigo/exploracao_w5_obs_pendentes.py` | W5 | ✅ | Resolução das duas observações pendentes do `observacoes_importantes.md` antes de iniciar a modelagem: **Obs 2.4** (operador OP_067 do caso paradigma CA65924 tem taxa anormal? — Q3 do edital) e **Obs 2.9** (causa da explosão de RFB em junho/2025 — recapagem, sazonalidade, troca de sensor em lote, ou falha localizada?). **Veredito 2.4:** OP_067 não é outlier (rank #76 de 394, taxa 6,338% vs baseline 3,664%; 152 operadores em faixa comparável); resposta empírica a Q3 é "operador correlaciona com DG de forma difusa". **Veredito 2.9:** anomalia é **falha mecânica progressiva localizada do CA65926** — 98,53% dos 4.278 eventos RFB-Active de jun vêm exclusivamente desse equipamento; 82,2% dos DGs de jun (4.298 de 5.226) também. Saídas: `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas) + `relatorio/tabelas/obs29_rfb_junho_decomposicao.csv` (34 linhas long-format). Re-framing forte do Risco 3.2 e formalização da H7.1 (equipamentos individuais problemáticos). Tempo: 0,4s |
 | 13 | `Projeto/codigo/07_baseline.py` | W5 | ✅ | Modelo baseline heurístico: `DG_predito = 1 se count_critico_4h ≥ threshold` aplicado a `target_4h` (canônica do CM 1.2). Score raw para AUC-PR: `count_critico_4h` (alinhamento perfeito ao horizonte do *target*). Thresholds binários para P/R/F1: 1, 2, 3, 5. Estratificação obrigatória mai vs jun (Mitigação 3). **Resultado contra-intuitivo:** AUC-PR test (jun) = 0,5803 é **2,42× maior** que AUC-PR val (mai) = 0,2397 — *recall* de 70% em test com *threshold* = 1 mesmo sem modelo de ML. Explicação mecânica: 82,2% dos DGs de jun vêm do CA65926 em deterioração progressiva (Obs 2.9), criando assinatura clara para a regra simples; mai é regime distribuído sem alvo único. Forçou re-calibração do GATE MARCO 1 (registrada em `controle_alteracoes.md` 2026-05-22). Saída: `relatorio/tabelas/baseline_metricas.csv` (8 linhas: 4 thresholds × 2 splits, com TP/FP/FN/TN, P/R/F1, AUC-PR, Random AP). Tempo: 0,4s |
-| 14 | `Projeto/codigo/08_lightgbm.py` | W5 (v1) + W6 (v2 pós-Optuna) | 🔄 planejado | **W5 v1:** lê `v3.parquet` diretamente (encoding fix já aplicado em `06b_fix_encoding_leakage.py`, linha 11 desta tabela). LightGBM com parâmetros *default* + comparação de duas calibrações de `scale_pos_weight` (Mitigação 2: taxa de treino vs taxa de produção) + variante `Is_Dont_Go_producao` filtrando os 2.525 DGs em Manutenção (Obs 2.7) + métricas estratificadas mai vs jun (Mitigação 3) + 3 variantes T2/T4/T8 com hiperparâmetros idênticos para comparação preditiva entre horizontes (Profundidade 1 do PLANEJAMENTO). **W6 v2:** *TimeSeriesSplit* CV de 4 *folds* expandidos (Mitigação 1) + Optuna com 50 *trials* sobre AUC-PR média da CV + LightGBM v2 com melhores hiperparâmetros. Saída final: `modelos/lightgbm_v2.lgb`. GATE MARCO 1 re-calibrado em 22/05 exige AUC-PR ≥ 0,2897 em val e ≥ 0,6303 em test (baseline + 5pp em cada). |
-| 15 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Modelo de Sobrevivência (Weibull AFT principal, *fallback* Cox PH se Weibull não convergir) com biblioteca `lifelines`. Trata o *censoring* (102.602 eventos sem DG futuro observado) rigorosamente como dado adicional, oferecendo segunda leitura do problema independente de *threshold* de classificação. Saídas: `modelos/sobrevivencia.joblib` + tabela de *hazard ratios* + Fig Extra A (curva Kaplan-Meier por estado pré-evento). |
-| 16 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico — treinado sobre o mesmo dataset **sem usar `Is_Dont_Go`**; mede a sobreposição entre DGs reais e *score* de anomalia. Teste empírico único do Risco 3.3 (viés do *label* CMA). Saídas: `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv`. |
-| 17 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas (mês × frota × estado operacional × top-5 alarmes) + figuras 9-13 do relatório + análise de erro por contexto + curva *precision-recall* com limiar operacional calibrado por custo-benefício explícito. |
+| 14 | `Projeto/codigo/08_lightgbm.py` | W5 | ✅ | LightGBM v1 com 5 variantes (A/B/C/T2/T8) e parâmetros *default* sobre `v3.parquet`. Variante A canônica para GATE MARCO 1. **Resultados:** A val=0,7523 / test=0,8566 (GATE PASS, +51,3pp / +27,6pp vs baseline). Mitigação 2 (B) e Obs 2.7 (C) **empiricamente descartadas**. Profundidade 1 (T2/T4/T8): T8 pior, T2 vs T4 indistinguíveis (ranking inverte val↔test, magnitude na faixa de ruído). Saídas: 5 modelos em `Projeto/modelos/lightgbm_v1_*.txt` + 4 tabelas (`lightgbm_v1_metricas.csv`, `lightgbm_v1_vs_baseline.csv`, `comparacao_horizontes_lightgbm.csv`, `gate_marco_1.csv`). Tempo: 17,5s. Ver `notas_metodologicas.md` Seção 8. |
+| 15 | `Projeto/codigo/08b_lightgbm_v2.py` | W6 | ✅ | **LightGBM v2 — modelo canônico do relatório.** Optuna (50 trials, TPE seed=42) + TimeSeriesSplit CV de 4 folds expandidos (Mitigação 1) + determinismo estrito (`deterministic=True` + `force_col_wise=True`). Espaço de busca: 7 hiperparâmetros (`scale_pos_weight ∈ [0,5; 3,0]` refinado após refutação da Mitigação 2). **Resultados:** AUC-PR train=0,9658 / val=0,7801 / test=0,8618 (best CV=0,8834 trial #34). Ganho sobre v1 A: val +2,78pp, test +0,52pp. **GATE MARCO 1 re-confirmado PASS.** Optuna escolheu `scale_pos_weight=0,513` — contradiz a direção da Mitigação 2 (que propunha cima para 4,65). Saídas: `Projeto/modelos/lightgbm_v2.txt` + `optuna_study_v2.pkl` + 3 tabelas (`lightgbm_v2_metricas.csv`, `lightgbm_v2_hiperparametros.csv`, `optuna_trials.csv`). Tempo: 28,7 min. Ver `notas_metodologicas.md` Seção 9. |
+| 16 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Modelo de Sobrevivência (Weibull AFT principal, *fallback* Cox PH se Weibull não convergir) com biblioteca `lifelines`. Trata o *censoring* (102.602 eventos sem DG futuro observado) rigorosamente como dado adicional, oferecendo segunda leitura do problema independente de *threshold* de classificação. Saídas: `modelos/sobrevivencia.joblib` + tabela de *hazard ratios* + Fig Extra A (curva Kaplan-Meier por estado pré-evento). |
+| 17 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico — treinado sobre o mesmo dataset **sem usar `Is_Dont_Go`**; mede a sobreposição entre DGs reais e *score* de anomalia. Teste empírico único do Risco 3.3 (viés do *label* CMA). Saídas: `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv`. |
+| 18 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas (mês × frota × estado operacional × top-5 alarmes) + figuras 9-13 do relatório + análise de erro por contexto + curva *precision-recall* com limiar operacional calibrado por custo-benefício explícito. |
 
 **Comando de execução padrão:**
 ```powershell
