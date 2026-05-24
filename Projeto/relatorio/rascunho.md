@@ -571,13 +571,15 @@ Optuna selecionou *downweight* de positivos (`scale_pos_weight ≈ 0,5`), **meno
 Critério A (val ≥ 0,2897): **0,7801 ✓** (folga +49,0pp).
 Critério B (test ≥ 0,6303): **0,8618 ✓** (folga +23,1pp).
 
-**v2 é o modelo canônico** para o relatório final — combina tuning rigoroso, validação cruzada honesta (sem *test set peeking*) e reprodutibilidade *bit-exact*. **v1 fica preservado como referência metodológica** (efeito comparativo "default vs tunado" + diagnóstico do peeking de Mitigação 2). A análise SHAP em W6 será feita sobre v2.
+**v2 foi o modelo canônico até 24/05/2026** — combina tuning rigoroso, validação cruzada honesta (sem *test set peeking*) e reprodutibilidade *bit-exact*. A análise SHAP feita sobre v2 (próxima subseção) revelou que a *feature* #1 do modelo (`horas_desde_ultimo_DG`, 39,3% do peso) opera como **predição de cascata**, não predição de primeiro DG — limitação operacional significativa. Por causa desse achado, **v2 foi posteriormente substituído pelo v3 (sem `horas_desde_ultimo_DG`) como modelo canônico do relatório final** (subseção "LightGBM v3 — canônico promovido" abaixo). v2 fica **preservado** como modelo intermediário (artefato em `Projeto/modelos/lightgbm_v2.txt`), citado por completude metodológica e como base diagnóstica que motivou a promoção. **v1 fica preservado como referência metodológica** (efeito comparativo "default vs tunado" + diagnóstico do peeking de Mitigação 2).
 
 ---
 
-### Análise SHAP do LightGBM v2 (`08c_shap_v2.py`)
+### Análise SHAP do LightGBM v2 (`08c_shap_v2.py`) — motivação para a promoção do v3
 
-A análise SHAP (SHapley Additive exPlanations) do modelo canônico v2 foi a etapa de **validação de qualidade** prometida desde o GATE MARCO 1 — sem ela, a AUC-PR de 0,8618 em test ficaria sem explicação. Computada via TreeSHAP sobre o test set completo (71.089 eventos, ~47 s de execução), produziu a matriz canônica `shap_values_v2_test.npy` (19 MB, [71.089 × 35]) que vira o substrato para todas as análises de interpretabilidade subsequentes.
+> **Nota de leitura:** esta subseção descreve a análise SHAP que foi executada **sobre o v2** quando ele ainda era o modelo canônico. O achado crítico identificado aqui (item "predição de cascata") motivou o treino e a promoção do **v3 sem `horas_desde_ultimo_DG`** como novo canônico — descrito logo após. Portanto, esta análise SHAP é apresentada por completude metodológica e como **base diagnóstica da decisão de promoção**, não como descrição do modelo final do relatório.
+
+A análise SHAP (SHapley Additive exPlanations) do (então) modelo canônico v2 foi a etapa de **validação de qualidade** prometida desde o GATE MARCO 1 — sem ela, a AUC-PR de 0,8618 em test ficaria sem explicação. Computada via TreeSHAP sobre o test set completo (71.089 eventos, ~47 s de execução), produziu a matriz canônica `shap_values_v2_test.npy` (19 MB, [71.089 × 35]) que vira o substrato para todas as análises de interpretabilidade subsequentes.
 
 > 📘 **Detalhes técnicos (algoritmo TreeSHAP, configuração, decisões de subgrupos estratificados):** ver [`notas_metodologicas.md` Seção 10](notas_metodologicas.md). **Script:** `Projeto/codigo/08c_shap_v2.py`. **Saídas:** matriz SHAP completa + 2 tabelas (`shap_global_v2.csv`, `shap_estratificado_v2.csv`) + 3 figuras (Fig 9a bar, Fig 9b beeswarm, Fig 10 dependence plots).
 
@@ -658,7 +660,140 @@ O SHAP entrega três contribuições para o relatório:
 - **Insights Não Óbvios (CM 6.1):** quatro narrativas convergentes — Família 4 regimal valida engenharia em W4; cascade detection é o que o modelo realmente faz; H4.1 confirmada via `tipo_caminhao`; features domain-specific vencem genéricas.
 - **Limitações (CM 6.2):** cascade-only prediction, `mes` como extrapolação implícita, Obs 2.11 fracamente refutada.
 
-A Variante v3 (sem `horas_desde_ultimo_DG`) está em execução no momento desta sessão. Os resultados comparativos v2 vs v3 vão informar se o modelo canônico para o relatório permanece v2 (mantendo a limitação documentada) ou se v3 substitui/complementa v2 (Opção D — *deployment* paralelo).
+A análise da Variante v3 (sem `horas_desde_ultimo_DG`) foi executada em seguida — descrita na próxima subseção. O resultado **promoveu v3 a modelo canônico do relatório**, substituindo v2 (que fica preservado como intermediário diagnóstico).
+
+---
+
+### LightGBM v3 — modelo canônico promovido (`08e_lightgbm_v2_no_cascade.py`)
+
+O LightGBM v3 (também referenciado como "v2_no_cascade" nos arquivos de artefato, por origem da iteração) é o **modelo canônico final do relatório**. É um clone exato do v2 com uma única alteração: a *feature* `horas_desde_ultimo_DG` foi removida do conjunto de entrada (35 → 34 *features*; `horas_desde_ultimo_critico` permanece). Mantém Optuna 50 *trials*, TimeSeriesSplit CV de 4 *folds* expandidos, e determinismo estrito.
+
+> 📘 **Motivação completa da promoção, justificativa e contextualização: ver `controle_alteracoes.md` entrada `2026-05-24 — Promoção de v3 a modelo canônico`.** **Script:** `Projeto/codigo/08e_lightgbm_v2_no_cascade.py` (~25,7 min — Optuna 25,4 min + treino final 14 s). **Saídas:** modelo `Projeto/modelos/lightgbm_v2_no_cascade.txt` + study `Projeto/modelos/optuna_study_v2_no_cascade.pkl` + 3 tabelas (`lightgbm_v2_no_cascade_metricas.csv`, `lightgbm_v2_no_cascade_hiperparametros.csv`, `v2_vs_v2_no_cascade.csv` comparativo decisório).
+
+#### Por que v3 substitui v2 como canônico
+
+O SHAP do v2 revelou que a *feature* `horas_desde_ultimo_DG` (rank #1, 39,3% do peso) operava como **detector de continuação de cascata**, não como antecipação genuína de primeiro DG: dos 101 positivos *sem DG anterior recente* no test, apenas 1 era predito corretamente. Treinar v3 sem essa *feature* força o modelo a aprender sinais antecipativos. A pergunta empírica era: **v3 mantém desempenho competitivo no agregado e melhora no subgrupo "primeiro DG"?**
+
+Resposta direta dos dados (test set completo, n = 71.089):
+
+| Subgrupo | n+ | v2 AUC-PR | v3 AUC-PR | Δ AUC-PR | v2 Recall@0.5 | v3 Recall@0.5 | Δ Recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Geral** | 12.038 | 0,8618 | 0,8556 | **−0,62pp** | 0,6803 | 0,7527 | **+7,24pp** |
+| **Primeiro DG** (sem DG ≤24h ou NULL) | 1.705 | 0,1876 | **0,1964** | **+0,88pp** | 0,0434 | **0,2106** | **+16,72pp** |
+| **Cascata** (DG ≤4h) | 9.035 | 0,9700 | 0,9691 | −0,09pp | 0,8836 | **0,9185** | +3,49pp |
+
+Três fatos críticos sustentam a decisão de promoção:
+
+1. **No agregado, v3 perde apenas 0,62pp de AUC-PR e ganha +7,24pp de *Recall*** — o caso operacional (não perder DGs) valoriza *recall*, então essa troca é vantajosa.
+2. **No subgrupo "primeiro DG" — o caso de uso operacional valioso —, v3 ganha em ambas as métricas:** AUC-PR sobe +0,88pp e, decisivamente, *Recall@0.5* sobe de 4,34% para 21,06% (**5× mais primeiros DGs capturados**).
+3. **Em cascata, v3 não degrada** — perde apenas 0,09pp de AUC-PR mas ganha +3,49pp de *Recall*, continuando a detectar continuações de rajada quase tão bem quanto v2.
+
+#### Resultados completos do v3
+
+| Métrica | Valor | Comparação |
+|---|---:|---|
+| AUC-PR train | 0,9653 | gap de 0,25 vs val → overfitting moderado (similar ao v2) |
+| AUC-PR val (mai) | 0,7132 | −6,69pp vs v2 (drift mai/jun mais sensível sem feature de cascata) |
+| AUC-PR test (jun) | **0,8556** | −0,62pp vs v2 — competitivo |
+| AUC-PR CV média (4 folds) | 0,8530 | métrica usada pelo Optuna |
+| Melhor *trial* | #41 de 50 | — |
+| Tempo total | 25,7 min | Optuna 25,4 min + treino final 14 s |
+
+**Hiperparâmetros encontrados pelo Optuna (vs v2):**
+
+| Hiperparâmetro | v2 (best) | v3 (best) | Direção |
+|---|---:|---:|---|
+| `n_estimators` | 199 | 301 | +51% (mais árvores compensam menos *features*) |
+| `learning_rate` | 0,013 | 0,0118 | −9% (semelhante) |
+| `num_leaves` | 61 | 69 | +13% (semelhante) |
+| `min_child_samples` | 60 | 50 | −17% (semelhante) |
+| `scale_pos_weight` | 0,513 | **2,40** | **+368% — modelo aprendeu a ser mais sensível** |
+| `lambda_l1` | 0,32 | 0,197 | −38% |
+| `lambda_l2` | 1,82 | 1,18 | −35% |
+
+A diferença mais marcante é o `scale_pos_weight = 2,40` — v3 elevou esse parâmetro próximo ao limite superior do espaço [0,5; 3,0]. Interpretação: sem a *feature* de cascata, o modelo precisa pesar positivos para cima para manter sensibilidade. Isso é precisamente o que explica o salto de *recall*: o v3 emite mais alertas, e em particular emite alertas mesmo na **ausência** de DG anterior recente.
+
+#### GATE MARCO 1 com v3 (re-confirmado)
+
+Critério A (val ≥ 0,2897): **0,7132 ✓** (folga +42,4pp).
+Critério B (test ≥ 0,6303): **0,8556 ✓** (folga +22,5pp).
+
+#### Trade-off honesto e calibração
+
+**Trade-off assumido:** v3 perde leve agregado mas é qualitativamente melhor onde importa operacionalmente (primeiros DGs). A *Recall@0.5* mais alta também implica **mais falsos positivos** no agregado — se a Vale preferir menos alertas em deployment, basta calibrar o *threshold* acima de 0,5. O AUC-PR é insensível ao *threshold* e é a métrica que melhor compara modelos; ela mostra que v3 perde apenas 0,62pp no geral, então a curva inteira é praticamente idêntica.
+
+> 📘 **Análise SHAP do v3** (`08f_shap_v3.py`) é apresentada na subseção imediatamente seguinte — valida que a remoção da *feature* de cascata redistribuiu o peso para sinais antecipativos legítimos (e não criou outra "feature dominante" problemática).
+
+---
+
+### Análise SHAP do LightGBM v3 (`08f_shap_v3.py`)
+
+Para validar que a remoção de `horas_desde_ultimo_DG` redistribuiu o peso do modelo para *features* antecipativas legítimas — e não criou uma nova "*feature* dominante problemática" — foi executada análise SHAP do v3 sobre o test set completo (71.089 eventos, ~1,7 min via TreeSHAP). Matriz canônica: `shap_values_v3_test.npy` (18,4 MB, [71.089 × 34]).
+
+> 📘 **Configuração técnica (igual ao 08c, ajustada para v3):** ver [`notas_metodologicas.md` Seção 10](notas_metodologicas.md). **Script:** `Projeto/codigo/08f_shap_v3.py`. **Saídas:** matriz SHAP + 2 tabelas (`shap_global_v3.csv`, `shap_estratificado_v3.csv`) + 3 figuras (Fig 9c bar, Fig 9d beeswarm, Fig 10b dependence plots).
+
+#### Ranking de importância global — v3
+
+[Figura 9c — Importância global das features (SHAP) - v3](figuras/fig09c_shap_bar_v3.png)
+[Figura 9d — Distribuição dos SHAP values por feature - v3](figuras/fig09d_shap_beeswarm_v3.png)
+
+| Rank | Feature | Família | mean(\|SHAP\|) | % do peso | Era no v2 |
+|---:|---|---|---:|---:|---|
+| **1** | `qtd_alarmes_nivel_muito_alto_360min` | 6 — Regra de Negócio | 1,584 | **41,0%** | #2 (31,1%) |
+| **2** | `tipo_caminhao` | 7 — Encoding | 0,922 | **23,9%** | #4 (5,0%) |
+| **3** | `razao_alarme_7d_vs_30d_anterior` | 4 — Regimal | 0,428 | **11,1%** | #3 (8,6%) |
+| 4 | `tag_freq` | 7 — Encoding | 0,128 | 3,3% | #5 (1,7%) |
+| 5 | `mes` | 0 — Básicas | 0,081 | 2,1% | #9 (0,9%) |
+| 6 | `razao_severidade_14d_vs_60d` | 4 — Regimal | 0,076 | 2,0% | #8 (1,0%) |
+| 7 | `frota_793D_4S` | 7 — Encoding | 0,073 | 1,9% | — |
+| 8 | `taxa_DG_operador_30d` | 5 — Operador | 0,069 | 1,8% | — |
+| 9 | `frota_793D_5S` | 7 — Encoding | 0,058 | 1,5% | — |
+| 10 | `count_total_24h` | 1 — Rolling | 0,051 | 1,3% | #6 (1,1%) |
+| 11 | `horas_desde_ultimo_critico` | 2 — Recência | 0,043 | 1,1% | #7 (1,0%) |
+
+**Top 3 explicam 76,0% do peso; top 10 explicam 89,9%.** Distribuição similar ao v2 em concentração agregada (top 10 v2: 91%), mas **com composição qualitativamente diferente**: as três *features* dominantes do v3 são todas antecipativas legítimas.
+
+#### Validação da promoção — quatro perguntas centrais
+
+**1. v3 NÃO criou nova "feature dominante problemática".** A nova top 1 (`qtd_alarmes_nivel_muito_alto_360min`, 41%) é *feature* da **Família 6 (Regra de Negócio)** — conta exclusivamente alarmes nas 82 regras CMA "Muito Alto" das últimas 6 horas. É sinal **antecipativo direto** (não lê DGs passados como fazia `horas_desde_ultimo_DG` no v2). A semântica passou de "houve DG recente?" para "houve acúmulo de alarmes graves nas últimas 6 horas?" — pergunta operacionalmente acionável.
+
+**2. `horas_desde_ultimo_critico` NÃO herdou o papel da *feature* removida.** Ficou em rank #11 (1,1% do peso, vs 1,0% no v2 — praticamente inalterado). Isso confirma que a remoção foi cirúrgica: o sinal "DG anterior" no v2 era específico e não foi simplesmente transferido para a versão "alarme crítico anterior". Família 2 (Recência) ficou virtualmente neutra no v3.
+
+**3. Família 4 regimal (Família 4) ganhou peso.** `razao_alarme_7d_vs_30d_anterior` subiu de 8,6% (#3 em v2) para 11,1% (#3 em v3); `razao_severidade_14d_vs_60d` subiu de 1,0% (#8) para 2,0% (#6). Família 4 dobrou seu peso conjunto (de 9,6% para 13,1%) — coerente com a hipótese de que sem a *feature* de cascata, sinais regimais ganham importância para distinguir regime junho (CA65926) de regime jan-abr.
+
+**4. `tipo_caminhao` quase quintuplicou (5,0% → 23,9%).** Esse é o achado mais marcante e merece análise honesta:
+
+#### Achado importante e nuance — `tipo_caminhao` virou rank #2 com 24%
+
+Sem a *feature* de cascata, o modelo passou a depender mais fortemente da diferenciação entre **caminhões** (`tipo_caminhao = 1`, taxa de DG ~3,8%) e **escavadeiras** (`tipo_caminhao = 0`, taxa LeTourneau ~0,17% — H4.1 confirmada empiricamente em W5). Operacionalmente isso significa que o v3 aprendeu **base rate por tipo de equipamento** como heurística principal — predição inicial é "caminhão = mais provável DG; escavadeira = menos provável", refinada depois pelas *features* de Família 6 e 4.
+
+**Defesa metodológica:** essa é a estratégia correta dado os dados — a frota LeTourneau L 1850 realmente tem 22× menos DGs por equipamento, e ignorar essa diferença reduziria desempenho. **Não é viés operacional injusto** (o modelo não está "discriminando equipamentos sem razão"), mas é importante registrar em CM 6.1 como **observação interpretativa**: o v3 trata as duas frotas como populações estatisticamente diferentes desde o início da predição.
+
+**Implicação operacional:** em deployment, se a Vale incluir uma frota nova (não vista no treino), `tipo_caminhao` corretamente classificaria-a, mas eventual sub-frota ainda mais específica poderia precisar de calibração local. **Material para CM 6.2 (limitação L8 — composição da frota influencia base rate aprendida).**
+
+#### Análise estratificada — CA65926 vs resto do test
+
+| Rank | CA65926 (9,96% do test) | Resto do test (90,04%) |
+|---:|---|---|
+| 1 | `qtd_alarmes_muito_alto` (~40%) | `qtd_alarmes_muito_alto` (~41%) |
+| 2 | `tipo_caminhao` (~24%) | `tipo_caminhao` (~24%) |
+| 3 | `razao_alarme_7d_vs_30d` (~12%) | `razao_alarme_7d_vs_30d` (~11%) |
+
+(Detalhes completos em `shap_estratificado_v3.csv`, 50 linhas: 5 subgrupos × top 10.)
+
+**Top 3 idênticos** entre CA65926 e resto — mesma estratégia, mesmo ordenamento. Coerente com o achado do v2: o modelo não opera por "regras especiais para equipamento problemático", e sim por **distribuição de pesos diferentes** sobre as mesmas *features*. CA65926 dá levemente mais peso a `razao_alarme_7d_vs_30d` (~12% vs 11%) — coerente com a Obs 2.9 (anomalia regimal localizada captada pela Família 4).
+
+#### Síntese para o relatório — o que SHAP v3 sustenta
+
+| Pergunta | Resposta empírica do SHAP v3 |
+|---|---|
+| Modelo é cascade detector? | **Não** — top 3 (`qtd_alarmes_muito_alto`, `tipo_caminhao`, `razao_alarme_7d_vs_30d`) são todas antecipativas, somando 76% do peso |
+| Família 6 domain-specific venceu Família 1 genérica? | **Sim, ainda mais claramente que em v2** — Família 6 (1 feature) = 41% do peso vs Família 1 (15 features) = ~7% |
+| Família 4 regimal sustenta sua relevância? | **Sim e ampliada** — peso conjunto subiu de 9,6% (v2) para 13,1% (v3) |
+| Família 5 operador continua difusa (Q3 do edital)? | **Sim** — `taxa_DG_operador_30d` rank #8, `operador_freq` rank #12; sinal real mas distribuído |
+| Concentração no top 1 reduziu? | **Não em magnitude** (41% vs 39%), **mas mudou de natureza** — agora é antecipativa legítima |
+
+**Lição metodológica reforçada para CM 6.1:** a comparação SHAP v2 vs SHAP v3 demonstra que **modelos com AUC-PR similar podem ter estratégias internas radicalmente diferentes**. Sem SHAP, a substituição v2 → v3 seria invisível operacionalmente (ambos passam o GATE), mas o v3 entrega exatamente o tipo de predição que a Vale precisa (antecipação) em vez do que o v2 acabou fazendo (detecção de cascata).
 
 ---
 
@@ -666,8 +801,8 @@ A Variante v3 (sem `horas_desde_ultimo_DG`) está em execução no momento desta
 
 Esta subseção consolida as limitações metodológicas identificadas até o final de W6 que devem entrar formalmente em **CM 6.2 (Limitações)** durante a escrita do relatório em W8. Cada item é registrado com magnitude, evidência, e — quando aplicável — caminho de mitigação ou trabalho futuro associado.
 
-**L1 — `horas_desde_ultimo_DG` codifica "predição de cascata", não "predição de primeiro DG":**
-A *feature* #1 do LightGBM v2 (39% do peso global) opera em prática como detector de continuação de rajadas — não de primeiro DG. Evidência: top 10% dos eventos com maior SHAP+ dessa *feature* têm 100% DG anterior em ≤ 2h (mediana 1 minuto); apenas 1% dos primeiros DGs (sem histórico recente) são detectados. **Magnitude:** significativa — o AUC-PR de 0,8618 em test reflete majoritariamente *cascade recovery*, não *first DG prediction*. **Mitigação experimental:** treinada variante v3 sem essa *feature* (`08e_lightgbm_v2_no_cascade.py`) para quantificar trade-off; resultados pendentes. **Trabalho Futuro (CM 6.3):** deployment paralelo de v2 (alerta de cascata em curso) + v3 (alerta de primeiro DG) se v3 mostrar performance competitiva em primeiros DGs.
+**L1 — Predição de cascata em v2 (RESOLVIDA pela promoção do v3 como canônico):**
+A análise SHAP do v2 identificou que a *feature* `horas_desde_ultimo_DG` (rank #1, 39% do peso global) operava como detector de continuação de rajadas — não de primeiro DG (top 10% dos eventos com maior SHAP+ tinham 100% DG anterior em ≤ 2h; apenas 1% dos primeiros DGs detectados). Essa limitação foi **resolvida pela promoção do v3** como modelo canônico do relatório (subseção "LightGBM v3 — modelo canônico promovido"). O v3 melhora *Recall@0.5* em primeiros DGs de 4,34% para 21,06% (5× ganho) ao custo de apenas 0,62pp de AUC-PR agregado. **Limitação residual em v3:** a tarefa "primeiro DG" continua difícil (AUC-PR = 0,1964 nesse subgrupo, vs 0,8556 geral) — o problema é intrinsecamente mais difícil que predição de cascata. **Trabalho Futuro (CM 6.3):** modelo de sobrevivência Weibull AFT (em `09_sobrevivencia.py`) oferece segunda leitura do problema sem dependência de *thresholds*.
 
 **L2 — Feature `mes` introduz dependência temporal implícita:**
 O modelo aprendeu que `mes` correlaciona com taxa de DG (rank #9, 0,89% do peso) — provavelmente capturando o *drift* mai → jun (Obs 2.6) e a anomalia localizada do CA65926 em junho (Obs 2.9). Em *deployment* com `mes` fora de [1, 6] (julho/agosto/etc.), o LightGBM extrapola implicitamente — trataria `mes = 7` como "`mes >= 5,5`" (igual a junho). **Magnitude:** pequena (0,89% do peso). **Mitigação por construção:** a recomendação de **retreino *rolling* mensal** já registrada em CM 6.3 endereça a limitação — em *deployment* real, o modelo é treinado nos últimos N meses, então `mes` nunca está fora da faixa vista no treino.
@@ -687,9 +822,12 @@ Resposta empírica robusta (Obs 2.4 W5 + SHAP `operador_freq` rank #13): há sin
 **L7 — *Censoring* no target (102.602 eventos, 18,83%):**
 *Target_4h* trata eventos sem DG futuro observado como `y = 0`, o que é aproximação razoável mas não rigorosa (esses eventos poderiam ter DG após o horizonte observado). **Mitigação parcial:** o modelo de sobrevivência Weibull AFT (`09_sobrevivencia.py`, em planejamento) oferece tratamento rigoroso do *censoring* como dado adicional — segunda leitura do problema.
 
+**L8 — Composição da frota influencia base rate aprendida pelo v3 (`tipo_caminhao` = 23,9% do peso):**
+Identificada via SHAP do v3 — a *feature* `tipo_caminhao` saltou de 5,0% (no v2) para 23,9% (no v3) ao se tornar canônica. Sem `horas_desde_ultimo_DG`, o v3 passou a depender mais fortemente da diferenciação caminhões vs escavadeiras (LeTourneau L 1850 tem 22× menos DGs por equipamento — H4.1 W5). **Magnitude:** moderada. **Implicação:** o modelo aprende *base rate* por tipo desde a predição inicial. **Risco operacional:** se a Vale operar uma sub-frota específica não vista no treino, calibração local pode ser necessária — *deployment* uniforme pode subestimar/superestimar essa população. **Não é viés injusto** (a diferença existe nos dados), mas é fator a monitorar.
+
 ---
 
-*(Próximas seções a desenvolver em W6-W8: análise comparativa v2 vs v3 — pendente da execução do `08e_lightgbm_v2_no_cascade.py`; modelo de sobrevivência Weibull AFT + Isolation Forest diagnóstico (W6); Avaliação e Resultados estratificada (W7); Conclusão e Trabalhos Futuros (W8).)*
+*(Próximas seções a desenvolver em W6-W8: análise SHAP do v3 (em execução nesta sessão); modelo de sobrevivência Weibull AFT contra v3 + Isolation Forest diagnóstico (W6); Avaliação e Resultados estratificada (W7); Conclusão e Trabalhos Futuros (W8).)*
 
 ---
 
@@ -736,8 +874,9 @@ A versão do Python (3.13) está fixada em `.python-version`. Todas as dependên
 | 14 | `Projeto/codigo/08_lightgbm.py` | W5 | ✅ | LightGBM v1 com 5 variantes (A/B/C/T2/T8) e parâmetros *default* sobre `v3.parquet`. Variante A canônica para GATE MARCO 1. **Resultados:** A val=0,7523 / test=0,8566 (GATE PASS, +51,3pp / +27,6pp vs baseline). Mitigação 2 (B) e Obs 2.7 (C) **empiricamente descartadas**. Profundidade 1 (T2/T4/T8): T8 pior, T2 vs T4 indistinguíveis (ranking inverte val↔test, magnitude na faixa de ruído). Saídas: 5 modelos em `Projeto/modelos/lightgbm_v1_*.txt` + 4 tabelas (`lightgbm_v1_metricas.csv`, `lightgbm_v1_vs_baseline.csv`, `comparacao_horizontes_lightgbm.csv`, `gate_marco_1.csv`). Tempo: 17,5s. Ver `notas_metodologicas.md` Seção 8. |
 | 15 | `Projeto/codigo/08b_lightgbm_v2.py` | W6 | ✅ | **LightGBM v2 — modelo canônico do relatório.** Optuna (50 trials, TPE seed=42) + TimeSeriesSplit CV de 4 folds expandidos (Mitigação 1) + determinismo estrito (`deterministic=True` + `force_col_wise=True`). Espaço de busca: 7 hiperparâmetros (`scale_pos_weight ∈ [0,5; 3,0]` refinado após refutação da Mitigação 2). **Resultados:** AUC-PR train=0,9658 / val=0,7801 / test=0,8618 (best CV=0,8834 trial #34). Ganho sobre v1 A: val +2,78pp, test +0,52pp. **GATE MARCO 1 re-confirmado PASS.** Optuna escolheu `scale_pos_weight=0,513` — contradiz a direção da Mitigação 2 (que propunha cima para 4,65). Saídas: `Projeto/modelos/lightgbm_v2.txt` + `optuna_study_v2.pkl` + 3 tabelas (`lightgbm_v2_metricas.csv`, `lightgbm_v2_hiperparametros.csv`, `optuna_trials.csv`). Tempo: 28,7 min. Ver `notas_metodologicas.md` Seção 9. |
 | 16 | `Projeto/codigo/08c_shap_v2.py` | W6 | ✅ | **Análise SHAP do LightGBM v2** via TreeSHAP sobre os 71.089 eventos do test (~1 min). Gera matriz SHAP completa para auditoria + ranking global + estratificações (CA65926 vs resto, conhecidos vs unknown). **Top 3 features:** `horas_desde_ultimo_DG` (39,3%) / `qtd_alarmes_nivel_muito_alto_360min` (31,1%) / `razao_alarme_7d_vs_30d_anterior` (8,6%) — soma 79% do peso. **Achados:** v2 NÃO é baseline glorificado; Família 4 regimal funciona como previsto; Obs 2.11 fracamente refutada; **modelo é predição de cascata, não primeiro DG** (mini-diagnose ad-hoc revelou que top 10% SHAP+ em `horas_desde_ultimo_DG` tem 100% DG anterior em ≤2h; apenas 1% dos primeiros DGs detectados). Motivou treino de v3 (linha 17). Saídas: `Projeto/modelos/shap_values_v2_test.npy` (19 MB) + 2 tabelas + 3 figuras (9a/9b/10). Ver `notas_metodologicas.md` Seção 10. |
-| 17 | `Projeto/codigo/08e_lightgbm_v2_no_cascade.py` | W6 | 🔄 em execução | **Variante v3 sem `horas_desde_ultimo_DG`** — clone do `08b_lightgbm_v2.py` com 34 features (em vez de 35). Mesma configuração Optuna + TimeSeriesSplit CV + determinismo. **Objetivo:** quantificar trade-off "cascade prediction vs first DG prediction" via comparação estratificada em 3 subgrupos (geral / primeiro_DG / cascata). Decisão **Opção D** (deploy paralelo de v2 e v3) condicional ao resultado. Saídas planejadas: `Projeto/modelos/lightgbm_v2_no_cascade.txt` + study Optuna + 3 tabelas (`lightgbm_v2_no_cascade_metricas.csv`, `lightgbm_v2_no_cascade_hiperparametros.csv`, `v2_vs_v2_no_cascade.csv` comparativo crítico). Tempo estimado: ~30 min. |
-| 18 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Modelo de Sobrevivência (Weibull AFT principal, *fallback* Cox PH se Weibull não convergir) com biblioteca `lifelines`. Trata o *censoring* (102.602 eventos sem DG futuro observado) rigorosamente como dado adicional, oferecendo segunda leitura do problema independente de *threshold* de classificação. Saídas: `modelos/sobrevivencia.joblib` + tabela de *hazard ratios* + Fig Extra A (curva Kaplan-Meier por estado pré-evento). |
+| 17 | `Projeto/codigo/08e_lightgbm_v2_no_cascade.py` | W6 | ✅ | **LightGBM v3 — modelo canônico promovido (D-promoção, 24/05).** Clone do `08b_lightgbm_v2.py` com 34 features (sem `horas_desde_ultimo_DG`). Mesma configuração Optuna 50 *trials* + TimeSeriesSplit CV + determinismo. **Resultados:** train=0,9653 / val=0,7132 / test=0,8556 (GATE MARCO 1 PASS — folga +22,5pp em test). Trial #41 best, `scale_pos_weight=2,40`. **Comparativo decisório v2 vs v3 (test):** geral −0,62pp AUC-PR mas +7,24pp Recall; primeiro_DG +0,88pp AUC-PR e +16,72pp Recall (5× mais primeiros DGs capturados); cascata pratically equivalent. Decisão **D-promoção** (v3 substitui v2; v2 preservado como intermediário). Saídas: `Projeto/modelos/lightgbm_v2_no_cascade.txt` + `optuna_study_v2_no_cascade.pkl` + 3 tabelas (`lightgbm_v2_no_cascade_metricas.csv`, `lightgbm_v2_no_cascade_hiperparametros.csv`, `v2_vs_v2_no_cascade.csv`). Tempo: 25,7 min. Detalhe em `controle_alteracoes.md` entrada `2026-05-24 — Promoção de v3`. |
+| 18 | `Projeto/codigo/08f_shap_v3.py` | W6 | ✅ | **Análise SHAP do LightGBM v3 (canônico).** Clone funcional do `08c_shap_v2.py` aplicado sobre `lightgbm_v2_no_cascade.txt` no test completo (71.089 × 34, ~80 s). Valida que a remoção de `horas_desde_ultimo_DG` redistribuiu o peso para *features* antecipativas legítimas (não criou nova "feature dominante" problemática). Saídas: `Projeto/modelos/shap_values_v3_test.npy` (18,4 MB) + 2 tabelas (`shap_global_v3.csv`, `shap_estratificado_v3.csv`) + 3 figuras (`fig09c_shap_bar_v3.png`, `fig09d_shap_beeswarm_v3.png`, `fig10b_shap_dependence_top3_v3.png`). Resultados específicos integrados em "Análise SHAP do LightGBM v3" no rascunho. |
+| 19 | `Projeto/codigo/09_sobrevivencia.py` | W6 | 🔄 planejado | Modelo de Sobrevivência (Weibull AFT principal, *fallback* Cox PH se Weibull não convergir) com biblioteca `lifelines`, contra o v3.parquet com 34 *features* (alinhado ao v3 canônico). Trata o *censoring* (102.602 eventos sem DG futuro observado) rigorosamente como dado adicional, oferecendo segunda leitura do problema independente de *threshold* de classificação. Saídas: `modelos/sobrevivencia.joblib` + tabela de *hazard ratios* + Fig Extra A (curva Kaplan-Meier por estado pré-evento). |
 | 19 | `Projeto/codigo/11_isolation_forest.py` | W6 | 🔄 planejado | Isolation Forest diagnóstico — treinado sobre o mesmo dataset **sem usar `Is_Dont_Go`**; mede a sobreposição entre DGs reais e *score* de anomalia. Teste empírico único do Risco 3.3 (viés do *label* CMA). Saídas: `modelos/isolation_forest.joblib` + `relatorio/tabelas/if_diagnostico.csv`. |
 | 20 | `Projeto/codigo/10_evaluation.py` | W7 | 🔄 planejado | Métricas finais estratificadas (mês × frota × estado operacional × top-5 alarmes) + figuras 9-13 do relatório + análise de erro por contexto + curva *precision-recall* com limiar operacional calibrado por custo-benefício explícito. |
 

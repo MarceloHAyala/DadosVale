@@ -620,6 +620,12 @@ recovery = (shap_total_null_pos >= 0).mean()  # 1% — modelo cego sem históric
 
 Esse diagnóstico é o que motivou a decisão de treinar v3 sem essa feature (`08e_lightgbm_v2_no_cascade.py`).
 
+### Status posterior: a análise SHAP do v2 motivou a promoção do v3
+
+A *mini-diagnose* de cascata (`horas_desde_ultimo_DG` = 39% como detector de continuação, não de primeiro DG) foi a evidência empírica que motivou a decisão de treinar a Variante v3 sem essa *feature* (`08e_lightgbm_v2_no_cascade.py` — Seção 11) e, posteriormente, promovê-la a modelo canônico do relatório (D-promoção, 24/05/2026). A análise SHAP do v3 está documentada na Seção 12 — confirma que a remoção redistribuiu o peso para *features* antecipativas legítimas (Família 6 Regra de Negócio sobe para 41%, sem cascade).
+
+A análise do v2 continua relevante como **diagnóstico que motivou a decisão** e como **comparação empírica** (modelos com AUC-PR similar podem ter estratégias internas radicalmente diferentes — lição metodológica para CM 6.1).
+
 ### Quando re-rodar `08c_shap_v2.py`
 
 - Quando o modelo `lightgbm_v2.txt` mudar (re-tuning, novas features, novo split)
@@ -642,4 +648,128 @@ Cinco hipóteses metodológicas testadas em uma única análise — eficiência 
 
 ---
 
-**Última atualização:** 2026-05-24 (W6 — Seção 10 adicionada: SHAP do LightGBM v2 + mini-diagnose de cascata)
+## 11. Como o LightGBM v3 (sem `horas_desde_ultimo_DG`) é treinado (`08e_lightgbm_v2_no_cascade.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "LightGBM v3 — modelo canônico promovido".
+
+**Script:** `Projeto/codigo/08e_lightgbm_v2_no_cascade.py` (clone de `08b_lightgbm_v2.py`)
+**Comando:** `uv run python Projeto/codigo/08e_lightgbm_v2_no_cascade.py`
+**Tempo:** ~25,7 min (Optuna 25,4 min + treino final 14 s)
+
+### Entrada e saída
+
+**Entrada:**
+- `dados/features/v3.parquet` (544.885 × 58, mesmo input do v2)
+- Constante `FEATURES`: lista de 34 *features* (35 do v2 menos `horas_desde_ultimo_DG`; `horas_desde_ultimo_critico` mantida)
+
+**Saída:**
+- `modelos/lightgbm_v2_no_cascade.txt` (2,3 MB, formato texto nativo LightGBM)
+- `modelos/optuna_study_v2_no_cascade.pkl` (study completo, 50 trials)
+- `relatorio/tabelas/lightgbm_v2_no_cascade_metricas.csv`
+- `relatorio/tabelas/lightgbm_v2_no_cascade_hiperparametros.csv`
+- `relatorio/tabelas/v2_vs_v2_no_cascade.csv` — **tabela decisória** (3 subgrupos × 2 modelos × 2 métricas)
+
+### Justificativa metodológica para o nome do arquivo
+
+O nome físico do modelo é `lightgbm_v2_no_cascade.txt`, mas no relatório ele é referenciado como **v3**. Razão: o script foi criado como variante experimental do v2 (cuja análise SHAP motivou a investigação), e o nome do artefato preservou essa origem para rastreabilidade técnica. A nomenclatura "v3" no relatório reflete o status final pós-promoção (D-promoção, 24/05/2026 — registrado em `controle_alteracoes.md`).
+
+### Mudanças vs `08b_lightgbm_v2.py`
+
+| Aspecto | v2 | v3 (no_cascade) |
+|---|---|---|
+| Número de features | 35 | 34 |
+| Feature removida | — | `horas_desde_ultimo_DG` |
+| Análise comparativa pós-treino | — | Sim — função dedicada que compara v2 vs v3 em 3 subgrupos (geral, primeiro_DG, cascata) |
+| Path do modelo | `lightgbm_v2.txt` | `lightgbm_v2_no_cascade.txt` |
+| Path do study | `optuna_study_v2.pkl` | `optuna_study_v2_no_cascade.pkl` |
+| Optuna seed | 42 | 42 (mesmo, garante reprodutibilidade independente do v2) |
+| Resto da configuração | — | Idêntico (TimeSeriesSplit CV 4 *folds*, determinism, espaço de busca) |
+
+### Definição dos 3 subgrupos comparativos
+
+A função `analise_comparativa` define três subgrupos disjuntos via *masks* sobre `horas_desde_ultimo_DG` (o valor original do `v3.parquet`, **antes** da remoção da *feature* do conjunto de entrada — ela é mantida no parquet para análise, removida apenas do treino do v3):
+
+```python
+mask_cascata    = (test["horas_desde_ultimo_DG"] <= 4.0).to_numpy()
+mask_primeiro_DG = (test["horas_desde_ultimo_DG"].is_null() |
+                    (test["horas_desde_ultimo_DG"] > 24.0)).to_numpy()
+# Subgrupo intermediário (4h < x ≤ 24h) não é avaliado — caso de "cascata mais lenta",
+# escopo fora da decisão atual.
+```
+
+**Por que essa definição:**
+- **Cascata (≤ 4h):** corresponde à janela do `target_4h` — DGs que aconteceram dentro da janela onde o modelo deveria predizer.
+- **Primeiro DG (NULL ou > 24h):** eventos onde o equipamento **não teve** DG recente (1 dia inteiro sem DG anterior) — o caso operacional valioso. NULL captura equipamentos que **nunca tiveram** DG no histórico observado.
+
+### Por que `scale_pos_weight = 2,40` foi o ótimo para v3 (mas 0,513 para v2)
+
+Optuna escolheu **scale_pos_weight quase 5× maior no v3** que no v2. Interpretação metodológica:
+
+- No v2, `horas_desde_ultimo_DG` (cascade) fornecia sinal forte de fácil exploração. Não era preciso pesar positivos para cima — o modelo já recuperava cascatas com facilidade.
+- No v3, sem essa *feature*, o modelo precisa **aprender a ser mais sensível** para manter *recall*. Pesar positivos para cima funciona porque agora a tarefa é mais "honesta" (predição antecipativa, não detecção de cascata).
+
+**Implicação:** o `scale_pos_weight = 2,40` é alto, próximo do limite superior do espaço refinado [0,5; 3,0]. Mas o test AUC-PR = 0,8556 confirma que não é *overfitting* — é calibração legítima.
+
+### Lição metodológica para CM 6.1
+
+**Mesma configuração (Optuna + CV + determinism), mesmo dataset, mesmo seed — só uma *feature* removida — produz dois modelos com estratégias internas radicalmente diferentes.** A análise comparativa estratificada (3 subgrupos × 2 modelos) é o que torna a diferença visível: AUC-PR agregado quase idêntico (0,8618 vs 0,8556) esconde diferença operacional gritante (+16,72pp Recall em primeiro DG).
+
+**Padrão metodológico exportável:** ao remover uma *feature* problemática, treinar variante e comparar **em subgrupos definidos pela própria *feature* removida** é a única forma de medir o efeito real da decisão.
+
+---
+
+## 12. Como a análise SHAP do v3 é computada (`08f_shap_v3.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Análise SHAP do LightGBM v3".
+
+**Script:** `Projeto/codigo/08f_shap_v3.py` (clone funcional do `08c_shap_v2.py`)
+**Comando:** `PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/08f_shap_v3.py`
+**Tempo:** ~1,7 min (TreeSHAP 89s + restante)
+
+### Diferenças vs `08c_shap_v2.py`
+
+| Aspecto | 08c (v2) | 08f (v3) |
+|---|---|---|
+| Modelo carregado | `lightgbm_v2.txt` | `lightgbm_v2_no_cascade.txt` |
+| Número de features | 35 | 34 |
+| Sumário analítico — perguntas | 4 (baseline glorificado, Família 4, Obs 2.11, Famílias dominantes) | 4 (top 1 dominante, concentração vs v2, Família 4 subiu, herança por `horas_desde_ultimo_critico`) |
+| Saídas (figuras) | `fig09a/9b`, `fig10` | `fig09c/9d`, `fig10b` |
+| Saídas (tabelas) | `shap_global_v2.csv`, `shap_estratificado_v2.csv` | `shap_global_v3.csv`, `shap_estratificado_v3.csv` |
+| Saídas (matriz) | `shap_values_v2_test.npy` (19 MB) | `shap_values_v3_test.npy` (18,4 MB) |
+| Print do ranking | `print(df_ranking.head(15))` (polars Unicode box) | Loop explícito com formatação ASCII (evita erro cp1252 no Windows) |
+
+### Por que o encoding cp1252 era um problema
+
+A primeira execução do `08f_shap_v3.py` falhou na Etapa 4 (`UnicodeEncodeError: 'charmap' codec can't encode characters`). Causa: o Polars formata `DataFrame.head().print()` com caracteres Unicode de *box drawing* (`┌`, `─`, `│`, `┐`, etc.) que não estão no *codepage* cp1252 padrão do Windows. A matriz e o CSV já tinham sido salvos antes do crash — apenas o `print()` falhou.
+
+**Correção aplicada:** substituí `print(df_ranking.head(15))` por um loop `for row in df_ranking.head(15).iter_rows(named=True)` com formatação ASCII pura (`|` em vez de `│`). **Lição metodológica:** scripts que rodam em ambiente Windows devem evitar dependência de Unicode no `print()` ou usar `PYTHONIOENCODING=utf-8` como prefixo de comando.
+
+### Estratificações aplicadas (mesmas 5 do v2, para comparabilidade)
+
+| Subgrupo | Tamanho | Critério |
+|---|---:|---|
+| test_completo | 71.089 | todos |
+| CA65926 | 7.083 (9,96%) | TAG == "CA65926" |
+| resto_test (sem CA65926) | 64.006 (90,04%) | TAG ≠ "CA65926" |
+| categorias_conhecidas (treino) | 69.277 (97,45%) | `tag_freq > 0` AND `operador_freq > 0` |
+| categorias_unknown | 1.812 (2,55%) | `tag_freq == 0` OR `operador_freq == 0` |
+
+### Comparação SHAP v2 vs v3 (validação da promoção)
+
+| Quesito | v2 | v3 | Veredito |
+|---|---|---|---|
+| Top 1 | `horas_desde_ultimo_DG` (39,3%) | `qtd_alarmes_nivel_muito_alto_360min` (41,0%) | ✅ Substituição por feature antecipativa |
+| Top 2 | `qtd_alarmes_muito_alto` (31,1%) | `tipo_caminhao` (23,9%) | ⚠️ tipo_caminhao subiu 5x — registrado como L8 |
+| Top 3 | `razao_alarme_7d_vs_30d` (8,6%) | `razao_alarme_7d_vs_30d` (11,1%) | ✅ Família 4 subiu |
+| Top 10 acumulado | 91% | 89,9% | ✅ Concentração similar |
+| `horas_desde_ultimo_critico` | rank #7 (1,0%) | rank #11 (1,1%) | ✅ Não herdou papel da feature removida |
+| Família 6 (regra) | 31,1% | 41,0% | ✅ Domain-specific reforçada |
+| Família 4 (regimal) | 9,6% | 13,1% | ✅ Regimal reforçada |
+| Família 1 (rolling) | ~7% acumulado | ~7% acumulado | = Inalterada (continua marginal) |
+| Família 2 (recência) | 40,3% (era cascade) | 1,1% | ✅ Reduzida drasticamente (correto, era o objetivo) |
+
+**Conclusão validativa:** a remoção de `horas_desde_ultimo_DG` redistribuiu o peso para a Família 6 (Regra de Negócio, 41%) e Família 4 (Regimal, 13%), com peso adicional para `tipo_caminhao` (Família 7 Encoding) que se tornou a base rate per equipamento.
+
+---
+
+**Última atualização:** 2026-05-24 (W6 — Seção 11: 08e v3 training; Seção 12: 08f SHAP v3; D-promoção registrada)

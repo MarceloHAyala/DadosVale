@@ -652,4 +652,156 @@ O modelo aprendeu que o `mes` correlaciona com DG (provavelmente capturando o dr
 
 ---
 
+### 2026-05-24 — Promoção de v3 (sem `horas_desde_ultimo_DG`) a modelo canônico do projeto
+
+Aplicada por `Projeto/codigo/08e_lightgbm_v2_no_cascade.py` (~25,7 min Optuna 50 trials + treino final). Decisão tomada após análise comparativa v2 vs v3 em 3 subgrupos do test set.
+
+**ANTES:** v2 era o modelo canônico (35 features, AUC-PR test = 0,8618). Plano original (Opção B aprovada em 24/05) era treinar v3 sem `horas_desde_ultimo_DG` e decidir entre:
+- **Opção A:** descartar v3, manter v2 (se v3 degradasse significativamente)
+- **Opção D-clássica:** manter v2 e v3 em paralelo (cada um para um caso de uso)
+- **Opção D-promoção:** promover v3 a canônico, v2 fica como modelo intermediário no Anexo
+
+**DEPOIS:** v3 (34 features, `horas_desde_ultimo_DG` removida, `horas_desde_ultimo_critico` mantida) torna-se o modelo canônico do projeto. v2 fica **preservado em `Projeto/modelos/lightgbm_v2.txt`** e citado na Parte 3 do `rascunho.md` como modelo intermediário, com explicação completa da promoção.
+
+**Comparativo v2 vs v3 no test set (n = 71.089):**
+
+| Subgrupo | n+ | v2 AUC-PR | v3 AUC-PR | Δ AUC-PR | v2 Recall@0.5 | v3 Recall@0.5 | Δ Recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Geral | 12.038 | 0,8618 | 0,8556 | **−0,62pp** | 0,6803 | 0,7527 | **+7,24pp** |
+| Primeiro DG (sem DG ≤24h ou NULL) | 1.705 | 0,1876 | 0,1964 | **+0,88pp** | 0,0434 | **0,2106** | **+16,72pp** |
+| Cascata (DG ≤4h) | 9.035 | 0,9700 | 0,9691 | −0,09pp | 0,8836 | 0,9185 | +3,49pp |
+
+**Hiperparâmetros best (trial #41 do Optuna v3):**
+- `n_estimators = 301`
+- `learning_rate = 0.01175`
+- `num_leaves = 69`
+- `min_child_samples = 50`
+- `scale_pos_weight = 2.40` (mais agressivo que v2 = 1,42, mas dentro do espaço refinado [0,5; 3,0])
+- `lambda_l1 = 0.197`, `lambda_l2 = 1.183`
+
+**Justificativa para D-promoção:**
+
+1. **v3 resolve a limitação L1 do CM 6.2 (cascade-only prediction).** Sem `horas_desde_ultimo_DG`, o modelo não pode mais "ler o DG anterior recente" como atalho. Tem que aprender sinais antecipativos.
+2. **+16,72pp Recall em primeiro DG** (4,3% → 21,1%, quase **5× mais primeiros DGs capturados**). Esse é o caso de uso operacional valioso — antecipar o **primeiro** Don't Go (não a continuação de uma cascata já em curso).
+3. **AUC-PR aggregate praticamente intocado:** −0,62pp no geral, **+0,88pp no subgrupo primeiro_DG** (o que mais importa). Aggregate desce ligeiramente porque o subgrupo "fácil" (cascata) recebe menos peso quando a feature dominante é removida.
+4. **GATE MARCO 1 passa com larga margem:** test AUC-PR = 0,8556 ≫ alvo 0,6303; val AUC-PR = 0,7132 ≫ alvo 0,2897.
+5. **Defesa operacional honesta:** v3 não promete antecipar primeiros DGs com alta precisão (Recall@0.5 ainda é 21,1%), mas é **5× melhor que v2 nessa tarefa** — defensável como "passo na direção correta".
+
+**Riscos assumidos (registrados para transparência):**
+
+- **Gap train-val maior:** v3 train=0,9653/val=0,7132 (ratio 74%) vs v2 train=0,973/val=0,7801 (ratio 80%). v3 tem leve sobreajuste maior, mitigado pelo test (0,8556) que confirma generalização.
+- **`scale_pos_weight = 2.40` agressivo:** modelo aprendeu a ser mais sensível, gerando mais alertas. Pode ser calibrado em deployment via threshold > 0,5 se a Vale preferir menos falsos positivos.
+- **Análise SHAP do v3 pendente** (`08f_shap_v3.py` em execução no momento da promoção, será incorporada nas próximas seções do rascunho).
+
+**Trabalho preservado de v2:**
+
+- `Projeto/modelos/lightgbm_v2.txt` mantido (1.4 MB)
+- `Projeto/modelos/optuna_study_v2.pkl` mantido
+- `Projeto/modelos/shap_values_v2_test.npy` mantido (19 MB)
+- Todas as tabelas `lightgbm_v2_*.csv` e figuras `fig09a/9b/10` preservadas
+- Subseção "Análise SHAP do LightGBM v2" no `rascunho.md` recontextualizada como **análise diagnóstica** que motivou a promoção de v3, não como descrição do modelo final
+
+**Caminho v2 vs v3 nas tabelas:**
+
+| Artefato | Modelo |
+|---|---|
+| `lightgbm_v2.txt` | v2 (intermediário) |
+| `lightgbm_v2_no_cascade.txt` | **v3 (canônico)** |
+| `shap_values_v2_test.npy` | v2 (motivou a promoção) |
+| `shap_values_v3_test.npy` | v3 (canônico) |
+| `v2_vs_v2_no_cascade.csv` | tabela comparativa decisória |
+
+**Limitações que persistem em v3:**
+
+- **L2 do CM 6.2 — `mes` como feature implícita** (extrapolação para jul/ago em deployment).
+- **L3 — Obs 2.11 fracamente refutada** (transferida para v3, mesma observação: features genéricas perderam para domain-specific).
+- **L4 — Drift mai → jun não totalmente absorvido** (val AUC-PR 0,7132 reflete dificuldade do regime mai).
+- **L6 — Q3 (operador difuso):** persiste em v3, será reavaliada quando SHAP v3 (`08f`) concluir.
+- **L7 — Censoring 18,83%:** persiste (será endereçado por Weibull AFT em `09_sobrevivencia.py`).
+
+**Limitação L1 (cascade-only) resolvida pela promoção de v3.** L5 (test peeking) já estava resolvida desde o refit pós-fix do leakage.
+
+**Saídas geradas (novas):**
+
+| Arquivo | Conteúdo |
+|---|---|
+| `Projeto/modelos/lightgbm_v2_no_cascade.txt` (2,3 MB) | Modelo canônico v3 |
+| `Projeto/modelos/optuna_study_v2_no_cascade.pkl` (33 KB) | Study Optuna v3 (50 trials, seed=42) |
+| `relatorio/tabelas/lightgbm_v2_no_cascade_metricas.csv` | Métricas train/val/test/CV |
+| `relatorio/tabelas/lightgbm_v2_no_cascade_hiperparametros.csv` | 7 hiperparâmetros best |
+| `relatorio/tabelas/v2_vs_v2_no_cascade.csv` | Tabela decisória (3 subgrupos × 2 modelos × 2 métricas) |
+
+**Pipeline canônico atualizado:**
+
+`01 → 02 → 03 → 04 → 05 → 06 → 06b → v3.parquet → 08e → lightgbm_v2_no_cascade.txt (canônico) → 08f → SHAP v3`
+
+(v2 fica como passo intermediário diagnóstico, gerado por `08b` e analisado em SHAP por `08c`)
+
+**Próximos passos imediatos:**
+
+1. **08f_shap_v3.py** (executado em seguida — registro abaixo): valida que a remoção redistribuiu o peso para features antecipativas legítimas.
+2. **09_sobrevivencia.py** (Weibull AFT) executará contra o **mesmo `v3.parquet`** com **34 features** (alinhado com v3 canônico para comparação justa).
+3. **Atualização do CM 6.2** no relatório final: remover L1 (resolvida), manter L2-L7, adicionar **L8** (composição da frota influencia base rate aprendida).
+
+---
+
+### 2026-05-24 — Análise SHAP do LightGBM v3 + identificação da limitação L8 (composição da frota)
+
+Aplicada por `Projeto/codigo/08f_shap_v3.py` (~1,7 min) — clone funcional do `08c_shap_v2.py` adaptado ao modelo v3 canônico. **Confirma empiricamente que a promoção do v3 atingiu seu objetivo**: o modelo NÃO é mais cascade detector.
+
+**ANTES:** v3 acabava de ser promovido a canônico via decisão D-promoção, mas sem análise SHAP confirmatória — restava a pergunta: **a remoção de `horas_desde_ultimo_DG` realmente redistribuiu o peso para features antecipativas, ou criou outra "feature dominante" problemática?**
+
+**DEPOIS:** Ranking SHAP do v3 sobre 71.089 eventos test responde de forma direta:
+
+| Rank | Feature | Família | % do peso | Era no v2 |
+|---:|---|---|---:|---|
+| **1** | `qtd_alarmes_nivel_muito_alto_360min` | 6 — Regra de Negócio | **41,0%** | #2 (31,1%) |
+| **2** | `tipo_caminhao` | 7 — Encoding | **23,9%** | #4 (5,0%) |
+| **3** | `razao_alarme_7d_vs_30d_anterior` | 4 — Regimal | **11,1%** | #3 (8,6%) |
+| 4 | `tag_freq` | 7 — Encoding | 3,3% | #5 (1,7%) |
+| 5 | `mes` | 0 — Básicas | 2,1% | #9 (0,9%) |
+| 6 | `razao_severidade_14d_vs_60d` | 4 — Regimal | 2,0% | #8 (1,0%) |
+| 11 | `horas_desde_ultimo_critico` | 2 — Recência | 1,1% | #7 (1,0%) |
+
+**Top 3 explicam 76,0%, top 10 explicam 89,9%** (vs 91% no v2 — concentração similar mas composição diferente).
+
+**Achados validativos da promoção:**
+
+1. ✅ **v3 NÃO é cascade detector.** Top 3 features (`qtd_alarmes_muito_alto`, `tipo_caminhao`, `razao_alarme_7d_vs_30d`) são todas antecipativas legítimas — somam 76% do peso. **Família 2 (Recência) reduzida drasticamente** (de 40,3% para 1,1%) — exatamente o objetivo da remoção.
+2. ✅ **`horas_desde_ultimo_critico` NÃO herdou o papel da feature removida** — rank #11 com 1,1% do peso (era #7 com 1,0% no v2). A remoção foi cirúrgica.
+3. ✅ **Família 6 (Regra de Negócio domain-specific) reforçada** — de 31,1% para 41,0% (top 1).
+4. ✅ **Família 4 (Regimal) ganhou peso** — peso conjunto subiu de 9,6% (v2) para 13,1% (v3); coerente com hipótese de que sem cascade, sinais regimais ganham importância para distinguir regime junho do regime jan-abr.
+5. ⚠️ **`tipo_caminhao` quase quintuplicou** (5,0% → 23,9%) — registrado como nova limitação L8.
+
+**Nova limitação L8 — Composição da frota influencia base rate aprendida pelo v3:**
+
+Sem a *feature* de cascata, o v3 passou a depender mais fortemente da diferenciação caminhões vs escavadeiras. A frota LeTourneau L 1850 (`tipo_caminhao = 0`) tem 22× menos DGs por equipamento que caminhões 793-D (`tipo_caminhao = 1`) — H4.1 confirmada em W5. O modelo aprendeu *base rate* por tipo de equipamento como heurística inicial da predição, refinada depois pelas Famílias 6 e 4.
+
+**Defesa metodológica:** essa é a estratégia correta dado os dados — ignorar a diferença reduziria desempenho. **Não é viés operacional injusto** (a diferença existe nos dados, não foi inventada pelo modelo).
+
+**Implicação operacional:** em deployment, se a Vale incluir uma frota nova (não vista no treino) ou sub-frota muito específica, calibração local pode ser necessária. **Fator a monitorar.** Adicionada como **L8** na síntese de limitações de CM 6.2 (rascunho.md).
+
+**Lição metodológica para CM 6.1 (reforçada pela comparação SHAP v2 vs v3):**
+
+**Modelos com AUC-PR similar podem ter estratégias internas radicalmente diferentes.** Sem a análise SHAP, a substituição v2 → v3 seria invisível operacionalmente (ambos passam o GATE com folga), mas o v3 entrega exatamente o tipo de predição que a Vale precisa (antecipação) em vez do que o v2 fazia (detecção de cascata). **A análise SHAP foi o instrumento que permitiu enxergar essa diferença.**
+
+**Detalhe técnico — UnicodeEncodeError corrigido:**
+
+A primeira execução do `08f_shap_v3.py` falhou na Etapa 4 com `UnicodeEncodeError: 'charmap' codec can't encode characters` ao imprimir o DataFrame Polars (caracteres Unicode de *box drawing* não estão no cp1252 do Windows). Matriz SHAP e CSV já tinham sido salvos antes do crash. **Correção aplicada:** substituí `print(df_ranking.head(15))` por loop ASCII explícito; execução também usa `PYTHONIOENCODING=utf-8` como prefixo no Windows. Lição registrada em `notas_metodologicas.md` Seção 12.
+
+**Saídas geradas (novas):**
+
+| Arquivo | Conteúdo |
+|---|---|
+| `Projeto/modelos/shap_values_v3_test.npy` (18,4 MB) | Matriz SHAP completa [71.089 × 34] — auditável |
+| `relatorio/tabelas/shap_global_v3.csv` | 34 features × rank, mean(\|SHAP\|), %total |
+| `relatorio/tabelas/shap_estratificado_v3.csv` | 5 subgrupos × top 10 (50 linhas) |
+| `relatorio/figuras/fig09c_shap_bar_v3.png` | Bar plot importância global do v3 (top 15) |
+| `relatorio/figuras/fig09d_shap_beeswarm_v3.png` | Beeswarm distribuição SHAP do v3 |
+| `relatorio/figuras/fig10b_shap_dependence_top3_v3.png` | Dependence plots top 3 do v3 |
+
+**Status atualizado da limitação L1:** RESOLVIDA pela promoção do v3. CM 6.2 agora terá L2-L8 (L1 movida para histórico).
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

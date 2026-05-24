@@ -1,0 +1,51 @@
+subgrupo,n_eventos,rank,feature,mean_abs_shap,pct_total
+test_completo,71089,1,qtd_alarmes_nivel_muito_alto_360min,1.583905,41.04
+test_completo,71089,2,tipo_caminhao,0.921855,23.89
+test_completo,71089,3,razao_alarme_7d_vs_30d_anterior,0.428478,11.1
+test_completo,71089,4,tag_freq,0.127534,3.3
+test_completo,71089,5,mes,0.080504,2.09
+test_completo,71089,6,razao_severidade_14d_vs_60d,0.076431,1.98
+test_completo,71089,7,frota_793D_4S,0.073254,1.9
+test_completo,71089,8,taxa_DG_operador_30d,0.068736,1.78
+test_completo,71089,9,frota_793D_5S,0.058296,1.51
+test_completo,71089,10,count_total_24h,0.051487,1.33
+CA65926,7083,1,qtd_alarmes_nivel_muito_alto_360min,2.486354,56.06
+CA65926,7083,2,razao_alarme_7d_vs_30d_anterior,0.648545,14.62
+CA65926,7083,3,tipo_caminhao,0.4405,9.93
+CA65926,7083,4,frota_793D_4S,0.10129,2.28
+CA65926,7083,5,count_nao_critico_1h,0.088732,2.0
+CA65926,7083,6,razao_severidade_14d_vs_60d,0.072896,1.64
+CA65926,7083,7,mes,0.064842,1.46
+CA65926,7083,8,taxa_DG_operador_30d,0.060033,1.35
+CA65926,7083,9,horas_desde_ultimo_critico,0.059944,1.35
+CA65926,7083,10,tag_freq,0.041171,0.93
+resto_test (sem CA65926),64006,1,qtd_alarmes_nivel_muito_alto_360min,1.484039,39.1
+resto_test (sem CA65926),64006,2,tipo_caminhao,0.975122,25.69
+resto_test (sem CA65926),64006,3,razao_alarme_7d_vs_30d_anterior,0.404125,10.65
+resto_test (sem CA65926),64006,4,tag_freq,0.137091,3.61
+resto_test (sem CA65926),64006,5,mes,0.082237,2.17
+resto_test (sem CA65926),64006,6,razao_severidade_14d_vs_60d,0.076822,2.02
+resto_test (sem CA65926),64006,7,frota_793D_4S,0.070151,1.85
+resto_test (sem CA65926),64006,8,taxa_DG_operador_30d,0.069699,1.84
+resto_test (sem CA65926),64006,9,frota_793D_5S,0.063615,1.68
+resto_test (sem CA65926),64006,10,count_total_24h,0.054359,1.43
+categorias_conhecidas (treino),69277,1,qtd_alarmes_nivel_muito_alto_360min,1.587004,41.08
+categorias_conhecidas (treino),69277,2,tipo_caminhao,0.92874,24.04
+categorias_conhecidas (treino),69277,3,razao_alarme_7d_vs_30d_anterior,0.426401,11.04
+categorias_conhecidas (treino),69277,4,tag_freq,0.1256,3.25
+categorias_conhecidas (treino),69277,5,mes,0.07886,2.04
+categorias_conhecidas (treino),69277,6,razao_severidade_14d_vs_60d,0.077495,2.01
+categorias_conhecidas (treino),69277,7,frota_793D_4S,0.072275,1.87
+categorias_conhecidas (treino),69277,8,taxa_DG_operador_30d,0.06816,1.76
+categorias_conhecidas (treino),69277,9,frota_793D_5S,0.058932,1.53
+categorias_conhecidas (treino),69277,10,count_total_24h,0.05189,1.34
+categorias_unknown (1.812 eventos),1812,1,qtd_alarmes_nivel_muito_alto_360min,1.465432,39.61
+categorias_unknown (1.812 eventos),1812,2,tipo_caminhao,0.658622,17.8
+categorias_unknown (1.812 eventos),1812,3,razao_alarme_7d_vs_30d_anterior,0.507872,13.73
+categorias_unknown (1.812 eventos),1812,4,tag_freq,0.201484,5.45
+categorias_unknown (1.812 eventos),1812,5,mes,0.143353,3.88
+categorias_unknown (1.812 eventos),1812,6,frota_793D_4S,0.110664,2.99
+categorias_unknown (1.812 eventos),1812,7,taxa_DG_operador_30d,0.090757,2.45
+categorias_unknown (1.812 eventos),1812,8,operador_freq,0.081034,2.19
+categorias_unknown (1.812 eventos),1812,9,horas_desde_ultimo_critico,0.039406,1.07
+categorias_unknown (1.812 eventos),1812,10,count_total_24h,0.03607,0.98
