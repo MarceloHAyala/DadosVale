@@ -1,0 +1,5 @@
+contamination,TN_nao_DG_predito_normal,FP_nao_DG_predito_anomalia,FN_DG_predito_normal,TP_DG_predito_anomalia,obs_FP_pode_ser_DG_perdido_CMA
+0.01,65793,70,4584,642,FP baixa proporcao -> CMA captura a maioria das anomalias
+0.03,65113,750,3843,1383,FP baixa proporcao -> CMA captura a maioria das anomalias
+0.05,64243,1620,3274,1952,FP baixa proporcao -> CMA captura a maioria das anomalias
+0.1,61657,4206,2321,2905,FP baixa proporcao -> CMA captura a maioria das anomalias

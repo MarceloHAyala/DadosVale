@@ -804,4 +804,253 @@ A primeira execução do `08f_shap_v3.py` falhou na Etapa 4 com `UnicodeEncodeEr
 
 ---
 
+### 2026-05-25 — Modelo de Sobrevivência (Weibull AFT) como segunda leitura do problema
+
+Aplicada por `Projeto/codigo/09_sobrevivencia.py` (~56 s). Implementa modelo de sobrevivência paramétrico com fallback automático para Cox PH semi-paramétrico — segunda leitura do problema "antecipar DG" independente do LightGBM v3 canônico. Trata o *censoring* rigorosamente (parte essencial do CM 4.3 "dois modelos bem feitos > cinco superficiais") e fornece tabela de *hazard ratios* com IC 95% como ferramenta de interpretabilidade complementar ao SHAP.
+
+**ANTES:** apenas LightGBM v3 disponível como modelo. Não havia tratamento rigoroso do *censoring* (102.602 eventos em treino sem DG futuro observado eram tratados como `target_4h = 0`, aproximação razoável mas não rigorosa). Sem ferramenta de interpretabilidade direta com IC 95% e p-valor por *feature*.
+
+**DEPOIS:** Weibull AFT canônico (segundo modelo do relatório), validado contra o mesmo `v3.parquet` que o LightGBM v3:
+
+**Configuração metodológica (3 decisões aprovadas pelo usuário em 24/05):**
+
+1. **Filtro de correlação > 0,9 antes do fit** — Cox/Weibull são sensíveis a multicolinearidade (diferente do LightGBM que tolera). 6 *features* da Família 1 (rolling counts) foram removidas:
+   - `count_critico_2h` (corr=0,944 com `count_critico_1h`)
+   - `count_critico_8h` (corr=0,944 com `count_critico_4h`)
+   - `count_nao_critico_2h` (corr=0,942 com `count_nao_critico_1h`)
+   - `count_total_1h` (corr=0,912 com `count_nao_critico_1h`)
+   - `count_nao_critico_8h` (corr=0,931 com `count_nao_critico_4h`)
+   - `count_total_4h` (corr=0,926 com `count_total_2h`)
+2. **Fallback automático para Cox PH se Weibull AFT não convergir OU C-index val < 0,6** — implementado e testado.
+3. **34 features alinhadas com v3 canônico** (sem `horas_desde_ultimo_DG`) — após filtro de correlação restam **31 features** para o fit (28 numéricas + 5 dummies de `estado_pre_evento` + 1 dummy de `turno`, menos os 6 removidos por correlação).
+
+**Imputação de NaN (Cox/Weibull não toleram NaN, diferente do LightGBM):**
+
+Diagnóstico revelou:
+- `razao_alarme_7d_vs_30d_anterior`: **404.795 nulls (74%)** — feature só computada quando há lookback de 30 dias
+- `razao_severidade_14d_vs_60d`: 1.232 nulls
+- `taxa_DG_operador_30d`: 704 nulls
+- `horas_desde_ultimo_critico`: 1.071 nulls
+
+Estratégia de imputação (fitada no treino, transparente, salva no artefato `.joblib` para reprodutibilidade):
+- `razao_*` → **1,0** (neutro — mesma taxa que baseline; semântica preservada)
+- `taxa_DG_operador_30d` → **0,0197** (mediana do treino)
+- `horas_desde_ultimo_critico` → **2.177,4 h** (max do treino — *worst case*)
+
+**Construção (T, E) por evento (~544k eventos):**
+
+- Para cada evento, `join_asof` forward por TAG encontra o próximo DG da mesma TAG (estritamente > Data_Evento)
+- Se existe → T = horas até próximo DG, E = 1 (evento observado)
+- Se não existe → T = horas até última observação da TAG, E = 0 (*censurado*)
+- 163 eventos com T = 0 (último evento de cada TAG sem DG futuro) descartados
+
+**Distribuição de E por split (insight metodológico importante):**
+
+| Split | Total | E=1 (observado) | E=0 (censurado) | % censurado |
+|---|---:|---:|---:|---:|
+| train | 394.863 | 331.619 | 63.244 | 16,0% |
+| val | 78.816 | 60.159 | 18.657 | 23,7% |
+| **test** | **71.043** | **30.184** | **40.859** | **57,5%** |
+
+**% censurado no test é muito maior que no train** — porque test é jun/2025 (último mês observado), então muitos eventos não têm DG futuro dentro da janela observacional. Isso afeta a comparabilidade entre splits e é fator a registrar em CM 6.2.
+
+**Resultados finais (Weibull AFT canônico — fallback não acionado):**
+
+| Métrica | train | val | test |
+|---|---:|---:|---:|
+| C-index | 0,7517 | 0,7097 | **0,7444** |
+| AUC-PR(target_4h) | 0,6487 | 0,4126 | **0,3153** |
+
+**Tempo total:** 56 s (37 s para fit do Weibull + 19 s para avaliação/figuras).
+
+**Bug corrigido durante execução:**
+
+Na primeira tentativa, o cálculo do C-index para Weibull AFT estava negativando `predict_expectation` indevidamente (resíduo de adaptação a partir do código do Cox PH, que usa `-partial_hazard`). Isso resultou em C-index val = 0,29 (quase perfeitamente inverso de 0,71), fazendo o fallback automático disparar erroneamente. **Correção:** `predict_expectation` já retorna o tempo esperado de sobrevivência (alto = sobrevida longa), formato exato que `concordance_index` espera. Sem negativação. Após o fix, Weibull AFT C-index val = 0,7097 (passa o threshold de 0,6) e o fallback corretamente não é acionado.
+
+**Top 10 hazard ratios (Time Ratios — TR < 1 = maior risco, TR > 1 = menor risco):**
+
+| # | Covariate | TR | IC 95% | p | Interpretação |
+|---:|---|---:|---|---:|---|
+| 1 | `tag_freq` | 1,432 | [1,41–1,45] | 0,0000 | TAGs frequentes têm sobrevida 43% maior |
+| 2 | **`tipo_caminhao`** | **0,038** | [0,04–0,04] | 0,0000 | Caminhões têm sobrevida ~3% da escavadeira (efeito massivo) |
+| 4 | **`frota_793D_5S`** | **0,169** | [0,16–0,18] | 0,0000 | Frota 5S tem sobrevida 17% da baseline |
+| 5 | `frota_793D_2S` | 0,357 | [0,34–0,38] | 0,0000 | |
+| 6 | `frota_793D_4S` | 0,450 | [0,43–0,47] | 0,0000 | |
+| 7 | `frota_793D_3S` | 0,364 | [0,34–0,39] | 0,0000 | |
+| 8 | `operador_freq` | 1,124 | [1,11–1,14] | 0,0000 | Operadores conhecidos: sobrevida +12% |
+| 9 | `valor_disponivel` | 1,224 | [1,20–1,25] | 0,0000 | Sensor disponível: sobrevida +22% |
+| 10 | `count_critico_24h` | 0,844 | [0,83–0,86] | 0,0000 | Acúmulo críticos 24h: sobrevida −16% |
+
+**Concordância forte com SHAP v3** (validação cruzada entre duas técnicas independentes — material para CM 5.3):
+
+- `tipo_caminhao` é dominante em ambos (SHAP v3 #2 com 23,9%; Weibull TR=0,038 = maior risco isolado)
+- Família 4 regimal (`razao_alarme_7d_vs_30d_anterior`) aparece como significativa em ambos
+- `tag_freq` no top em ambos
+- `operador_freq` aparece com sinal real mas modesto em ambos (Q3 do edital: operador correlaciona difusamente)
+
+**Discordância interpretativa importante:**
+
+LightGBM v3 (SHAP) dá peso massivo a `qtd_alarmes_muito_alto_360min` (41%) — é a feature top 1. Weibull AFT NÃO destaca essa feature no top 10 dos p-valores. Possível explicação: o Weibull AFT modela o tempo até o próximo DG (não importando se em 4h ou 4 dias), enquanto LightGBM v3 foca em "DG em 4h" especificamente. **Features que predizem DG iminente (Família 6) brilham no LightGBM; features que predizem qualquer DG futuro (frota, tipo, operador) brilham no Weibull.** Material para CM 6.1.
+
+**Comparação operacional v3 vs Weibull AFT:**
+
+| Característica | LightGBM v3 | Weibull AFT |
+|---|---|---|
+| AUC-PR test (target_4h) | **0,8556** | 0,3153 |
+| C-index test | — (não aplicável) | 0,7444 |
+| Tratamento de censoring | Aproximação (target=0) | **Rigoroso** |
+| Interpretabilidade | SHAP (post-hoc) | HR + IC 95% + p-valor (intrínseca) |
+| Horizonte | Específico (4h) | **Qualquer t** |
+| Custo computacional | 25,7 min (Optuna) | **0,9 min** |
+| Caso de uso | Alerta operacional 4h | Análise estratégica/manutenção planejada |
+
+**Conclusão metodológica:** Weibull AFT NÃO substitui LightGBM v3 (claramente inferior em classificação 4h, como esperado pela natureza das duas técnicas). Mas oferece:
+
+1. **Tratamento estatístico rigoroso** do censoring (essencial dado 57,5% de censoring no test)
+2. **Interpretabilidade direta** com IC 95% e p-valor (sem post-hoc tipo SHAP)
+3. **Predição em qualquer horizonte** (não apenas 4h) — `predict_survival_function(times=[t])` para qualquer t
+4. **Validação cruzada do v3** — features importantes coincidem (tipo_caminhao, frota, regimal)
+
+**Saídas geradas:**
+
+| Arquivo | Conteúdo |
+|---|---|
+| `Projeto/modelos/sobrevivencia.joblib` (14,5 MB) | Modelo Weibull + scaler + imputação + lista de features |
+| `relatorio/tabelas/sobrevivencia_metricas.csv` | C-index/AUC-PR/n por split |
+| `relatorio/tabelas/sobrevivencia_hazard_ratios.csv` | 32 features × TR, IC 95%, p-valor, interpretação |
+| `relatorio/tabelas/sobrevivencia_features_excluidas_corr.csv` | 6 features removidas pelo filtro |
+| `relatorio/figuras/figExA_kaplan_meier_por_frota.png` | KM por frota (5 curvas, até 168h = 7 dias) |
+
+**Nova entrada de CM 5.3 (validação cruzada por dois métodos independentes):**
+
+A concordância dos top features entre SHAP do v3 e hazard ratios do Weibull AFT (especialmente `tipo_caminhao`, frotas, e Família 4 regimal) é evidência forte de **validade** das estratégias aprendidas. Dois métodos com fundamentação matemática completamente diferente (TreeSHAP via Shapley values em gradient boosting vs maximum likelihood em modelo paramétrico AFT) chegam às mesmas variáveis-chave.
+
+**Limitações específicas do Weibull AFT (a entrar em CM 6.2):**
+
+- AUC-PR(4h) significativamente abaixo do LightGBM v3 — não é o modelo adequado para alerta operacional de curto prazo
+- Distribuição de censoring muito diferente entre train (16%) e test (57,5%) — sugere que a janela de observação curta (6 meses) é insuficiente para survival robusto no test
+- Filtro de correlação removeu 6 features Família 1 — perda de granularidade temporal fina
+
+---
+
+### 2026-05-25 — Diagnóstico do Risco 3.3 via Isolation Forest (viés do label CMA)
+
+Aplicada por `Projeto/codigo/11_isolation_forest.py` (~10,8 s). Teste empírico único de uma limitação metodológica conhecida: o rótulo `Is_Dont_Go` é gerado por regras CMA (82 regras "Muito Alto"). Modelos supervisionados (LightGBM v3, Weibull AFT) poderiam estar aprendendo a **replicar** essas regras, não a antecipar anomalias mecânicas reais. **Isolation Forest é treinado SEM o rótulo** — se as anomalias detectadas coincidem com DGs reais, o rótulo é validado; se não, há viés.
+
+**ANTES:** Risco 3.3 (`PLANEJAMENTO.md` linha 1002+) era hipotético — sem evidência empírica de que o rótulo CMA captura anomalias mecânicas reais vs apenas dispara regras de negócio. Os altos AUC-PR de v3 (0,8556) e Weibull AFT (C-index 0,7444) poderiam estar mascarando "modelo aprende as regras CMA, não a mecânica subjacente".
+
+**DEPOIS:** Isolation Forest treinado em 394.971 eventos de train **sem usar Is_Dont_Go**, com:
+- Mesmas 34 features do v3 canônico (alinhamento direto para comparabilidade)
+- 200 árvores, `random_state=42`
+- StandardScaler em todas as features (consistência com 09_sobrevivencia)
+- Imputação NaN igual ao 09 (`razao_*`→1,0; `taxa_DG_operador_30d`→0,0197; `horas_desde_ultimo_critico`→2.177,4 h)
+
+**Achado central — AUC-ROC do anomaly_score vs Is_Dont_Go por split:**
+
+| Split | n | n_DG | Prevalência | AUC-ROC |
+|---|---:|---:|---:|---:|
+| train | 394.971 | 13.456 | 3,41% | 0,5753 |
+| val | 78.825 | 1.280 | 1,62% | 0,5979 |
+| **test** | **71.089** | **5.226** | **7,35%** | **0,8603** |
+
+**Padrão estranho:** train e val ~0,58 (quase aleatório), test 0,86 (forte). Hipótese imediata: o sinal de test é dirigido pela anomalia dominante do CA65926 (Obs 2.9 — 82,2% dos DGs de junho vêm desse único equipamento).
+
+**Validação da hipótese — AUC-ROC estratificado por CA65926 no test:**
+
+| Subgrupo | n | n_DG | AUC-ROC |
+|---|---:|---:|---:|
+| Test completo | 71.089 | 5.226 | 0,8603 |
+| **CA65926 apenas** | **7.083** | **4.298** | **0,8969** |
+| **Test sem CA65926** | **64.006** | **928** | **0,5409** |
+
+**Confirmação dramática.** O sinal forte do test é **completamente dirigido** pelo CA65926:
+- CA65926 representa 10% dos eventos e 82,2% dos DGs no test
+- Isolation Forest detecta o CA65926 isoladamente com AUC=0,90 (sinal real e forte)
+- Sem CA65926, a sobreposição IF-CMA cai para AUC=0,54 (quase aleatória)
+
+**Adição metodológica (mesmo dia): AUC-ROC por TAG no test (análise estrutural completa).**
+
+A análise CA65926 vs resto foi um teste de hipótese ad-hoc. Para uma leitura *estrutural* (não baseada em suspeita prévia), foi computado AUC-ROC para **cada uma das 30 TAGs presentes no test set** (4 não computáveis por terem zero DGs ou eventos). Resultado:
+
+| Top 5 (sinal forte ≥ 0,75) | n | n_DG | prev_DG | AUC | Comentário |
+|---|---:|---:|---:|---:|---|
+| PE3797 | 9.690 | 1 | 0,01% | 0,9263 | LeTourneau, sinal questionável (n_DG=1) |
+| PE3795 | 5.013 | 3 | 0,06% | 0,9254 | LeTourneau, sinal questionável (n_DG=3) |
+| **CA65926** | **7.083** | **4.298** | **60,68%** | **0,8969** | **Sinal real, equipamento dominante** |
+| CA65932 | 584 | 24 | 4,11% | 0,8367 | Sinal real, sample modesto |
+| CA65924 | 1.097 | 25 | 2,28% | 0,7915 | **Caso paradigma de W4 — confirma assinatura anômala** |
+
+| Estatística | Valor |
+|---|---:|
+| AUC mediana entre 26 TAGs válidas | **0,6060** |
+| AUC média | 0,6377 |
+| TAGs com AUC ≥ 0,75 (sinal forte) | **5 de 26** |
+| TAGs com AUC < 0,55 (~aleatório) | **8 de 26** |
+| AUC mínimo (CA65931) | 0,3510 |
+
+**Leituras críticas:**
+
+1. **Mediana 0,61 vs Agregado 0,86 — agregado é enganoso.** A média ponderada pelo número de eventos faz o CA65926 (10% dos eventos, 82% dos DGs) dominar o agregado. A mediana por TAG é uma medida mais honesta do sinal **típico** em deployment, onde cada equipamento opera com sua própria base rate.
+
+2. **Apenas 5 TAGs têm sinal forte** — e dessas, 2 (PE3797, PE3795) têm tão poucos DGs (1 e 3) que o AUC alto é provavelmente artefato amostral. **De fato, apenas 3 TAGs têm sinal forte E sample significativo: CA65926, CA65932, CA65924.**
+
+3. **Validação independente do W4 (caso paradigma CA65924):** o IF, sem ver o rótulo, identifica o CA65924 como anômalo (AUC=0,79). Isso valida que a investigação de W4 acertou em escolher esse equipamento como paradigma da Obs 2.3.
+
+4. **8 TAGs com AUC < 0,55** — para mais de 30% dos equipamentos válidos, o IF é essencialmente aleatório. **O rótulo CMA nesses equipamentos pode estar capturando eventos sem assinatura estatística distintiva** — confirma o Risco 3.3 nesse regime.
+
+5. **Lição metodológica:** a estratificação **por TAG** é mais rigorosa que estratificação **por uma TAG suspeita** (CA65926 vs resto). Em projetos futuros, **começar pela distribuição estrutural** evita o viés de confirmação de hipóteses ad-hoc.
+
+**Curva Precision/Recall por contamination (test completo):**
+
+| contamination | threshold | n_anom | Precision | Recall | F1 |
+|---:|---:|---:|---:|---:|---:|
+| 0,01 | 0,0646 | 712 | 0,9017 | 0,1228 | 0,2162 |
+| 0,03 | 0,0402 | 2.133 | 0,6484 | 0,2646 | 0,3759 |
+| 0,05 | 0,0284 | 3.572 | 0,5465 | 0,3735 | 0,4437 |
+| 0,10 | 0,0168 | 7.111 | 0,4085 | 0,5559 | 0,4709 |
+
+Lift vs prevalência (7,35%): no threshold 0,10, precisão 0,4085 = **5,56× random**. No threshold 0,01, precisão 0,90 = **12,2× random**. Sinal forte agregado (mas, dado o achado estratificado, esse sinal é majoritariamente do CA65926).
+
+**Veredito honesto e nuançado — Risco 3.3 PARCIALMENTE MITIGADO (assimétrico por regime):**
+
+- ✅ **Para anomalias dominantes (CA65926-like):** Isolation Forest e CMA concordam fortemente (AUC=0,90). Para falhas mecânicas progressivas com assinatura clara, o rótulo CMA captura anomalia estatisticamente real. **Risco 3.3 mitigado nesse regime.**
+- ⚠️ **Para DGs distribuídos (90% dos equipamentos):** Isolation Forest e CMA discordam (AUC=0,54). O rótulo CMA pode estar capturando eventos que não têm assinatura estatística distintiva no espaço de features atual. **Risco 3.3 parcialmente confirmado nesse regime.**
+
+**Implicação operacional crítica (a entrar em CM 6.2 como nova limitação L10):**
+
+A performance alta do LightGBM v3 em test (AUC-PR=0,8556) é **largamente dirigida pela detecção do CA65926**. Em regime sem anomalia dominante (cenário esperado em deployment futuro), a performance pode degradar significativamente — possivelmente para perto do baseline original (AUC-PR train ~ AUC-PR val), já que o sinal "extra" em test vinha de um único equipamento.
+
+**Recomendações (CM 6.3 — Trabalhos Futuros):**
+
+1. **Monitorar performance estratificada por equipamento em produção:** dashboard que separa AUC-PR por TAG para detectar dependência de equipamentos específicos.
+2. **Retreino *rolling* mensal:** já registrado em CM 6.3 (entrada 2026-05-22), agora reforçado por este achado — captura mudanças de regime mecânico.
+3. **Estender janela de observação:** com mais meses de dados, regimes anômalos como CA65926 ficariam balanceados por outros equipamentos problemáticos potenciais, reduzindo viés do test set atual.
+4. **Investigar os FPs do IF como possíveis "DGs perdidos pelo CMA":** eventos com `anomaly_score` alto que NÃO foram rotulados como DG podem ser falhas mecânicas que escaparam às regras CMA. Análise manual de uma amostra desses casos validaria/refutaria essa leitura inversa do Risco 3.3.
+
+**Coerência com outros achados do projeto:**
+
+Este resultado é **internamente consistente** com:
+- **SHAP do v3:** `tipo_caminhao` (24%) e `frota_793D_5S` no top — modelo aprende que "essa equipamento/frota costuma falhar de jeito específico"
+- **Hazard ratios do Weibull AFT:** `tipo_caminhao` TR=0,038, `frota_793D_5S` TR=0,169 — mesmo padrão
+- **Obs 2.9 (W5):** anomalia RFB em jun é falha localizada do CA65926 (98,5% dos eventos RFB-Active vêm desse único equipamento)
+- **Drift jun (CA65926):** já registrado como L4 — recapitulado agora pelo IF
+
+Em todos os ângulos analisados, o **regime de teste é atípico** — dominado por uma única falha mecânica em curso. **Material direto para CM 6.1 (Insights Não Óbvios):** três técnicas independentes (LightGBM SHAP, Weibull AFT hazard ratios, Isolation Forest não-supervisionado) convergem para a mesma conclusão sobre a natureza do test set.
+
+**Saídas geradas:**
+
+| Arquivo | Conteúdo |
+|---|---|
+| `Projeto/modelos/isolation_forest.joblib` (0,58 MB) | Modelo + scaler + imputação + lista de features |
+| `relatorio/tabelas/if_auc_roc.csv` | AUC-ROC por split (train/val/test) |
+| `relatorio/tabelas/if_auc_estratificado_test.csv` | AUC-ROC em 3 subgrupos do test (CA65926 vs resto) |
+| `relatorio/tabelas/if_auc_por_tag.csv` | **AUC-ROC por TAG (30 TAGs, 26 com AUC válido)** — análise estrutural completa |
+| `relatorio/tabelas/if_diagnostico.csv` | P/R/F1 por contamination (4 thresholds) |
+| `relatorio/tabelas/if_contingencia.csv` | 4 tabelas 2×2 (TN/FP/FN/TP) concatenadas |
+| `relatorio/figuras/figExD_isolation_forest_diagnostico.png` | **4 painéis:** P/R curve, histograma scores, AUC-ROC por split, **AUC-ROC por TAG (barras coloridas por log10(n_DG))** |
+
+**Nova limitação registrada (L10 em CM 6.2):** "Dependência da performance do v3 do regime CA65926" — explicada acima.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

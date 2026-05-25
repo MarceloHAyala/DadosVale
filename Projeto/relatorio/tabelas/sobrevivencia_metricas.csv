@@ -1,0 +1,4 @@
+split,n_total,n_eventos_observados,n_pos_target_4h,c_index,auc_pr_target_4h
+train,394863,331619,132877,0.7517,0.6487
+val,78816,60159,14481,0.7097,0.4126
+test,71043,30184,12038,0.7444,0.3153

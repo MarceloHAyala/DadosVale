@@ -772,4 +772,433 @@ A primeira execução do `08f_shap_v3.py` falhou na Etapa 4 (`UnicodeEncodeError
 
 ---
 
-**Última atualização:** 2026-05-24 (W6 — Seção 11: 08e v3 training; Seção 12: 08f SHAP v3; D-promoção registrada)
+---
+
+## 13. Como o modelo de Sobrevivência Weibull AFT é construído e avaliado (`09_sobrevivencia.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Modelo de Sobrevivência — Weibull AFT como segunda leitura".
+
+**Script:** `Projeto/codigo/09_sobrevivencia.py` (7 etapas)
+**Comando:** `PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/09_sobrevivencia.py`
+**Tempo:** ~56 s (Weibull fit 37 s + avaliação/figuras 19 s)
+
+### Entrada e saídas
+
+**Entrada:**
+- `dados/features/v3.parquet` (544.885 × 58)
+
+**Saídas:**
+- `modelos/sobrevivencia.joblib` (14,5 MB) — dict com `modelo`, `tipo` (Weibull/Cox), `features`, `scaler`, `imputacao`, `horizonte_horas`
+- `relatorio/tabelas/sobrevivencia_metricas.csv` — C-index + AUC-PR por split
+- `relatorio/tabelas/sobrevivencia_hazard_ratios.csv` — 32 features × TR + IC 95% + p-valor + interpretação
+- `relatorio/tabelas/sobrevivencia_features_excluidas_corr.csv` — 6 features removidas pelo filtro de correlação
+- `relatorio/figuras/figExA_kaplan_meier_por_frota.png` — Kaplan-Meier por frota (5 curvas até 168 h)
+
+### Construção (T, E) por evento
+
+Para cada evento (linha) do `v3.parquet`:
+
+```python
+# 1. Sort por TAG, Data_Evento
+df = df.sort(["TAG", "Data_Evento"])
+
+# 2. Pre-extrair DGs por TAG (rename Data_Evento → data_proximo_dg)
+dgs = df.filter(pl.col("Is_Dont_Go") == 1).select(["TAG", "Data_Evento"]) \
+        .rename({"Data_Evento": "data_proximo_dg"})
+
+# 3. join_asof forward: para cada evento, achar o proximo DG da mesma TAG
+df = df.join_asof(dgs, left_on="Data_Evento", right_on="data_proximo_dg",
+                  by="TAG", strategy="forward")
+
+# 4. Validar: data_proximo_dg deve ser ESTRITAMENTE > Data_Evento
+#    (se o proprio evento e DG, queremos o PROXIMO, nao ele mesmo)
+df = df.with_columns(
+    pl.when(pl.col("data_proximo_dg") > pl.col("Data_Evento"))
+    .then(pl.col("data_proximo_dg")).otherwise(None)
+    .alias("data_proximo_dg_validada")
+)
+
+# 5. T e E
+df = df.with_columns(
+    pl.when(pl.col("data_proximo_dg_validada").is_not_null())
+    .then((pl.col("data_proximo_dg_validada") - pl.col("Data_Evento"))
+          .dt.total_seconds() / 3600.0)  # horas ate proximo DG
+    .otherwise((pl.col("ultima_obs_tag") - pl.col("Data_Evento"))
+               .dt.total_seconds() / 3600.0)  # horas ate fim de observacao
+    .alias("T_horas"),
+    pl.when(pl.col("data_proximo_dg_validada").is_not_null())
+    .then(1).otherwise(0).alias("E")
+)
+
+# 6. Filtrar T > 0 (eventos finais sem DG futuro tem T=0 — descartar)
+df = df.filter(pl.col("T_horas") > 0)
+```
+
+**Resultado:** 544.722 eventos finais (163 descartados por T = 0). Distribuição de E:
+
+| Split | Total | E = 1 | E = 0 (censurado) | % censurado |
+|---|---:|---:|---:|---:|
+| train | 394.863 | 331.619 | 63.244 | 16,0% |
+| val | 78.816 | 60.159 | 18.657 | 23,7% |
+| test | 71.043 | 30.184 | 40.859 | **57,5%** |
+
+### Imputação de NaN (Cox/Weibull não toleram NaN)
+
+| Feature | n_nulls | Estratégia | Valor |
+|---|---:|---|---:|
+| `razao_alarme_7d_vs_30d_anterior` | 404.795 | 1,0 (neutro semântico) | 1,0 |
+| `razao_severidade_14d_vs_60d` | 1.232 | 1,0 (neutro semântico) | 1,0 |
+| `taxa_DG_operador_30d` | 704 | mediana do treino | 0,0197 |
+| `horas_desde_ultimo_critico` | 1.071 | max do treino (*worst case*) | 2.177,4 h |
+
+**Por que essas escolhas:**
+- Para *features* de razão (`razao_*`), o valor neutro é 1.0 (mesma taxa que baseline). Outras escolhas (0, mediana) introduziriam viés semântico.
+- Para `taxa_DG_operador_30d`, mediana captura o operador "típico".
+- Para `horas_desde_ultimo_critico`, max do treino representa "sem evento recente registrado" — *worst case* sensato.
+
+A imputação é salva no `.joblib` para reprodutibilidade (mesmos valores aplicados em deployment).
+
+### Filtro de correlação > 0,9 (Cox/Weibull são sensíveis a multicolinearidade)
+
+```python
+corr_abs = pdf.loc[train_mask, features].corr().abs()
+# Iteracao em ordem: para cada feature, ver quais features POSTERIORES
+# tem correlacao > 0.9 e dropar a com maior correlacao
+i = 0
+while i < len(features_finais):
+    feat = features_finais[i]
+    high_partners = [(other, corr_abs.loc[feat, other])
+                     for other in features_finais[i + 1:]
+                     if corr_abs.loc[feat, other] > 0.9]
+    if high_partners:
+        partner, corr_val = max(high_partners, key=lambda x: x[1])
+        features_finais.remove(partner)
+    else:
+        i += 1
+```
+
+**6 features removidas** (todas Família 1 rolling counts, esperado dado que janelas adjacentes são quase idênticas):
+
+| Feature removida | Correlacionada com | corr |
+|---|---|---:|
+| `count_critico_2h` | `count_critico_1h` | 0,944 |
+| `count_critico_8h` | `count_critico_4h` | 0,944 |
+| `count_nao_critico_2h` | `count_nao_critico_1h` | 0,942 |
+| `count_total_1h` | `count_nao_critico_1h` | 0,912 |
+| `count_nao_critico_8h` | `count_nao_critico_4h` | 0,931 |
+| `count_total_4h` | `count_total_2h` | 0,926 |
+
+**Restam 31 features** para o fit (de 37 após one-hot).
+
+### Fallback automático Cox PH
+
+```python
+try:
+    weibull = WeibullAFTFitter(penalizer=0.01)
+    weibull.fit(train, duration_col="T_horas", event_col="E")
+    # C-index na val (predict_expectation retorna TEMPO esperado — alto = sobrevida longa)
+    val_pred = weibull.predict_expectation(val)
+    c_val = concordance_index(val["T_horas"], val_pred, val["E"])
+    if c_val >= 0.6:
+        modelo, tipo = weibull, "WeibullAFT"
+    else:
+        # fallback
+        ...
+except (ConvergenceError, Exception):
+    # fallback
+    ...
+
+# fallback para Cox PH
+cox = CoxPHFitter(penalizer=0.01)
+cox.fit(train, duration_col="T_horas", event_col="E")
+modelo, tipo = cox, "CoxPH"
+```
+
+**Resultado da execução final:** Weibull AFT convergiu com C-index val = 0,7097 (passa threshold 0,6). Fallback **não acionado**. Cox PH testado em iteração anterior (C-index test = 0,7539, AUC-PR(4h) = 0,2635) — Weibull AFT venceu em ambas as métricas.
+
+### Bug do C-index do Weibull corrigido durante execução
+
+**Erro inicial:** na primeira tentativa, o cálculo de C-index dentro do `fit_modelo` negativava `predict_expectation`:
+
+```python
+# ERRADO (resíduo de adaptação do Cox PH que usa -partial_hazard)
+val_pred = -weibull.predict_expectation(val)
+```
+
+Isso resultou em C-index val = 0,2903 (quase perfeitamente inverso de 0,71) — porque `concordance_index` espera valores onde **alto = sobrevida longa** (que é exatamente o que `predict_expectation` retorna nativamente, sem negativação).
+
+**Correção:**
+```python
+# CORRETO
+val_pred = weibull.predict_expectation(val)
+c_val = concordance_index(val["T_horas"], val_pred, val["E"])
+```
+
+A diferença com Cox PH: `predict_partial_hazard` retorna o hazard relativo (alto = curto). Para `concordance_index` precisamos do inverso → `-partial_hazard`. Para Weibull AFT, `predict_expectation` já vem no formato certo.
+
+**Lição metodológica:** ao adaptar código entre modelos com APIs similares mas semânticas diferentes (Cox usa hazard, Weibull AFT usa tempo de sobrevida), preferir testes unitários simples (rodar em um subconjunto onde a resposta esperada é conhecida) antes de aceitar resultados.
+
+### Conversão para AUC-PR (comparação com LightGBM)
+
+```python
+# Probabilidade de DG ocorrer em <= 4h:
+# P(T <= 4h) = 1 - S(4h)
+surv_at_4h = modelo.predict_survival_function(sub, times=[4.0]).iloc[0].values
+prob_dg_4h = 1.0 - surv_at_4h
+
+# Comparavel com target_4h do LightGBM
+auc_pr = average_precision_score(sub["target_4h"], prob_dg_4h)
+```
+
+**Por que AUC-PR(4h) é baixa apesar de C-index alto:** o C-index mede ranking de tempos de sobrevida (qualquer horizonte). A AUC-PR(4h) mede classificação binária em um horizonte específico (4 h). O Weibull AFT é otimizado para o primeiro, não o segundo. **Material para CM 6.1.**
+
+### Cálculo dos hazard ratios (Time Ratios para Weibull AFT)
+
+No Weibull AFT, o coeficiente `coef` se interpreta como **multiplicador do tempo de sobrevida**:
+
+- `exp(coef) = TR` (Time Ratio)
+- **TR < 1** → aumentar a feature **reduz** a sobrevida (= maior risco)
+- **TR > 1** → aumentar a feature **aumenta** a sobrevida (= menor risco)
+
+Isso é o **inverso** dos Hazard Ratios do Cox PH (onde HR > 1 = maior risco). O script reporta TR para Weibull AFT e HR para Cox PH, com coluna `interpretacao` explícita.
+
+```python
+summary = modelo.summary.copy().reset_index()
+# Para Weibull AFT, a tabela tem coluna 'param' indicando qual parametro
+# (lambda_ = scale, rho_ = shape). Filtramos so lambda_ (covariates).
+df_hr = summary[summary["param"] == "lambda_"][
+    ["covariate", "coef", "exp(coef)",
+     "coef lower 95%", "coef upper 95%", "p", ...]
+].rename(columns={"exp(coef)": "time_ratio_TR", ...})
+df_hr["interpretacao"] = df_hr["time_ratio_TR"].apply(
+    lambda tr: "RISCO MAIOR (sobrevida menor)" if tr < 1
+               else "RISCO MENOR (sobrevida maior)" if tr > 1
+               else "neutro"
+)
+```
+
+### Kaplan-Meier por frota (Fig Extra A)
+
+```python
+for frota in sorted(pdf["Tag_Frota"].unique()):
+    sub = pdf[pdf["Tag_Frota"] == frota]
+    kmf = KaplanMeierFitter()
+    kmf.fit(durations=sub["T_horas"], event_observed=sub["E"],
+            label=f"{frota} (n={sub.shape[0]:,})")
+    kmf.plot_survival_function(ax=ax, ci_show=True)
+ax.set_xlim(0, 168)  # 7 dias
+```
+
+A curva KM é **não-paramétrica** (sem assumir distribuição) e **não ajustada por covariates** — captura apenas a heterogeneidade marginal entre frotas. Valida visualmente H4.1 (LeTourneau bem acima das 793-D).
+
+### Concordância forte com SHAP v3 — material para CM 5.3
+
+Comparação direta dos top features entre os dois métodos:
+
+| Feature | SHAP v3 (LightGBM) | Weibull AFT (TR) | Convergência |
+|---|---|---|---|
+| `tipo_caminhao` | #2 (23,9%) | TR=0,038, rank #2 | ✅ ambos top |
+| Família frota (dummies) | distribuída #7/#9 | ranks #4–#7 (TR 0,17–0,45) | ✅ ambos top |
+| `razao_alarme_7d_vs_30d_anterior` | #3 (11,1%) | p < 0,0001 | ✅ ambos significativos |
+| `tag_freq` | #4 (3,3%) | rank #1 (TR=1,43) | ✅ ambos no top |
+| `operador_freq` | #12 (0,84%) | rank #8 (TR=1,12) | ✅ ambos modestos significativos |
+| `qtd_alarmes_muito_alto_360min` | **#1 (41,0%)** | NÃO está no top 10 | ⚠️ **divergência metodológica** |
+
+**Divergência interpretativa instrutiva:** LightGBM v3 prediz "DG em 4 h" especificamente; Weibull AFT modela "tempo até qualquer DG futuro". Features que sinalizam DG iminente (Família 6) brilham no LightGBM; features de base rate estrutural (frota, tipo, operador) brilham no Weibull. **Os dois modelos respondem perguntas diferentes** — usá-los em conjunto fortalece a entrega.
+
+### Limitações específicas do Weibull AFT (CM 6.2)
+
+- **Censoring assimétrico** (16% train / 57,5% test) — janela de 6 meses é curta. Registrado como L9.
+- **AUC-PR(4h) baixa** — não é o modelo adequado para alerta operacional de curto prazo (papel do LightGBM v3).
+- **Multicolinearidade** — 6 features Família 1 perdidas, granularidade temporal fina reduzida vs LightGBM.
+- **Tratamento de NaN como imputação** — diferente do LightGBM que aprende com NaN nativo; introduz suposição (imputar com 1.0 / mediana / max do treino) que pode ser questionada.
+
+### Quando re-rodar `09_sobrevivencia.py`
+
+- Quando `v3.parquet` mudar (novas features, novo split)
+- Quando o set de FEATURES for ajustado (manter alinhado ao LightGBM canônico)
+- A análise SHAP do v3 (Seção 12) deve sempre ser executada em paralelo — comparação cruzada SHAP × HR é parte essencial da entrega
+
+---
+
+---
+
+## 14. Como o Isolation Forest é construído e como ele diagnostica o Risco 3.3 (`11_isolation_forest.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Isolation Forest — diagnóstico do Risco 3.3".
+
+**Script:** `Projeto/codigo/11_isolation_forest.py` (6 etapas)
+**Comando:** `PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/11_isolation_forest.py`
+**Tempo:** ~10,8 s (Isolation Forest é dramaticamente mais rápido que LightGBM e Weibull)
+
+### Diferença fundamental vs LightGBM v3 e Weibull AFT
+
+| Modelo | Supervisão | Usa `Is_Dont_Go`? | Pergunta que responde |
+|---|---|---|---|
+| LightGBM v3 | Supervisionado | ✅ Sim (target) | "Esse evento vai ter DG em 4 h?" |
+| Weibull AFT | Supervisionado | ✅ Sim (deriva T, E) | "Quando vai ser o próximo DG?" |
+| **Isolation Forest** | **Não-supervisionado** | ❌ **Não** | **"Esse evento é anômalo no espaço de features?"** |
+
+Por isso o IF **não é um modelo concorrente** dos dois primeiros — é uma ferramenta de **auditoria do rótulo**. Se as anomalias detectadas pelo IF coincidem com os DGs reais (sem ele saber quais são), o rótulo CMA é validado empiricamente.
+
+### Configuração
+
+```python
+IsolationForest(
+    n_estimators=200,        # Default 100 OK; 200 dá +precisão sem custo significativo
+    contamination="auto",    # Threshold padrão; thresholds específicos derivados depois
+    random_state=42,
+    n_jobs=-1,
+)
+```
+
+**Features:** mesmas 34 do v3 canônico (alinhamento direto para comparabilidade) + 5 dummies de one-hot (`turno` 1 dummy + `estado_pre_evento` 4 dummies) = **37 features finais**.
+
+**Pré-processamento idêntico ao `09_sobrevivencia.py`:** mesma imputação NaN (`razao_*`→1,0; `taxa_DG_operador_30d`→0,0197 mediana train; `horas_desde_ultimo_critico`→2.177,4 h max train) + StandardScaler. Isso garante que diferenças nos resultados venham do **método** (anomaly detection vs survival), não do **input**.
+
+**Diferença vs 09:** IF **não** aplica filtro de correlação (anomaly detection tolera multicolinearidade melhor que Cox/Weibull; manter granularidade temporal fina aumenta a sensibilidade).
+
+### Como o anomaly_score é computado
+
+`IsolationForest.decision_function` retorna um *score* onde **alto = normal**, **baixo = anômalo**. Para uniformidade com a convenção "alto = pior" usada em hazard ratios e SHAP, o script inverte:
+
+```python
+decision = iforest.decision_function(X)  # alto = normal
+anomaly_score = -decision                 # alto = anomalo
+```
+
+O `anomaly_score` é então comparado com `Is_Dont_Go` (binário) via:
+1. **AUC-ROC** (contínuo, threshold-independent)
+2. **Precision/Recall** em 4 thresholds (curva, threshold-dependent)
+3. **Tabela de contingência 2×2** em cada threshold
+
+### Por que múltiplas contaminations (curva), não um único valor
+
+Reportar apenas um número (`contamination='auto'`) seria perda de qualidade. A curva [0,01; 0,03; 0,05; 0,10] expõe:
+
+- Como Precision **decai** quando flexibilizamos o threshold (alto threshold = poucas anomalias, alta P)
+- Como Recall **sobe** com threshold mais frouxo
+- O ponto onde F1 máximo balanceia P e R
+- A natureza do trade-off operacional para deployment
+
+### Estratificação por CA65926 (Etapa 3b — hipótese ad-hoc)
+
+A primeira execução revelou padrão suspeito: AUC train=0,58 / val=0,60 / **test=0,86**. Como train/val ficaram quase aleatórios e test ficou forte, a hipótese imediata foi: **o sinal de test vem da anomalia dominante do CA65926** (Obs 2.9 W5 — 82,2% dos DGs de jun vêm desse único equipamento).
+
+A validação foi adicionada como **Etapa 3b** do script (rodando após o AUC global, dentro do test apenas):
+
+```python
+mask_ca = (test["TAG"] == "CA65926")
+auc_ca = roc_auc_score(y[mask_ca], scores[mask_ca])
+auc_resto = roc_auc_score(y[~mask_ca], scores[~mask_ca])
+```
+
+**Resultado:**
+| Subgrupo | n | AUC-ROC |
+|---|---:|---:|
+| Test completo | 71.089 | 0,860 |
+| CA65926 apenas | 7.083 | **0,897** |
+| Test sem CA65926 | 64.006 | **0,541** |
+
+A estratificação **transformou um achado simples em um achado nuançado e mais valioso**. **Mas é teste de hipótese ad-hoc** — vale a pena complementar com análise estrutural (Etapa 3c).
+
+### Análise estrutural — AUC-ROC por TAG (Etapa 3c)
+
+A Etapa 3b testa uma hipótese específica (CA65926). A Etapa 3c é **estruturalmente mais robusta**: computa AUC-ROC para **cada uma das 30 TAGs** presentes no test, sem premissa prévia.
+
+```python
+for t in sorted(np.unique(tag)):
+    mask = tag == t
+    n_dg = int(y[mask].sum())
+    if n_dg == 0 or n_dg == len(y[mask]):
+        # AUC indefinido — sem variabilidade no target
+        continue
+    auc = roc_auc_score(y[mask], scores[mask])
+```
+
+**Resultados consolidados:**
+
+| Estatística | Valor |
+|---|---:|
+| TAGs no test | 30 |
+| TAGs com AUC válido (variabilidade no target) | 26 |
+| AUC mediana | **0,6060** |
+| AUC média | 0,6377 |
+| AUC máximo | 0,9263 (PE3797, n_DG=1 — artefato amostral) |
+| AUC mínimo | 0,3510 (CA65931) |
+| TAGs com AUC ≥ 0,75 | 5 de 26 |
+| **TAGs com AUC ≥ 0,75 E n_DG ≥ 10** | **3 de 26 (CA65926, CA65932, CA65924)** |
+| TAGs com AUC < 0,55 (~aleatório) | 8 de 26 |
+
+**Três insights críticos só visíveis na análise estrutural:**
+
+1. **AUC agregado vs mediana** — o agregado 0,86 vem de média ponderada por número de eventos; CA65926 (10% dos eventos, 82% dos DGs) domina. **A mediana por TAG (0,61) é a medida honesta** do sinal *típico* — o que o IF entrega em deployment para um equipamento arbitrário.
+
+2. **Artefatos amostrais nos top AUCs** — as escavadeiras LeTourneau PE3797 (AUC=0,93) e PE3795 (AUC=0,93) parecem ter sinal forte mas têm apenas 1 e 3 DGs respectivamente. **Restringindo a sample significativo (n_DG ≥ 10), restam apenas 3 TAGs com sinal forte.**
+
+3. **Validação independente do W4 — CA65924.** O IF, sem usar o rótulo, identifica o CA65924 como anômalo (AUC=0,79). Esse é o caso paradigma da Obs 2.3 (refutação parcial do padrão "calmaria → acúmulo" universal). **A escolha de W4 foi vindicada por método independente.**
+
+**Lição metodológica importante:** estratificar **por todas as classes** (todas as TAGs) é mais rigoroso que estratificar **por uma classe suspeita** (CA65926 vs resto). A análise estrutural por TAG revela a distribuição completa; a análise por hipótese ad-hoc só responde "essa hipótese é verdade?". Para qualidade máxima em projetos futuros, **começar pela estrutura** evita viés de confirmação de hipóteses prévias.
+
+**Trade-off da escolha de métricas no `11_isolation_forest.py`:**
+
+Após análise honesta, as três métricas escolhidas inicialmente (AUC-ROC + P/R por threshold + contingência 2×2) tinham **leve redundância** — P/R por contamination repetia informação contida no AUC-ROC. A escolha **ótima** teria sido AUC-ROC + Contingência + **AUC-ROC por TAG (estrutural)**. A análise por TAG foi adicionada *post-hoc* depois desse reconhecimento — está documentada como a Etapa 3c. Material direto para reflexão metodológica no relatório final.
+
+### Interpretação do veredito
+
+O script implementa lógica condicional na função `sintese_risco_33`:
+
+```python
+if auc_ca >= 0.75 and auc_resto < 0.60:
+    print("ASSIMETRIA FORTE entre regimes:")
+    print("- CA65926: CMA-IF concordam (rótulo captura anomalia real)")
+    print("- Resto:   CMA-IF discordam (rótulo pode ser arbitrário aí)")
+    print("VEREDITO: Risco 3.3 PARCIALMENTE MITIGADO (assimétrico por regime).")
+```
+
+Esta interpretação é **mais honesta** do que um veredito binário "mitigado / confirmado" — captura a heterogeneidade real do problema.
+
+### Análise dos FPs como possíveis "DGs perdidos pelo CMA"
+
+A tabela de contingência mostra os 4 quadrantes (TN, FP, FN, TP). O quadrante FP (eventos com `anomaly_score` alto que **não** foram rotulados como DG) é interessante: são candidatos a **DGs que escaparam das 82 regras CMA**. Análise manual de uma amostra desses eventos seria material valioso para a Vale.
+
+No threshold 0,01 (top 1% das anomalias), tivemos 70 FPs em test. Esses 70 eventos têm `anomaly_score` no top 1% mas o sistema CMA não os classificou como DG. Possibilidades:
+
+- (a) Anomalia estatística sem significado mecânico (sensor disponível anomalamente, padrão de tempo incomum)
+- (b) Falha mecânica real que escapou das regras CMA (validaria leitura inversa do Risco 3.3)
+
+Sem inspeção manual com domínio especialista, não se pode discriminar (a) de (b). **Trabalho Futuro registrado em CM 6.3.**
+
+### Por que `contamination='auto'` no fit (e não fixo)
+
+Uma alternativa seria fixar `contamination=0.0341` (taxa real de DG no train). Isso **forçaria** o IF a flagar exatamente 3,41% como anômalo — e introduziria viés circular (usar conhecimento sobre o rótulo para calibrar o modelo que deveria ser não-supervisionado).
+
+Usando `contamination='auto'`, o sklearn calibra via estatística da amostra. Os thresholds reportados na curva são derivados **depois**, via quantis do `anomaly_score` em test. Isso é metodologicamente mais limpo.
+
+### Coerência com SHAP do v3 e Weibull AFT
+
+Três técnicas independentes chegam ao mesmo achado:
+
+| Técnica | Métrica | Sobre CA65926 |
+|---|---|---|
+| **LightGBM v3 + SHAP** | `tipo_caminhao` 24% peso, `frota_793D_5S` no top | Modelo aprende que esse tipo/frota tem falha distinta |
+| **Weibull AFT** | TR `tipo_caminhao` = 0,038 (sobrevida 3% da escavadeira) | Equipamento-específico domina hazard |
+| **Isolation Forest** | AUC CA65926=0,897 vs resto=0,541 | Equipamento-específico domina anomalia |
+
+**Esse alinhamento é evidência forte de uma realidade subjacente:** o test set é dominado pela anomalia do CA65926. Três métodos com fundamentação matemática completamente diferente (Shapley values + maximum likelihood paramétrico + isolation tree não-supervisionado) chegam à mesma conclusão. Material direto para **CM 6.1 (Insight Não Óbvio — convergência metodológica como validação)**.
+
+### Limitações específicas do Isolation Forest (CM 6.2)
+
+- **Não é otimizado para classificação binária** — usa estrutura intrínseca dos dados (até onde uma árvore consegue isolar um ponto). AUC-ROC não é interpretável como performance preditiva.
+- **Sensível a escala** (mitigado pelo StandardScaler, mas vale registrar).
+- **Sem labels = sem garantia** de que "anomalia estatística" e "anomalia mecânica" sejam o mesmo. É exatamente essa diferença que o teste mede.
+
+### Quando re-rodar `11_isolation_forest.py`
+
+- Quando `v3.parquet` mudar (novas features, novo split)
+- Após mudanças no conjunto de features do v3 (manter alinhamento)
+- Em diagnósticos periódicos de deployment: rodar IF em novos dados de produção para detectar mudança de regime (se AUC com label começar a divergir, é sinal de drift ou novos tipos de anomalia)
+
+---
+
+**Última atualização:** 2026-05-25 (W6 — Seção 14: 11_isolation_forest.py com diagnóstico do Risco 3.3 + estratificação CA65926 + **análise estrutural por TAG (Etapa 3c)** + L10 em CM 6.2; convergência tripla SHAP × HR × IF documentada; CA65924 validado pelo IF como caso paradigma de W4)

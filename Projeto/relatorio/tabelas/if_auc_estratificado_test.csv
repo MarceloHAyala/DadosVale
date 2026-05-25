@@ -1,0 +1,4 @@
+subgrupo,n_eventos,n_DG,prevalencia_DG,auc_roc
+test_completo,71089,5226,0.0735,0.8603
+CA65926_apenas,7083,4298,0.6068,0.8969
+test_sem_CA65926,64006,928,0.0145,0.5409

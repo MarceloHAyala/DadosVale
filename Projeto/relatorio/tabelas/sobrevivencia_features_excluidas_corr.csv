@@ -1,0 +1,7 @@
+feature_removida,correlacionada_com,correlacao_abs
+count_critico_2h,count_critico_1h,0.9439
+count_critico_8h,count_critico_4h,0.9439
+count_nao_critico_2h,count_nao_critico_1h,0.9421
+count_total_1h,count_nao_critico_1h,0.9125
+count_nao_critico_8h,count_nao_critico_4h,0.9312
+count_total_4h,count_total_2h,0.9258
