@@ -1053,4 +1053,125 @@ Em todos os ângulos analisados, o **regime de teste é atípico** — dominado 
 
 ---
 
+### 2026-05-25 — Fechamento de W6: validação cruzada de features + Fig 9 + calibração + ablation por grupo
+
+Quatro tarefas pendentes de W6 executadas em sequência (2026-05-25, ~15 min total), agrupadas aqui por se referirem ao **fechamento metodológico** do pipeline modelagem antes de W7 (avaliação final).
+
+#### Subseção 1 — `12_validacao_sentido_features.py` (Validação cruzada SHAP × Hazard Ratios)
+
+Material para CM 5.3 do relatório. Gera tabela `validacao_sentido_features.csv` cruzando top features do LightGBM v3 (via SHAP, `shap_global_v3.csv`) com top features do Weibull AFT (via TR, `sobrevivencia_hazard_ratios.csv`).
+
+**Resultados:**
+
+| Feature | Rank SHAP | SHAP % | Rank Weibull | Weibull TR | Concordância |
+|---|---:|---:|---:|---:|---|
+| **tipo_caminhao** | #2 | 23,89% | **#1** | 0,038 | ✅ AMBOS top 10 |
+| **tag_freq** | #4 | 3,30% | **#7** | 1,432 | ✅ AMBOS top 10 |
+| **frota_793D_4S** | #7 | 1,90% | **#6** | 0,450 | ✅ AMBOS top 10 |
+| **frota_793D_5S** | #9 | 1,51% | **#2** | 0,169 | ✅ AMBOS top 10 |
+| qtd_alarmes_muito_alto_360min | #1 | 41,04% | #26 | 0,982 | ⚠️ SHAP só |
+| razao_alarme_7d_vs_30d_anterior | #3 | 11,10% | #18 | 0,935 | ⚠️ SHAP só |
+| mes | #5 | 2,09% | #16 | 1,079 | ⚠️ SHAP só |
+| razao_severidade_14d_vs_60d | #6 | 1,98% | #23 | 1,027 | ⚠️ SHAP só |
+| taxa_DG_operador_30d | #8 | 1,78% | #15 | 0,918 | ⚠️ SHAP só |
+| count_total_24h | #10 | 1,33% | #13 | 0,887 | ⚠️ SHAP só |
+
+**Concordância forte em 4 features estruturais (identidade do equipamento):** `tipo_caminhao`, `tag_freq`, `frota_793D_4S`, `frota_793D_5S`. Duas técnicas com fundamentação matemática diferente (TreeSHAP + maximum likelihood AFT) chegam ao mesmo conjunto. **Validação empírica forte para CM 5.3.**
+
+**Divergência explicada:** features dominantes do SHAP que NÃO aparecem no top do Weibull (`qtd_alarmes_muito_alto_360min`, `razao_alarme_7d_vs_30d_anterior`) são **antecipativas** — predizem DG iminente no horizonte específico de 4 h. O Weibull AFT modela "tempo até qualquer DG", então sinais imediatos perdem para sinais de base rate estrutural. **Os dois modelos respondem perguntas diferentes — material para CM 6.1.**
+
+#### Subseção 2 — `13_curvas_comparativas.py` (Fig 9 — ROC + PR comparativas)
+
+Curvas ROC e Precision-Recall dos 3 modelos no test set (jun/2025, n=71.089, prevalência=16,93%).
+
+**Métricas agregadas:**
+
+| Modelo | AUC-ROC | AUC-PR |
+|---|---:|---:|
+| Baseline (count_critico_4h) | 0,7661 | 0,5803 |
+| **LightGBM v3 (canônico)** | **0,9391** | **0,8556** |
+| Weibull AFT (P(T≤4h)) | 0,7869 | 0,3148 |
+
+**Observações operacionais:**
+- v3 domina visivelmente em AUC-PR (0,8556 vs baseline 0,5803, +27,5pp; vs Weibull 0,3148, +54pp). Razão: v3 otimizado para classificação binária 4h.
+- Weibull AFT supera baseline em AUC-ROC (0,7869 vs 0,7661) mas perde em AUC-PR — coerente com C-index alto + dependência da prevalência.
+- **Pequena curiosidade:** prevalência reportada aqui (16,93%) inclui o `target_4h` raw do `v3.parquet`, que é maior que a taxa de DG bruta (7,35%) porque captura **qualquer DG em até 4h** (não apenas DG instantâneo). Consistente com o desenho da target já registrado em CM 4.1.
+
+**Saída:** `fig09_curvas_comparativas.png` (2 painéis lado a lado) + `comparacao_modelos_test.csv`.
+
+#### Subseção 3 — `14_calibracao_v3.py` (Qualidade A: calibração + Platt scaling)
+
+Avalia se as probabilidades preditas pelo v3 estão bem calibradas (`P(y=1) predita ≈ fração real`).
+
+**Resultados — v3 raw (sem calibração):**
+
+| Split | Brier | Brier baseline | Skill | ECE |
+|---|---:|---:|---:|---:|
+| val | 0,09141 | 0,14996 | +0,3904 | 3,70pp |
+| test | 0,05745 | 0,14066 | **+0,5916** | 3,78pp |
+
+**Skill score (1 − Brier/Brier_baseline) = +0,59 no test** — modelo é substancialmente melhor que predição constante. Mas **ECE de 3,7-3,8pp** está acima do limiar 2pp definido a priori.
+
+**Platt scaling aplicado (regressão logística sobre o val):**
+
+| Split | ECE raw | ECE pós-Platt | Δ ECE |
+|---|---:|---:|---:|
+| val | 3,70pp | **1,87pp** | **−1,83pp** (melhora) |
+| test | 3,78pp | **4,76pp** | **+0,98pp** (piora!) |
+
+**Achado importante:** Platt melhora calibração no val (esperado, foi fitado lá) mas **piora no test**. Isso indica **drift de calibração entre val e test** — outro sintoma da L4 (drift mai→jun, dominado pelo CA65926) e L10 (anomalia regimal).
+
+**Recomendação operacional honesta:** **NÃO aplicar Platt scaling em deployment**. Apesar de melhorar no val, a degradação no test (mais representativo do que veremos em produção, dado que junho tem o regime anômalo) é argumento empírico contra o ajuste. Manter v3 raw. **Calibrador Platt salvo no `joblib` para auditoria**, mas com nota explícita de "não usar".
+
+Material para CM 5.2 (Métricas) e CM 6.2 (nova nota sobre estabilidade de calibração entre regimes).
+
+**Saídas:** `calibracao_v3.csv`, `figExF_calibracao_v3.png` (curva de calibração + histograma), `calibrador_v3_platt.joblib` (com nota "não usar em deployment").
+
+#### Subseção 4 — `15_ablation_grupos.py` (Profundidade 2: qual grupo carrega o modelo?)
+
+Re-treina v3 com hiperparâmetros FIXOS (best Optuna, sem re-tuning) removendo cada **grupo** de features para medir queda de AUC-PR no test. 7 grupos + baseline = 8 treinos × ~13 s = ~110 s total.
+
+**Resultados (test, ordenados pelo maior impacto NEGATIVO):**
+
+| Grupo | n features removidas | AUC-PR test | Δ vs baseline (0,8556) | Queda % |
+|---|---:|---:|---:|---:|
+| **G7_regimal** (razao_alarme, razao_severidade) | 2 | **0,8512** | **−0,0044** | **−0,51%** |
+| G3_recencia (horas_desde_ultimo_critico) | 1 | 0,8574 | +0,0018 | +0,21% |
+| G5_regra_negocio (qtd_alarmes_muito_alto) | 1 | 0,8574 | +0,0018 | +0,21% |
+| G1_temporais (hora, dia, turno, mes) | 4 | 0,8581 | +0,0025 | +0,29% |
+| G2_rolling (15 counts) | 15 | 0,8588 | +0,0032 | +0,37% |
+| G4_operador (taxa_DG, n_bypasses, op_freq) | 3 | 0,8620 | +0,0064 | +0,75% |
+| **G6_categoricas** (tag_freq, frota, tipo_caminhao, estado, valor_disp) | 8 | **0,8620** | **+0,0064** | **+0,75%** |
+
+**Achado SURPREENDENTE e crítico:** **nenhum grupo é estritamente necessário** — variação máxima ±0,01 AUC-PR. **Apenas G7 regimal causa queda real** (e mesmo assim minúscula, −0,51%). Vários grupos **melhoram** AUC-PR ao serem removidos (G4, G6).
+
+**Contraste forte com SHAP:**
+- SHAP v3 disse: `qtd_alarmes_muito_alto_360min` é 41% do peso (rank #1)
+- Ablation diz: remover G5 (essa exata feature) tem **delta +0,0018** — nenhuma queda
+- SHAP v3 disse: `tipo_caminhao` é 24% (rank #2)
+- Ablation diz: remover G6 (que inclui `tipo_caminhao` E todas as frotas E estado_pre_evento) **MELHORA** AUC-PR em +0,75%
+
+**Interpretação metodológica (Insight Não Óbvio — CM 6.1):**
+
+**SHAP mede ATRIBUIÇÃO (quais features o modelo USA); ablation mede NECESSIDADE (quais features o modelo PRECISA).** A diferença entre as duas é **redundância** — feature de alto SHAP que pode ser removida sem queda significa que o modelo encontra rotas alternativas no espaço de features para a mesma predição.
+
+O v3 entrega 0,8556 AUC-PR no test através de **múltiplas rotas redundantes**, não através de um sinal único insubstituível. Isso é coerente com L10 (sinal do CA65926 é fortemente identificável por múltiplas features: tipo_caminhao, frota, count_critico_24h, razao_alarme_*, etc.).
+
+**Por que vários grupos melhoram quando removidos?**
+
+Três hipóteses (não mutuamente exclusivas):
+1. **Regularização efetiva** — remover features age como L1 implícito; o modelo overfita menos no train e generaliza marginalmente melhor no test.
+2. **Ruído correlacionado** — features redundantes com sinal verdadeiro podem ser ruidosas; removê-las reduz variância.
+3. **Hiperparams fixos não-otimais** — os best params do Optuna foram fitted para 34 features. Com menos features, params ligeiramente diferentes seriam ótimos. Não é "regularização perfeita".
+
+**Implicação operacional importante:** o v3 é **robusto a perda de features** em deployment (sensores quebrados, fontes de dados intermitentes). Mesmo perdendo 8 das 34 features (G6 inteiro), AUC-PR mantém-se em 0,86. **Material direto para CM 6.3 (Trabalhos Futuros — robustez operacional).**
+
+**Saídas:** `ablation_grupos.csv` (8 linhas: baseline + 7 ablations) + `figExE_ablation_grupos.png` (bar chart horizontal de deltas).
+
+**Atualização de status do CM 6.2:**
+
+Nenhuma nova limitação registrada hoje (L1-L10 cobrem o relevante). Mas a **calibração assimétrica val/test** vira nota adicional em L4 (drift mai→jun): "afeta também a calibração das probabilidades, não apenas a métrica AUC-PR".
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

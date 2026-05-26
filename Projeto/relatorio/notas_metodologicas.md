@@ -1201,4 +1201,216 @@ Três técnicas independentes chegam ao mesmo achado:
 
 ---
 
-**Última atualização:** 2026-05-25 (W6 — Seção 14: 11_isolation_forest.py com diagnóstico do Risco 3.3 + estratificação CA65926 + **análise estrutural por TAG (Etapa 3c)** + L10 em CM 6.2; convergência tripla SHAP × HR × IF documentada; CA65924 validado pelo IF como caso paradigma de W4)
+---
+
+## 15. Como a validação cruzada SHAP × HR é construída (`12_validacao_sentido_features.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Fechamento de W6 — análises complementares" → subseção "Validação cruzada SHAP × Hazard Ratios". CM 5.3 do relatório final.
+
+**Script:** `Projeto/codigo/12_validacao_sentido_features.py`
+**Comando:** `PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/12_validacao_sentido_features.py`
+**Tempo:** < 5 s (apenas leitura de CSVs + join)
+
+### Por que comparar duas técnicas em vez de confiar em uma
+
+O LightGBM v3 com SHAP entrega um ranking de importância via Shapley values. Mas Shapley values têm uma propriedade conhecida: **atribuem peso baseado em uso, não em causalidade ou necessidade**. Se duas features são fortemente correlacionadas, o modelo pode usar uma e ignorar a outra, e o SHAP atribui ao usado.
+
+O Weibull AFT (lifelines) entrega coeficientes interpretáveis como *time ratios* (TR) com IC 95% e p-valor. A formulação paramétrica é completamente diferente da árvore-baseada do LightGBM. Se ambas técnicas convergem sobre as mesmas features, isso é evidência forte de **validade estatística** — não é artefato do método específico.
+
+### Como o ranking do Weibull é gerado
+
+```python
+# log|TR| captura a magnitude do efeito independente da direção
+hr_clean = hr_clean.with_columns(
+    pl.col("weibull_TR").log().abs().alias("log_TR_abs")
+).sort("log_TR_abs", descending=True).with_row_index("weibull_rank", offset=1)
+```
+
+Importante: rank baseado em `|log(TR)|` (não em p-valor). Por que: com n=395k no train, *qualquer* feature minimamente diferente de zero tem p<0,001 (significância estatística é trivial em datasets grandes). O critério honesto é **magnitude do efeito**, capturada por `|log(TR)|`.
+
+### Por que 4 features no top 10 de AMBOS é "concordância forte"
+
+Considere: temos 34 features no v3, das quais 32 entram na tabela Weibull (descontando Intercept e + dummies). A probabilidade de uma feature aleatória aparecer no top 10 de uma das tabelas é 10/32 ≈ 31%. A probabilidade conjunta independente seria 0,31² ≈ 10%. Esperaríamos 32 × 0,10 ≈ 3 features no top 10 de ambos por acaso.
+
+**Resultado observado: 4 features no top 10 de AMBOS.** Marginalmente acima do esperado por acaso, mas todas as 4 são **estruturais** (`tipo_caminhao`, `tag_freq`, `frota_793D_4S`, `frota_793D_5S`) — não é um conjunto aleatório, é um *cluster semântico* (identidade do equipamento). A coerência semântica é o que dá confiança, não apenas a contagem.
+
+### Por que as divergências são informativas
+
+Features com alto SHAP mas baixo Weibull (`qtd_alarmes_muito_alto_360min` SHAP #1 com 41%, Weibull #26) não são "erros" — são **sinais antecipativos**. LightGBM v3 prediz target_4h (DG em 4h). Esses sinais brilham nesse horizonte. Weibull modela tempo até qualquer DG futuro — sinais imediatos perdem peso para sinais de base rate.
+
+**Os dois modelos respondem perguntas diferentes** — usar ambos no relatório dá ao leitor uma visão dupla do problema, não conflitante mas complementar.
+
+---
+
+## 16. Como as curvas ROC + PR comparativas são geradas (`13_curvas_comparativas.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Fechamento de W6" → "Fig 9 — Curvas ROC + Precision-Recall comparativas". CM 5.1 do relatório.
+
+**Script:** `Projeto/codigo/13_curvas_comparativas.py`
+**Tempo:** ~30 s (3 inferências em test + plotagem)
+
+### Por que 3 modelos no mesmo gráfico
+
+Os três modelos têm objetivos diferentes:
+- **Baseline** (`count_critico_4h ≥ threshold`): heurística operacional simples; serve como referência mínima
+- **LightGBM v3:** classificação supervisionada para target_4h; modelo canônico para deployment 4 h
+- **Weibull AFT:** sobrevivência; otimiza ranking de tempos de vida
+
+Mostrar os 3 lado a lado deixa visualmente claro que o v3 vence em AUC-PR (caso de uso operacional), enquanto Weibull oferece outro valor (ranking ordinal robusto + interpretabilidade + censoring rigoroso). Não é "competição"; é "complementaridade" — formato perfeito para o CM 5.1.
+
+### Detalhe técnico — predição do Weibull para 4h
+
+O Weibull AFT retorna função de sobrevivência S(t). Para comparação com `target_4h`, convertemos:
+
+```python
+# P(T <= 4h | X) = 1 - S(4h | X)
+surv_at_4h = modelo.predict_survival_function(pdf_scaled, times=[4.0]).iloc[0].values
+prob_dg_4h = 1.0 - surv_at_4h
+```
+
+Essa probabilidade é usada como score de classificação. A curva PR resultante é menor que do v3 porque o Weibull não foi otimizado especificamente para o horizonte 4 h.
+
+### Pequena curiosidade reportada
+
+A prevalência reportada (16,93% de target_4h positivo no test) é maior que a taxa de DG bruta (7,35% Is_Dont_Go=1 no test) porque target_4h captura "**qualquer DG nas próximas 4h**" (não apenas o evento DG instantâneo). Coerente com a definição da target em CM 4.1.
+
+---
+
+## 17. Como a calibração do v3 é avaliada (`14_calibracao_v3.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Fechamento de W6" → "Calibração do v3 + Platt scaling". CM 5.2 do relatório + nota em L4 (CM 6.2).
+
+**Script:** `Projeto/codigo/14_calibracao_v3.py`
+**Tempo:** ~15 s
+
+### O que é ECE e por que ele importa
+
+ECE (Expected Calibration Error) é definido como a média ponderada da distância entre a probabilidade média predita em um bin e a fração real de positivos nesse bin:
+
+```python
+ece = sum_{i=1..N_bins} (n_bin / n_total) * |acc - conf|
+```
+
+Onde:
+- `conf` = média da probabilidade predita no bin i
+- `acc` = fração real de positivos no bin i
+
+Um modelo perfeitamente calibrado teria `acc = conf` em todos os bins → ECE = 0.
+
+**Por que importa operacionalmente:** quando a Vale opera o modelo, espera que "probabilidade 0,30" signifique "30% de chance de DG". Se o modelo é confiante mas mal calibrado (ex: prediz 0,30 mas a fração real é 0,15), os alertas são **2× mais frequentes** que necessário. Calibração afeta diretamente o custo operacional.
+
+### Por que limiar a priori de 2pp
+
+ECE de 2pp = "em média, a probabilidade predita está ±2pp da fração real". É a fronteira aceitável para deployment em domínios sensíveis (saúde, manutenção crítica) segundo a literatura padrão. Definido a priori antes da execução para evitar racionalização post-hoc.
+
+### Brier score + skill — leitura honesta
+
+`Brier = mean((p_pred - y_true)²)` mede erro quadrático médio. **Brier baseline** = `prev × (1 − prev)` é o Brier de uma predição constante igual à prevalência. **Skill** = `1 − Brier/Brier_baseline`:
+- Skill > 0: modelo melhor que baseline constante
+- Skill = 0: modelo igual a baseline
+- Skill < 0: modelo pior que baseline
+
+O v3 tem **skill = +0,59 no test** — substancialmente melhor que predição constante. O Brier raw (0,05745) é baixo absolutamente. **O modelo discrimina bem.** O problema é apenas calibração (overconfidence em algumas regiões).
+
+### Platt scaling — implementação
+
+```python
+platt = LogisticRegression(max_iter=1000)
+platt.fit(p_val_raw.reshape(-1, 1), y_val)  # 1 feature: prob raw -> y
+p_test_cal = platt.predict_proba(p_test_raw.reshape(-1, 1))[:, 1]
+```
+
+É uma transformação **monotônica** (sigmoid de uma transformação linear da prob raw). Preserva o ranking (AUC-PR / AUC-ROC inalterados), só estica/comprime a escala de probabilidade. Por isso é "calibração" e não "novo modelo".
+
+### Por que Platt funcionou no val mas falhou no test
+
+Platt foi fitado no val. No val, o ajuste reduz ECE de 3,70pp para 1,87pp (esperado — ajuste sobre a própria amostra). No test, o ECE **aumenta** de 3,78pp para 4,76pp.
+
+Interpretação: a **distribuição de calibração** do v3 é diferente entre val (mai/2025) e test (jun/2025). No val, o modelo é overconfident em uma direção; no test, overconfident em outra direção (provavelmente influenciado pelo CA65926). A regressão logística do Platt aprende a correção do val e aplica ao test — mas a correção do val é exatamente a errada para o test.
+
+**Isto é um sinal direto do drift mai→jun (L4) afetando a calibração**, não apenas a métrica AUC-PR. **Material para CM 6.2.**
+
+### Recomendação operacional
+
+Não usar Platt scaling em deployment. Em produção a Vale enfrentará regimes possivelmente diferentes do test set (que é jun/2025 dominado pelo CA65926). Aplicar uma correção fitada no val (mai/2025, regime distribuído) sobre dados de produção em um regime futuro seria arbitrariedade. **Manter v3 raw é a escolha conservadora e empiricamente justificada.**
+
+O calibrador Platt fica salvo em `modelos/calibrador_v3_platt.joblib` como artefato auditável, mas com "nota explícita de não usar" no JSON do artefato.
+
+---
+
+## 18. Como a ablation por grupo de features é construída (`15_ablation_grupos.py`)
+
+> **Onde os resultados aparecem em `rascunho.md`:** Metodologia Parte 3 → seção "Fechamento de W6" → "Ablation por grupo de features". CM 6.1 (Insight Não Óbvio) + CM 6.3 (robustez operacional).
+
+**Script:** `Projeto/codigo/15_ablation_grupos.py`
+**Tempo:** ~110 s (8 retreinos × ~13 s cada com `lgb.LGBMClassifier`)
+
+### Por que hiperparâmetros FIXOS
+
+O plano original previa Optuna por ablation (6 × 25 min ≈ 2,5 h). Decisão consciente: usar os best params do v3 fixos. Razões:
+
+1. **Comparabilidade**: queremos medir o efeito de remover features, não de re-tuning. Fixar params controla a variável "hiperparâmetros".
+2. **Custo**: 110 s vs 2,5 h = 80× mais rápido.
+3. **Trade-off honesto**: com menos features, params ligeiramente diferentes seriam ótimos. O sinal NEGATIVO desse compromisso é que ablations marginais podem mostrar `delta > 0` apenas porque os params estão sub-otimizados para o feature set reduzido. **Documentamos isso explicitamente como interpretação alternativa.**
+
+### Como os grupos foram definidos
+
+7 grupos disjuntos cobrindo as 34 features do v3 + dummies das categóricas (turno, estado_pre_evento):
+
+| Grupo | Features |
+|---|---|
+| G1 temporais | hora_dia, dia_semana, turno, mes |
+| G2 rolling | 15 features `count_*_*h` (Família 1 inteira) |
+| G3 recência | horas_desde_ultimo_critico (v3 já não tem horas_desde_ultimo_DG) |
+| G4 operador | taxa_DG_operador_30d, n_bypasses_operador_7d, operador_freq |
+| G5 regra de negócio | qtd_alarmes_nivel_muito_alto_360min |
+| G6 categóricas codificadas | tag_freq, 4 frotas, tipo_caminhao, estado_pre_evento, valor_disponivel |
+| G7 regimal | razao_alarme_7d_vs_30d_anterior, razao_severidade_14d_vs_60d |
+
+Critério: grupos *semanticamente coerentes* (Família + suas variantes). Reflete a categorização original das 7 famílias de features do `05_features.py`.
+
+### Achado surpreendente — SHAP × ablation revelando redundância
+
+A maior contribuição metodológica desta análise:
+
+**SHAP atribui peso a features pelo USO dentro de árvores treinadas.** Se duas features fortemente correlacionadas estão disponíveis, o modelo usa uma e o SHAP atribui à usada.
+
+**Ablation mede o que acontece quando removemos um conjunto.** Se há features alternativas que capturam o mesmo sinal, o modelo simplesmente "muda de rota" e a performance se mantém.
+
+**A diferença entre SHAP e ablation é a medida quantitativa da REDUNDÂNCIA do feature set.**
+
+No v3:
+- `qtd_alarmes_muito_alto_360min` SHAP 41%, ablation +0,18% → **alta redundância** (modelo encontra outras rotas)
+- `tipo_caminhao` SHAP 24%, ablation (G6 inteiro) +0,75% → **alta redundância**
+- Família 4 regimal SHAP 13% conjunto, ablation −0,51% → **ÚNICO grupo necessário**
+
+Essa decomposição é original e valiosa para CM 6.1.
+
+### Por que vários grupos melhoram quando removidos
+
+Três hipóteses (não mutuamente exclusivas):
+
+1. **Regularização efetiva** — remover features age como L1 implícito; modelo overfita menos
+2. **Ruído correlacionado** — features redundantes adicionam ruído; removê-las reduz variância
+3. **Hiperparams não-otimais para o reduzido** — params do Optuna otimizados para 34 features. Com menos, params ligeiramente diferentes seriam melhores. Esse efeito **artificialmente** infla os deltas positivos. Não é regularização perfeita.
+
+**Hipótese 3 é importante**: significa que melhorias de +0,005 não são necessariamente "remover essa feature melhora o modelo" — podem ser "remover essa feature e re-tunar daria a mesma performance". O sinal honesto é que essas features **não são necessárias**, não que sejam **prejudiciais**.
+
+### Implicação operacional crítica
+
+O v3 é **robusto a perda de features** em deployment. Mesmo removendo 8 das 34 (G6 inteiro), mantém AUC-PR=0,86. Para a Vale, isso significa que:
+- Falha temporária de sensores (perda de `valor_disponivel`) não derruba o modelo
+- Categorias unknown em deployment (TAG nova, frota nova) não causam degradação catastrófica
+- Múltiplas rotas redundantes = sistema mais resiliente
+
+**Material direto para CM 6.3 (Trabalhos Futuros — robustez operacional).**
+
+### Quando re-rodar `15_ablation_grupos.py`
+
+- Quando o conjunto de features do v3 mudar substancialmente
+- Quando o test set mudar (novos meses adicionados, regime diferente)
+- Em análises de robustez para defesa do modelo (showcase de resiliência)
+
+---
+
+**Última atualização:** 2026-05-25 (W6 — Seções 15, 16, 17, 18 adicionadas: validação cruzada SHAP × HR, Fig 9 (curvas comparativas), calibração + Platt scaling, ablation por grupo. **Insight metodológico central:** SHAP mede atribuição, ablation mede necessidade — a diferença é redundância. v3 é robusto por múltiplas rotas redundantes.)

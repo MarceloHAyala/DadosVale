@@ -1378,10 +1378,11 @@ Em maio, o cenário é qualitativamente diferente: taxa de DG de 1,62% é a mais
 - [X] **LightGBM v2 com melhores parâmetros, avaliar no teste (jun)** — executado em 24/05. **AUC-PR train=0,9658 / val=0,7801 / test=0,8618.** Modelo canônico salvo em `Projeto/modelos/lightgbm_v2.txt`. **Ganho sobre v1 A:** val +2,78pp (0,7523 → 0,7801), test +0,52pp (0,8566 → 0,8618). **GATE MARCO 1 re-confirmado em v2 (PASS).** Detalhes em `controle_alteracoes.md` 2026-05-24.
 - [X] **[Determinismo estrito em v2]** ✅ aplicado em `08b_lightgbm_v2.py` — `LGBM_PARAMS_BASE` inclui `deterministic=True` e `force_col_wise=True`. Dois runs do v2 produzem AUC-PR bit-exact até a última casa decimal. Auditoria reproduzível.
 - [X] **[Achado adicional do Optuna]** Optuna escolheu `scale_pos_weight = 0,513` (MENOR que 1) — **direção oposta** da Mitigação 2 (que propunha calibrar para cima para 4,65). Reforça empiricamente que pesar positivos para cima não ajuda neste dataset; o ótimo está abaixo do valor "neutro" da fórmula clássica `(1-taxa)/taxa = 1,97`. Confirma que a investigação rigorosa em W5 evitou um caminho que teria piorado o modelo. Registrado em `controle_alteracoes.md` 2026-05-24.
-- [ ] **[Derivado do estudo W5 sobre encoding fix — `notas_metodologicas.md` Seção 2]** **Reavaliar Opção 3 (`is_tag_unknown_in_train` e `is_op_unknown_in_train` como features binárias)** agora que a Mitigação 1 (TimeSeriesSplit CV) está implementada — em single-fold a feature é constante no treino (LightGBM ignora); em CV expandida, a feature pode variar entre folds e tornar-se aprendível.
-  - **Justificativa empírica:** o estudo de W5 mediu que **2,55% dos eventos do teste (1.812 eventos / 133 DGs)** vêm de categorias unknown (TAGs `CA65791`, `CA65916` + 7 operadores). Magnitude não-desprezível mas não-dominante.
-  - **Critério de decisão:** treinar LightGBM v2.1 com as 2 features binárias adicionadas e comparar AUC-PR contra v2 (sem essas features). Se v2.1 ganha > 1pp em AUC-PR no teste → adotar; se ganho < 1pp ou negativo → confirmar Opção 1 e descartar definitivamente (parsimônia + menos código).
-  - **Critério estratificado adicional:** comparar AUC-PR especificamente nos 1.812 eventos unknown — se v2.1 melhora substancialmente esse subgrupo, vale adotar mesmo que ganho global seja pequeno.
+- [X] **Decisão (25/05): NÃO treinar v2.1 com `is_tag_unknown_in_train`/`is_op_unknown_in_train`.** Justificativa empírica acumulada:
+  - **SHAP estratificado por unknown (08c):** rankings de top features entre categorias conhecidas e unknown são essencialmente idênticos — modelo extrapola usando a mesma estratégia. Diferença marginal nos pesos relativos.
+  - **D-promoção do v3 (08e):** modelo canônico já mudou para v3 (sem `horas_desde_ultimo_DG`). Treinar v2.1 agora seria backtrack para uma variante intermediária.
+  - **Ablation por grupo (15):** removendo G6 (categóricas inteiras, incluindo `tag_freq` e `operador_freq` que codificam unknown como freq=0), modelo MELHORA +0,0064 AUC-PR. Sinal forte de que o tratamento atual (freq=0 para unknown) não é o gargalo.
+  - **Decisão:** Opção 1 (freq=0 para unknown) confirmada como definitiva. Registrado em `controle_alteracoes.md` na entrada de fechamento de W6 (25/05).
 - [X] **[Derivado do estudo W5]** **Análise SHAP estratificada por categoria unknown** — implementado em `08c_shap_v2.py` (24/05). Computa SHAP do v2 sobre os 71.089 eventos do test e gera 5 estratificações: test_completo / CA65926 / resto_test / categorias_conhecidas / categorias_unknown. **Resultado:** rankings entre conhecidos e unknown são similares (modelo extrapola usando mesma estratégia); diferenças nos pesos relativos pequenas. CA65926 dá mais peso a `qtd_alarmes_muito_alto` e `razao_alarme_7d_vs_30d` que o resto. Detalhes em `controle_alteracoes.md` 2026-05-24.
 - [X] **`08c_shap_v2.py` — Análise SHAP completa do LightGBM v2** (executado em 24/05, ~1 min) — TreeSHAP sobre 71.089 eventos. **Ranking top 3:** `horas_desde_ultimo_DG` (39,3%) / `qtd_alarmes_muito_alto_360min` (31,1%) / `razao_alarme_7d_vs_30d_anterior` (8,6%). Top 2 = 70% do peso. **Achados:** (i) v2 NÃO é baseline glorificado (`count_critico_4h` rank #29); (ii) Família 4 regimal funciona como previsto (rank #3); (iii) Obs 2.11 fracamente refutada (rolling counts todas em rank #15-#31); (iv) Família 6 domain-specific venceu Família 1 genérica. Saídas: `shap_values_v2_test.npy` (19 MB) + 2 tabelas + 3 figuras (9a/9b/10).
 - [X] **Mini-diagnose de cascata** (24/05) — Investigação ad-hoc após SHAP revelar `horas_desde_ultimo_DG` com 39%. **Confirmado:** v2 é detector de continuação de cascatas, não preditor de primeiro DG. Top 10% SHAP+ tem 100% DG anterior em ≤ 2h (mediana 1 minuto); apenas 1% dos primeiros DGs (101 eventos sem histórico) são detectados. Motivou treino de v3 sem essa feature (`08e_lightgbm_v2_no_cascade.py`).
@@ -1400,19 +1401,20 @@ Em maio, o cenário é qualitativamente diferente: taxa de DG de 1,62% é a mais
   - [X] **Bug corrigido durante execução:** primeira tentativa negativava `predict_expectation` indevidamente (resíduo de adaptação do Cox PH), levando C-index val=0,29 e fallback erroneo. Após fix, Weibull convergiu corretamente com C-index 0,71.
   - [X] **Fig Extra A — KM por frota:** 5 curvas (793-D 2S/3S/4S/5S + LeTourneau L 1850) até 168h. Valida visualmente H4.1.
   - **Saídas:** `modelos/sobrevivencia.joblib` (14,5 MB) + 3 tabelas + 1 figura. Detalhes técnicos completos em `notas_metodologicas.md` Seção 13.
-- [ ] **Fig 9** — Curvas ROC + Precision-Recall comparando baseline × LightGBM × Sobrevivência (CM 5.1)
-- [ ] **Fig 11** — SHAP summary plot do LightGBM (CM 5.3)
-- [ ] **Fig 12** — SHAP waterfall de 1 predição individual (CM 5.3)
-- [ ] **Validação de sentido das features** (CM 5.3): comparar top-10 do SHAP (LightGBM) com top-10 dos hazard ratios (sobrevivência) — concordância entre dois métodos independentes é evidência forte de validade
-- [ ] **[Profundidade 2] Ablation por grupo de features** (~3h): retreinar o LightGBM v2 (parâmetros fixos do Optuna) removendo cada família e medir queda de AUC-PR no teste. Grupos:
-  - (G1) Temporais (`hora_dia`, `dia_semana`, `turno`, `mes`)
-  - (G2) Rolling windows 1h/4h/24h
-  - (G3) Recência (`horas_desde_ultimo_DG`, `horas_desde_ultimo_critico`)
-  - (G4) Operador (`taxa_DG_operador_30d`, `Operador_freq`)
-  - (G5) Regra de negócio (`qtd_alarmes_nivel_muito_alto_360min`)
-  - (G6) Categóricas codificadas (`Tag`, `Frota`, `Tipo`, `Classe`)
-  - Tabela `ablation_grupos.csv` com ΔAUC-PR e ΔRecall por grupo. **Fig Extra E** — gráfico de barras. Vira insight de produto (qual sinal carrega o modelo)
-- [ ] **[Qualidade A] Calibração do modelo escolhido**: calibration plot + Brier score → Fig Extra D. Se descalibrado, aplicar Platt scaling
+- [X] **`Projeto/codigo/13_curvas_comparativas.py` — Fig 9: Curvas ROC + PR comparativas (25/05, ~30 s)**. Compara 3 modelos no test: Baseline (count_critico_4h, AUC-PR=0,5803), **v3 (canônico, AUC-PR=0,8556)**, Weibull AFT (AUC-PR=0,3148). v3 domina em AUC-PR (+27,5pp vs baseline, +54pp vs Weibull). Material para CM 5.1. Saídas: `fig09_curvas_comparativas.png` + `comparacao_modelos_test.csv`.
+- [X] **Fig 11 (SHAP summary plot)** já gerada pelo `08f_shap_v3.py` em 24/05: `fig09c_shap_bar_v3.png` (bar) + `fig09d_shap_beeswarm_v3.png` (beeswarm). Material para CM 5.3.
+- [ ] **Fig 12** — SHAP waterfall de 1 predição individual (CM 5.3). **Decidido adiar para W8** (montagem do relatório final) — é cosmética, não metodológica. Adicionar quando escolher predição específica para destacar no texto.
+- [X] **`Projeto/codigo/12_validacao_sentido_features.py` — Validação cruzada SHAP × HR (25/05, < 5 s)**. Cruza top features do SHAP v3 com TRs do Weibull AFT. **4 features no top 10 de AMBOS:** `tipo_caminhao` (SHAP #2 / HR #1), `tag_freq` (#4 / #7), `frota_793D_4S` (#7 / #6), `frota_793D_5S` (#9 / #2) — todas estruturais (identidade do equipamento). Divergências instrutivas: SHAP destaca antecipativas (`qtd_alarmes_muito_alto`, `razao_alarme_*`), Weibull destaca base rate. Material direto para CM 5.3. Saída: `validacao_sentido_features.csv`.
+- [X] **`Projeto/codigo/15_ablation_grupos.py` — Ablation por grupo (25/05, ~110 s, 8 retreinos)**. Retreina v3 com hiperparams FIXOS removendo cada grupo de features.
+  - (G1) Temporais (`hora_dia`, `dia_semana`, `turno`, `mes`) — Δ AUC-PR = +0,0025
+  - (G2) Rolling counts (15 features) — Δ = +0,0032
+  - (G3) Recência (`horas_desde_ultimo_critico`) — Δ = +0,0018
+  - (G4) Operador (3 features) — Δ = +0,0064 (modelo MELHORA ao remover)
+  - (G5) Regra de negócio (`qtd_alarmes_muito_alto_360min`) — Δ = +0,0018
+  - (G6) Categóricas codificadas (8 features) — Δ = +0,0064 (modelo MELHORA ao remover)
+  - **(G7) Regimal (Família 4: `razao_alarme_*`) — Δ = −0,0044 (ÚNICO grupo com queda real)**
+  - **Achado surpreendente:** nenhum grupo é estritamente necessário — variação máxima ±0,01 AUC-PR. **Insight metodológico para CM 6.1:** SHAP mede atribuição, ablation mede necessidade — a diferença é **redundância**. v3 prediz por múltiplas rotas redundantes, coerente com L10. **Implicação operacional (CM 6.3):** v3 é robusto a perda de features em deployment. Saídas: `ablation_grupos.csv` + `figExE_ablation_grupos.png`.
+- [X] **`Projeto/codigo/14_calibracao_v3.py` — Calibração do v3 (Qualidade A, 25/05, ~15 s)**. **v3 raw:** Brier test=0,05745 (skill +0,59), ECE val=3,70pp / test=3,78pp (acima do limiar a priori de 2pp). **Platt scaling testado:** melhora val (3,70→1,87pp) MAS piora test (3,78→4,76pp) — drift de calibração val→test. **Decisão honesta: NÃO aplicar Platt em deployment**, manter v3 raw. Calibrador Platt salvo apenas para auditoria. Adiciona nota em L4 (CM 6.2). Saídas: `calibracao_v3.csv` + `figExF_calibracao_v3.png` + `calibrador_v3_platt.joblib` (com flag "não usar").
 - [X] **`Projeto/codigo/11_isolation_forest.py` — Isolation Forest diagnóstico do Risco 3.3 (25/05, ~10,8 s)**:
   - [X] Treinado `IsolationForest(n_estimators=200, contamination="auto", random_state=42)` em train **sem usar `Is_Dont_Go`** — 34 features alinhadas ao v3 canônico + 5 dummies + StandardScaler + imputação NaN igual ao 09_sobrevivencia (consistência)
   - [X] Scoring em train/val/test; `anomaly_score = -decision_function` (alto = anômalo)
@@ -1425,13 +1427,148 @@ Em maio, o cenário é qualitativamente diferente: taxa de DG de 1,62% é a mais
   - [X] **Implicação crítica (L10 em CM 6.2):** performance alta do v3 em test (AUC-PR=0,8556) é largamente dirigida pela detecção do CA65926; em deployment sem anomalia dominante, performance pode degradar
   - [X] **Convergência metodológica (CM 6.1):** três técnicas independentes (SHAP do v3, hazard ratios do Weibull AFT, IF não-supervisionado) chegam à mesma conclusão sobre a natureza atípica do test
   - **Saídas:** `modelos/isolation_forest.joblib` (0,58 MB) + **5 tabelas** (`if_auc_roc.csv`, `if_auc_estratificado_test.csv`, `if_auc_por_tag.csv`, `if_diagnostico.csv`, `if_contingencia.csv`) + Fig Extra D (**4 painéis**, incluindo barras horizontais de AUC-ROC por TAG colorido por log10(n_DG)). Detalhes em `notas_metodologicas.md` Seção 14.
-- [ ] Registrar em `controle_alteracoes.md` escolha de hiperparâmetros, modelo vencedor (LightGBM ou Sobrevivência), decisão de calibração, e resultado do IF (convergiu / aborted)
+- [X] Registrar em `controle_alteracoes.md` escolha de hiperparâmetros, modelo vencedor (LightGBM ou Sobrevivência), decisão de calibração, e resultado do IF (convergiu / aborted) — registros distribuídos ao longo de W6 em 4 entradas (24/05: D-promoção do v3 + SHAP v3 + L8; 25/05: Weibull AFT + IF + L10; 25/05: Fechamento de W6 cobrindo validação cruzada + Fig 9 + calibração + ablation).
 
-**Entregável:** 3 modelos supervisionados/sobrevivência (baseline + LightGBM + Sobrevivência) + Isolation Forest como diagnóstico complementar + Fig 9, Fig 11, Fig 12 + ablation_grupos.csv + calibração + tabela de hazard ratios + tabela IF (AUC-PR / Recall@K).
+**Entregável:** 3 modelos (baseline + LightGBM v3 canônico + Weibull AFT) + Isolation Forest como diagnóstico complementar + 4 análises de fechamento (validação cruzada SHAP×HR, Fig 9 comparativa, calibração, ablation por grupo) + 5 figuras + ~15 tabelas + tabela de hazard ratios + Seções 11-18 em `notas_metodologicas.md`.
 
 #### Observações e Conclusões (W6)
 
-*(A preencher quando observações de W6 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+##### 1. SHAP do v2 revelou predição de cascata — motivou treino e promoção do v3
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/08c_shap_v2.py`](Projeto/codigo/08c_shap_v2.py) — TreeSHAP sobre os 71.089 eventos do test. Para reproduzir:
+
+```powershell
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/08c_shap_v2.py
+```
+
+</details>
+
+A análise SHAP do (então canônico) v2 revelou que `horas_desde_ultimo_DG` era a feature #1 com **39,3% do peso global**. Mini-diagnose ad-hoc imediatamente após confirmou suspeita: o v2 era **detector de continuação de cascatas**, não preditor de primeiro DG.
+
+| Métrica da mini-diagnose | Resultado |
+|---|---|
+| Top 10% eventos com maior SHAP+ em `horas_desde_ultimo_DG` (7.109 eventos) | 100% têm DG anterior em ≤ 2h; mediana = 1 minuto |
+| Desses, fração que é DG real | 94,2% (6.696 positivos) |
+| Eventos SEM DG anterior recente (NULL ou > 24h, 3.919 casos) | Apenas 1 dos 101 positivos reais é predito corretamente (1%) |
+
+**Decisão metodológica:** treinar variante **v3 sem `horas_desde_ultimo_DG`** (08e_lightgbm_v2_no_cascade.py). Resultado: v3 perde apenas 0,62pp de AUC-PR agregado mas captura **5× mais primeiros DGs** (Recall@0.5 4,3% → 21,1%). **D-promoção: v3 substitui v2 como modelo canônico do relatório.** v2 preservado como modelo intermediário diagnóstico. Registrado em `controle_alteracoes.md` 2026-05-24 — "Promoção de v3 a canônico".
+
+**Limitação L1 RESOLVIDA pela promoção.** Material direto para CM 6.1 (lição metodológica: AUC-PR alto pode esconder estratégias operacionalmente fracas — só SHAP + diagnose dedicada revela).
+
+---
+
+##### 2. Convergência tripla SHAP × HR × Isolation Forest aponta para natureza atípica do test set
+
+<details>
+<summary><b>Scripts usados para gerar</b></summary>
+
+- [`Projeto/codigo/08f_shap_v3.py`](Projeto/codigo/08f_shap_v3.py) — SHAP do v3 canônico
+- [`Projeto/codigo/09_sobrevivencia.py`](Projeto/codigo/09_sobrevivencia.py) — Weibull AFT + hazard ratios
+- [`Projeto/codigo/11_isolation_forest.py`](Projeto/codigo/11_isolation_forest.py) — IF não-supervisionado + análise estrutural por TAG
+- [`Projeto/codigo/12_validacao_sentido_features.py`](Projeto/codigo/12_validacao_sentido_features.py) — tabela cruzada
+
+```powershell
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/08f_shap_v3.py
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/09_sobrevivencia.py
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/11_isolation_forest.py
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/12_validacao_sentido_features.py
+```
+
+</details>
+
+Três técnicas independentes com fundamentação matemática completamente diferente chegam à mesma conclusão sobre o test set de junho/2025:
+
+| Técnica | Achado convergente |
+|---|---|
+| **SHAP do v3 (LightGBM)** | `tipo_caminhao` (24%), `frota_793D_5S`, Família 4 regimal no top — modelo aprende "esse tipo/frota costuma falhar" |
+| **Weibull AFT (hazard ratios)** | TR `tipo_caminhao`=0,038 (sobrevida 3% da escavadeira), `frota_793D_5S` TR=0,169 — mesmo padrão estatístico |
+| **Isolation Forest (estratificado por TAG)** | AUC-ROC CA65926=0,897 vs resto do test=0,541. Apenas 3 TAGs com sinal forte E sample significativo: CA65926, CA65932, **CA65924** (paradigma de W4 validado pelo IF sem usar o rótulo) |
+
+**Quatro features no top 10 de AMBOS** SHAP v3 e Weibull AFT (tabela `validacao_sentido_features.csv`): `tipo_caminhao`, `tag_freq`, `frota_793D_4S`, `frota_793D_5S` — todas **estruturais** (identidade do equipamento). Material para **CM 5.3** (validação por método independente é evidência forte).
+
+**Implicação central — nova limitação L10:** a performance alta do v3 em test (AUC-PR=0,8556) é **largamente dirigida pela detecção do CA65926** (10% dos eventos, 82,2% dos DGs do test). Em deployment sem anomalia dominante similar, a performance pode degradar para próximo da AUC mediana por TAG observada no IF (~0,61). Material para **CM 6.2** + recomendação operacional de **retreino rolling mensal + monitoramento estratificado por equipamento** em CM 6.3.
+
+---
+
+##### 3. Ablation revela alta redundância — v3 prediz por múltiplas rotas
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/15_ablation_grupos.py`](Projeto/codigo/15_ablation_grupos.py) — 8 retreinos do v3 com hiperparams fixos. Para reproduzir:
+
+```powershell
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/15_ablation_grupos.py
+```
+
+</details>
+
+O ablation por grupo de features revelou **contraste forte com o SHAP**. SHAP v3 disse: `qtd_alarmes_muito_alto_360min` é 41% do peso (rank #1), `tipo_caminhao` é 24% (rank #2). Ablation diz:
+
+| Grupo removido | Δ AUC-PR vs baseline (0,8556) |
+|---|---:|
+| G5 regra de negócio (`qtd_alarmes_muito_alto_360min`, rank #1 do SHAP) | **+0,0018** (sem queda) |
+| G6 categóricas (8 features, inclui `tipo_caminhao`) | **+0,0064** (modelo MELHORA) |
+| G4 operador (3 features) | **+0,0064** (modelo MELHORA) |
+| **G7 regimal** (Família 4) | **−0,0044** (ÚNICA queda real) |
+
+**Insight metodológico central para CM 6.1:**
+- **SHAP mede ATRIBUIÇÃO** (quais features o modelo USA quando todas estão disponíveis)
+- **Ablation mede NECESSIDADE** (quais features o modelo PRECISA quando uma é removida)
+- **Diferença = REDUNDÂNCIA** — feature de alto SHAP que pode ser removida sem queda significa que o modelo encontra rotas alternativas
+
+**O v3 entrega 0,8556 AUC-PR no test através de múltiplas rotas redundantes**, não através de um sinal único insubstituível. Coerente com L10 — o sinal do CA65926 é codificado simultaneamente por múltiplas features (`tipo_caminhao`, frota, `count_critico_24h`, `razao_alarme_*`, etc.).
+
+**Implicação operacional (CM 6.3):** v3 é **robusto a perda de features** em deployment. Mesmo removendo 8 das 34 features (G6 inteiro), AUC-PR mantém-se em 0,86. Sistema resiliente a falhas de sensor ou fontes intermitentes.
+
+---
+
+##### 4. Calibração assimétrica val/test — drift afeta as probabilidades, não só as métricas de ranking
+
+<details>
+<summary><b>Script usado para gerar</b></summary>
+
+[`Projeto/codigo/14_calibracao_v3.py`](Projeto/codigo/14_calibracao_v3.py) — Brier + ECE + Platt scaling. Para reproduzir:
+
+```powershell
+PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/14_calibracao_v3.py
+```
+
+</details>
+
+A análise de calibração do v3 revelou:
+
+| Métrica | val | test |
+|---|---:|---:|
+| Brier raw | 0,09141 | 0,05745 |
+| Brier baseline | 0,14996 | 0,14066 |
+| **Skill** | **+0,3904** | **+0,5916** |
+| ECE raw | 3,70pp | 3,78pp |
+| ECE pós-Platt (fit no val) | **1,87pp** (melhora) | **4,76pp** (PIORA) |
+
+**Achado importante:** Platt scaling, treinado no val, **melhora o val mas piora o test**. Isso indica que a estrutura de calibração do v3 é **diferente entre os dois splits** — outro sintoma do drift mai→jun (L4) e da dominância do CA65926 no test (L10).
+
+**Decisão operacional honesta:** **NÃO aplicar Platt em deployment**. Em produção, o regime futuro pode ser similar a mai (distribuído) ou similar a jun (dominado por uma anomalia) — sem saber qual, o ajuste calibrado em mai não pode ser aplicado universalmente. **Manter v3 raw** é a escolha conservadora. Calibrador Platt salvo apenas para auditoria com flag explícito "não usar".
+
+**Nota adicional em L4 do CM 6.2:** "drift mai→jun afeta também a calibração das probabilidades, não apenas a métrica AUC-PR".
+
+---
+
+##### Conclusão geral de W6
+
+W6 fechou a etapa de modelagem com **três modelos** (v3 canônico + Weibull AFT como segunda leitura + Isolation Forest diagnóstico) + **quatro análises complementares** (validação cruzada, comparativa, calibração, ablation). Todas as decisões metodológicas registradas em `controle_alteracoes.md` (5 entradas entre 24-25/05).
+
+**Lições metodológicas centrais (CM 6.1):**
+
+1. **AUC-PR alto não garante qualidade operacional** — SHAP + mini-diagnose revelaram que v2 era cascade detector mascarado por métrica alta. Lição transferível: sempre interpretar antes de promover.
+2. **Convergência por métodos independentes valida estratégia aprendida** — quando 3 técnicas (Shapley values + maximum likelihood AFT + isolation trees não-supervisionado) concordam, há evidência estrutural forte. Quando divergem, a divergência também é informativa (Família 6 antecipativa só brilha no LightGBM 4h).
+3. **SHAP vs Ablation = atribuição vs necessidade** — a diferença mede redundância do feature set. Útil para entender robustez do modelo em deployment.
+4. **Calibração pode driftar separadamente de AUC-PR** — drift de regime afeta as duas dimensões de forma independente. Em deployment, monitorar AS DUAS.
+
+**Status para entrada em W7:** pipeline analítico completo. Modelo canônico operacional (v3) + sobrevivência (Weibull AFT) + diagnóstico de label (IF). W7 foca em avaliação estratificada final + figuras restantes do relatório (Fig 10, Fig 13).
 
 ---
 

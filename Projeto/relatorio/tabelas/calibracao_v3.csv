@@ -1,0 +1,5 @@
+versao,split,brier,brier_baseline,skill_brier,ece
+raw,val,0.09141,0.14996,0.3904,0.037
+raw,test,0.05745,0.14066,0.5916,0.0378
+platt,val,0.09086,0.14996,0.3941,0.0187
+platt,test,0.05634,0.14066,0.5994,0.0476

@@ -1,0 +1,9 @@
+configuracao,n_features,auc_pr_val,auc_pr_test,recall_test_thr05,tempo_s,delta_auc_pr_test_vs_baseline,features_removidas
+todas_as_features,34,0.7132,0.8556,0.7527,12.9,,
+sem_G1_temporais,30,0.6955,0.8581,0.7627,8.4,0.0025,"hora_dia, dia_semana, turno, mes"
+sem_G2_rolling,19,0.7016,0.8588,0.7436,7.5,0.0032,"count_critico_1h, count_critico_2h, count_critico_4h, count_critico_8h, count_critico_24h, count_nao_critico_1h, count_nao_critico_2h, count_nao_critico_4h, count_nao_critico_8h, count_nao_critico_24h, count_total_1h, count_total_2h, count_total_4h, count_total_8h, count_total_24h"
+sem_G3_recencia,33,0.7124,0.8574,0.7532,21.0,0.0018,horas_desde_ultimo_critico
+sem_G4_operador,31,0.674,0.862,0.7614,13.3,0.0064,"taxa_DG_operador_30d, n_bypasses_operador_7d, operador_freq"
+sem_G5_regra_negocio,33,0.6956,0.8574,0.7048,11.5,0.0018,qtd_alarmes_nivel_muito_alto_360min
+sem_G6_categoricas,26,0.7351,0.862,0.754,11.3,0.0064,"tag_freq, frota_793D_2S, frota_793D_3S, frota_793D_4S, frota_793D_5S, tipo_caminhao, estado_pre_evento, valor_disponivel"
+sem_G7_regimal,32,0.6489,0.8512,0.7544,11.2,-0.0044,"razao_alarme_7d_vs_30d_anterior, razao_severidade_14d_vs_60d"
