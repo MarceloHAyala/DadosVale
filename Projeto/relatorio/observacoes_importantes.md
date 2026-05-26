@@ -40,28 +40,6 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 
 ---
 
-### - [ ] 2.11 Validar empiricamente a sub-hipótese "acúmulo de criticidade pré-DG" (reinterpretação de H5.2)
-
-**Contexto:** Investigação W4 da Fig Extra C (`exploracao_w4_ca65924.py`, 17/05/2026) **refutou** a hipótese H5.2 na forma original ("calmaria → acúmulo de volume → disparo" como padrão universal nos DGs). Apenas 1 dos 4 painéis comparativos (CA65924 + 3 amostras aleatórias) confirmou o padrão pela métrica de volume (razão eventos_30min/eventos_90min ≥ 2). O próprio CA65924 (caso paradigma original) apresenta fluxo aproximadamente uniforme de ~1,25 eventos/min nas 2h pré-DG.
-
-**Reinterpretação visual emergente:** análise dos pontos coloridos por Criticidade na figura sugere padrão alternativo — **acúmulo de criticidade**, não de volume. Em 3 dos 4 painéis (CA65924, CA5927, CA65908), eventos Crítico (vermelhos na figura) concentram-se nos últimos minutos pré-DG, mesmo quando o volume total é distribuído uniformemente. O CA65924, por exemplo, tem 138 eventos Informacional + 7 Não-Crítico + 1 Crítico — e o único Crítico ocorre próximo ao DG.
-
-**Por que importa:**
-- Se o sub-padrão se confirmar, a família de features `count_critico_*h` (Família 1 do `05_features.py`) será **mais preditiva** que `count_total_*h` para antecipar DG, com implicação direta para a interpretação do modelo
-- Se NÃO se confirmar, o sinal preditivo principal vem de outras famílias (regimal, estado_pre_evento, operador) e rolling deixa de ser família dominante — mudaria a narrativa do relatório (CM 6.1)
-- A própria família de features regimais (`razao_severidade_14d_vs_60d`) já é uma operacionalização parcial dessa intuição em janela maior
-
-**Investigar (a fazer em W6, após o modelo LightGBM estar treinado):**
-- Análise SHAP global das 35 features de `v3.parquet` (matriz canônica atual após o *fix* de *encoding* em 22/05 e a expansão da Família 1 em 23/05; conjunto expandido de 29 → 35 features pela adição das janelas 2h e 8h)
-- Comparar importância (mean |SHAP|) de `count_critico_Xh` vs `count_total_Xh` em **todas as 5 janelas** (1h, 2h, 4h, 8h, 24h após expansão em W5) — comparação mais robusta com mais pontos amostrais para detectar tendência
-- Hipótese a testar: `count_critico_*` aparece sistematicamente acima de `count_total_*` no ranking de importância
-- Se confirmada: validação empírica da reinterpretação de H5.2; entra como insight não óbvio em CM 6.1
-- Se não confirmada: registrar limitação e considerar features explícitas de "fração Crítico nos últimos N min" como adição opcional
-
-**Onde resolver:** W6 (análise SHAP do modelo principal) ou W7 (análise final).
-
----
-
 ### - [ ] 2.10 O equipamento CA65789 apresenta outras anomalias além das sobreposições de apontamento?
 
 **Contexto:** Investigação W3 (`exploracao_w3_sobreposicoes.py`, 2026-05-17) revelou que **100% das 340 sobreposições de ciclo no semestre vêm de um único equipamento — CA65789** (frota 793-D 2S), com 90% concentradas em janeiro/2025 e 35% em estado `Hibernando`. Confirmado bug pontual no registro de apontamentos desse equipamento, não padrão sistêmico.
@@ -74,10 +52,11 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 - **Comportamento dos operadores que rodaram CA65789** em jan/2025 (operadores específicos? mudança de turno problemática?)
 - **CA65789 está entre os 12 equipamentos sem telemetria contínua** (H1.1)? Se sim, é mais uma evidência de instrumentação problemática nesse equipamento.
 
+**Atualização parcial (25/05/2026 — W6 Isolation Forest):** O CA65789 aparece no test set com 155 eventos (e portanto **tem telemetria contínua** — não está entre os 12 sem instrumentação de H1.1). Apresenta 6 DGs (prevalência 3,87%, próxima da média global de 3,66%). **AUC-ROC do `anomaly_score` vs `Is_Dont_Go` para CA65789 isolado = 0,5794** — *próximo do aleatório*, abaixo do limiar 0,75 de "sinal forte" definido na análise estrutural por TAG. **Implicação:** CA65789 não é outlier estatístico no espaço de 34 features do v3 — o problema dele em W3 (sobreposições de apontamento em jan/2025) parece ser **limitado ao registro de apontamentos**, não comportamento operacional anômalo geral. Restam por investigar: distribuição de alarmes específica + comportamento dos operadores. Recomendação: rebaixar prioridade — investigar em W7 se sobrar tempo, ou registrar como Trabalho Futuro em CM 6.3 (escopo "análise sistemática de outliers por TAG" já registrado).
+
 **Onde resolver:** W4 (ao construir features por TAG, naturalmente surge a comparação) ou W7 (análise estratificada por equipamento — Qualidade C).
 
 ---
-
 
 ## 3. Riscos a monitorar (não são observações, mas precisam vigilância)
 
@@ -125,7 +104,7 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 
 ---
 
-### - [ ] 3.3 Viés inerente do label CMA
+### - [x] 3.3 Viés inerente do label CMA — RISCO PARCIALMENTE MITIGADO (assimétrico por regime, W6)
 
 **Risco:** `Is_Dont_Go` é gerado pelas regras CMA, não pela falha física real. Modelo aprende a antecipar a regra, não o evento de campo.
 
@@ -136,15 +115,31 @@ A combinação volume + inversão simultânea aponta para **mudança de regra CM
 
 **Reinterpretação:** os 2.525 DGs em Manutenção são DGs REAIS ocorrendo durante re-ativações de teste no ciclo de manutenção (Engine Coolant e termos de freio só disparam com equipamento operando). Não são falsos positivos de bancada.
 
-**O Risco 3.3 continua existindo** (a regra CMA define o positivo, não a falha física real), mas **perde essa quantificação fácil**. A validação empírica do viés agora depende exclusivamente do diagnóstico do **Isolation Forest** em W6 — se o IF treinado sem `Is_Dont_Go` recupera os mesmos DGs, há sinal estrutural além da regra; se não, modelo está limitado ao escopo da regra.
+**Reforço lateral (extração `eventos_muito_alto.csv`, 16/05/2026):** Dos 82 eventos CMA com nível "Muito Alto", **95,12% vêm de `ALARME OEM`** (alarmes nativos do fabricante — Caterpillar, etc), só 3,66% de `TENDÊNCIA` (análise sobreposta) e 1,22% de `SISTEMA`. Isso significa que a CMA é majoritariamente um **wrapper sobre o sistema de alarmes do fabricante** — o "viés inerente" do label não vem só das regras da Vale, mas também herda toda a calibração de fábrica, que foi otimizada para garantia/proteção do equipamento, não para manutenção preditiva. Reforça a importância do IF como teste de viés.
 
-**Reforço lateral (extração `eventos_muito_alto.csv`, 16/05/2026):** Dos 82 eventos CMA com nível "Muito Alto", **95,12% vêm de `ALARME OEM`** (alarmes nativos do fabricante — Caterpillar, etc), só 3,66% de `TENDÊNCIA` (análise sobreposta) e 1,22% de `SISTEMA`. Isso significa que a CMA é majoritariamente um **wrapper sobre o sistema de alarmes do fabricante** — o "viés inerente" do label não vem só das regras da Vale, mas também herda toda a calibração de fábrica, que foi otimizada para garantia/proteção do equipamento, não para manutenção preditiva. Reforça a importância do IF como teste de viés (se IF não recupera os DGs, modelo está aprendendo a previsão de regra OEM + regra Vale, não falha física).
+**Resolução empírica (25/05/2026 — W6 Isolation Forest, `11_isolation_forest.py`):**
 
-**Monitorar:** Isolation Forest em W6 — agora é o ÚNICO teste empírico planejado para esse risco. Se IF performar mal sem o label, o Risco 3.3 ganha evidência. Se performar bem, o Risco 3.3 é majoritariamente refutado.
+IF treinado em 394.971 eventos de train com 34 features alinhadas ao v3 canônico, 200 árvores, **sem ver `Is_Dont_Go`**. Resultado em 3 camadas:
 
-**Mitigação se acontecer:** Sanity check honesto no relatório (W7-W8), CM 6.1. Discussão honesta da natureza do label como artefato regulatório (CMA define o que é DG, não falha física).
+| Camada | Resultado |
+|---|---|
+| AUC-ROC por split | train=0,5753 / val=0,5979 / **test=0,8603** |
+| Estratificação CA65926 vs resto (test) | CA65926=0,8969 / sem CA65926=**0,5409** (~aleatório) |
+| AUC mediana por TAG (26 com AUC válido) | **0,6060** (mediana mais honesta que o agregado) |
+| TAGs com sinal forte E sample significativo (n_DG ≥ 10) | **3 de 26**: CA65926, CA65932, CA65924 (paradigma de W4 validado pelo IF sem usar o rótulo) |
 
-**Onde resolver:** W6 (Isolation Forest diagnóstico — agora teste único) + W7 (análise "o que a regra não vê") + W8 (Limitações).
+**Veredito final: Risco 3.3 PARCIALMENTE MITIGADO (assimétrico por regime):**
+
+- ✅ **Para anomalias dominantes (CA65926-like, falhas mecânicas progressivas):** IF e CMA concordam fortemente (AUC=0,90). O rótulo CMA captura anomalia estatisticamente real nesse regime.
+- ⚠️ **Para DGs distribuídos (>88% das TAGs):** IF e CMA discordam (AUC mediana=0,61, 8 TAGs em ~aleatório). O rótulo CMA pode estar capturando eventos sem assinatura estatística distintiva no espaço de features atual.
+
+**Convergência metodológica como validação independente:** três técnicas (LightGBM v3 via SHAP, Weibull AFT via hazard ratios, Isolation Forest não-supervisionado) chegam à mesma conclusão. Material para CM 6.1.
+
+**Nova limitação registrada (L10 em CM 6.2):** performance do v3 em test (AUC-PR=0,8556) é largamente dirigida pela detecção do CA65926; em deployment sem anomalia dominante similar, performance pode degradar para próximo da AUC mediana por TAG (~0,61).
+
+**Trabalho Futuro registrado em CM 6.3:** investigação manual dos FPs do IF como possíveis "DGs perdidos pelo CMA" (leitura inversa do Risco 3.3) + validação prospectiva com dados de manutenção corretiva (registros de falha física).
+
+**Resolvido em:** W6 — Isolation Forest em 25/05/2026. Detalhes em `controle_alteracoes.md` entrada "2026-05-25 — Diagnóstico do Risco 3.3 via Isolation Forest" + `hipoteses_eda.md` H6.1 atualizada para 🟡.
 
 ---
 
@@ -176,8 +171,16 @@ Conforme observações são investigadas e concluídas, elas são **movidas para
   - **Obs 2.4 (resolvida — Q3 do edital respondida):** Investigação via `exploracao_w5_obs_pendentes.py`. **OP_067 (operador do caso paradigma CA65924) NÃO é outlier extremo:** taxa 6,338% (1,73× baseline global de 3,664%), rank #76 de 394 operadores (top 19%); 152 operadores em faixa comparável (±50% da taxa de OP_067) — não é singular. **Resposta empírica para Q3:** comportamento do operador correlaciona com DG, mas de forma suave — distribuição assimétrica com mediana 2,99% / p95 10,87% / máx 83,77%, mas os extremos têm baixo volume (operadores raros / de teste). **OP_029 é o operador com maior massa estatística problemática** (taxa 32,5% sobre 3.125 eventos = 1.016 DGs absolutos). **Implicação para SHAP em W6:** feature `taxa_DG_operador_30d` é informativa mas não deve dominar o ranking; sinal real difuso, não concentrado. **H5.3 atualizada de 🔄 Pendente para 🟡 Refutada com reinterpretação.** Tabela `relatorio/tabelas/obs24_taxa_dg_por_operador.csv` (394 linhas) anexada.
   - **Obs 2.9 (resolvida — re-framing forte do drift):** Investigação via `exploracao_w5_obs_pendentes.py`. **A "anomalia RFB de junho" é a falha mecânica progressiva de UM ÚNICO equipamento (CA65926, frota 793-D 4S):** 98,53% dos 4.278 eventos RFB-Active de jun e 82,2% de TODOS os 5.226 DGs de jun vêm do CA65926. Top 3 TAGs concentram 99,8%. Decomposição temporal: onset abrupto (0% nos primeiros 5 dias, 41% no meio, 58,9% nos últimos 5 dias; picos dias 26-27-30). CA65926 já tinha sinal precursor em março (438 DGs, taxa 20,28%) mas via outros alarmes; RFB-Active saltou de 0-6/mês (jan-mai) para 4.215 em junho — **salto de ~700× no equipamento**, não nos 30 TAGs. **Refutadas:** H_recapagem em massa (só 1 TAG), H_sazonal térmica (não é rampa gradual), H_sensor em lote (lote afetaria múltiplos equipamentos). **Confirmada:** H_localizada (falha mecânica progressiva ou sensor defeituoso específico do CA65926). **H3.3 atualizada de 🔄 Pendente para 🟡 Refutada com reinterpretação.** Tabela `relatorio/tabelas/obs29_rfb_junho_decomposicao.csv` (34 linhas long-format) anexada. **Re-framing do Risco 3.2:** pergunta para o modelo deixa de ser "antecipar regime nunca visto" e vira "antecipar falha progressiva de equipamento específico com histórico no treino" (CA65926 tem 6.578 eventos / 625 DGs em jan-mai disponíveis). **Padrão emergente reforçado: equipamentos individuais problemáticos** — CA65926 aparece agora em DOIS contextos independentes (outlier de DGs em W2 + dominante na anomalia RFB em W5), análogo ao CA65789 (W3, 100% das sobreposições). Candidato a CM 6.1 (Insight Não Óbvio) + CM 6.3 (Recomendação Operacional: auditar sistema de freio dianteiro direito do CA65926).
 
+- **W6 (24-25/05/2026 — modelagem completa + fechamento):** ver `PLANEJAMENTO.md` → seção W6 → "Observações e Conclusões (W6)"
+  - **Obs 2.11 (resolvida — H5.2 sub-hipótese fracamente refutada via SHAP):** Análise SHAP de v2 (`08c_shap_v2.py`) e v3 (`08f_shap_v3.py`) mostrou que **TODAS as 15 features de rolling counts (Família 1) ficam em rank #15-#31 nos dois modelos canônicos**. Comparação `count_critico_Xh` vs `count_total_Xh` deu resultado misto (apenas 2h e 4h confirmam criticidade > volume; 1h, 8h e 24h fazem o oposto). **A versão domain-specific da Família 6 (`qtd_alarmes_nivel_muito_alto_360min`, que conta APENAS alarmes nas 82 regras CMA "Muito Alto") venceu com 41% do peso no v3** — 6× a soma de todas as 15 features da Família 1. **Ablation por grupo (`15_ablation_grupos.py`)** confirma: remover G2 (15 features rolling) tem Δ AUC-PR = +0,0032 (modelo melhora ligeiramente — Família 1 é redundante). **Lição metodológica forte para CM 6.1:** features genéricas perdem para versões *domain-specific* da mesma intuição. **H5.2 sub-hipótese atualizada para ❌ Fracamente refutada.**
+  - **Obs 2.10 (parcialmente respondida via IF):** Análise estrutural por TAG do `11_isolation_forest.py` revelou que CA65789 (155 eventos no test, 6 DGs, prevalência 3,87% próxima da média) tem **AUC-ROC de 0,5794 (~aleatório, abaixo do limiar 0,75 de "sinal forte")**. **Implicação:** CA65789 NÃO é outlier estatístico no espaço de 34 features do v3 — o problema dele em W3 (sobreposições de apontamento em jan/2025) parece limitado ao registro de apontamentos, não comportamento operacional anômalo. Restam por investigar distribuição de alarmes + comportamento de operadores. Item permanece `[ ]` para análise complementar em W7 ou Trabalho Futuro CM 6.3.
+  - **Risco 3.3 (resolvido — PARCIALMENTE MITIGADO assimétrico por regime):** Diagnóstico final via Isolation Forest não-supervisionado (`11_isolation_forest.py`). **Para anomalias dominantes (CA65926-like, AUC=0,90):** IF e CMA concordam fortemente → rótulo CMA captura anomalia estatisticamente real, Risco 3.3 mitigado. **Para DGs distribuídos (>88% das TAGs, AUC mediana=0,61):** IF e CMA discordam → Risco 3.3 parcialmente confirmado. **Convergência metodológica** (SHAP v3 + Weibull AFT + IF) valida que o test set é atípico — dominado pelo CA65926. **H6.1 atualizada de 🔄 Pendente para 🟡 Refutada com reinterpretação.** Nova limitação **L10** em CM 6.2.
+  - **Modelo canônico promovido:** v2 → v3 (sem `horas_desde_ultimo_DG`) após SHAP revelar que v2 era cascade detector. v3 captura 5× mais primeiros DGs (Recall@0.5 de 4,3% → 21,1%) com AUC-PR test=0,8556 (−0,62pp vs v2). v2 preservado como modelo intermediário diagnóstico.
+  - **3 modelos canônicos finalizados:** LightGBM v3 (alerta operacional 4h, AUC-PR=0,8556) + Weibull AFT (sobrevivência, C-index=0,7444) + Isolation Forest (diagnóstico do label, não-supervisionado).
+  - **4 análises de fechamento de W6:** validação cruzada SHAP×HR (`12`), Fig 9 comparativa (`13`), calibração + Platt scaling (`14` — Platt rejeitado por drift val→test), ablation por grupo (`15` — revelou alta redundância do modelo, insight para CM 6.1).
+
 Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apenas itens `[ ]` ainda em aberto.
 
 ---
 
-**Última atualização:** 2026-05-22 (W5 pré-modelagem — Obs 2.4 + Obs 2.9 resolvidas + Risco 3.2 re-framado)
+**Última atualização:** 2026-05-25 (W6 conclusão — Obs 2.11 resolvida via SHAP; Risco 3.3 parcialmente mitigado via IF; Obs 2.10 parcialmente respondida via análise estrutural por TAG do IF; H5.2 e H6.1 atualizadas em `hipoteses_eda.md`)
