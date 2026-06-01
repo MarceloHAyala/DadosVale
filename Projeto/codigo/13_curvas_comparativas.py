@@ -1,12 +1,13 @@
+# -*- coding: utf-8 -*-
 """
 13_curvas_comparativas.py - Fig 9: Curvas ROC + Precision-Recall comparativas.
 
 Compara visualmente os 3 modelos finais no test set (jun/2025):
-  - Baseline heuristico (count_critico_4h >= threshold)
-  - LightGBM v3 (modelo canonico, alerta operacional 4h)
-  - Weibull AFT (sobrevivencia, P(T <= 4h))
+  - Baseline heurístico (count_critico_4h >= threshold)
+  - LightGBM v3 (modelo canônico, alerta operacional 4h)
+  - Weibull AFT (sobrevivência, P(T <= 4h))
 
-Material para CM 5.1 do relatorio (Resultados).
+Material para CM 5.1 do relatório (Resultados).
 
 Entradas:
   - dados/features/v3.parquet (test set + target_4h + count_critico_4h)
@@ -159,22 +160,23 @@ def main() -> None:
 
     # Figura: 2 paineis
     print()
-    print("  Gerando Fig 9 (2 paineis)...")
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+    print("  Gerando Fig 9 (2 paineis, figsize=(16,7), dpi=150)...")
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
     # Painel A — ROC
     ax = axes[0]
     for nome, score, cor in modelos:
         fpr, tpr, _ = roc_curve(y, score)
         auc = roc_auc_score(y, score)
-        ax.plot(fpr, tpr, color=cor, linewidth=2,
+        ax.plot(fpr, tpr, color=cor, linewidth=2.5,
                 label=f"{nome}  (AUC = {auc:.4f})")
-    ax.plot([0, 1], [0, 1], "k--", linewidth=1, alpha=0.4, label="Aleatorio (AUC=0.5)")
-    ax.set_xlabel("False Positive Rate", fontsize=11)
-    ax.set_ylabel("True Positive Rate (Recall)", fontsize=11)
-    ax.set_title("(a) Curva ROC", fontsize=12, fontweight="bold")
-    ax.legend(loc="lower right", fontsize=9)
+    ax.plot([0, 1], [0, 1], "k--", linewidth=1.2, alpha=0.5, label="Aleatório (AUC=0,5)")
+    ax.set_xlabel("Taxa de Falsos Positivos (FPR)", fontsize=13)
+    ax.set_ylabel("Taxa de Verdadeiros Positivos (Recall)", fontsize=13)
+    ax.set_title("(a) Curva ROC", fontsize=14, fontweight="bold")
+    ax.legend(loc="lower right", fontsize=11, framealpha=0.95)
     ax.grid(True, alpha=0.3)
+    ax.tick_params(axis="both", labelsize=11)
     ax.set_xlim(0, 1); ax.set_ylim(0, 1.02)
 
     # Painel B — PR
@@ -182,25 +184,26 @@ def main() -> None:
     for nome, score, cor in modelos:
         p, r, _ = precision_recall_curve(y, score)
         ap = average_precision_score(y, score)
-        ax.plot(r, p, color=cor, linewidth=2,
+        ax.plot(r, p, color=cor, linewidth=2.5,
                 label=f"{nome}  (AUC-PR = {ap:.4f})")
-    ax.axhline(prev, color="gray", linestyle="--", linewidth=1, alpha=0.5,
-               label=f"Aleatorio (Prev = {prev:.4f})")
-    ax.set_xlabel("Recall", fontsize=11)
-    ax.set_ylabel("Precision", fontsize=11)
-    ax.set_title("(b) Curva Precision-Recall", fontsize=12, fontweight="bold")
-    ax.legend(loc="upper right", fontsize=9)
+    ax.axhline(prev, color="gray", linestyle="--", linewidth=1.2, alpha=0.6,
+               label=f"Aleatório (Prevalência = {prev:.3f})")
+    ax.set_xlabel("Recall", fontsize=13)
+    ax.set_ylabel("Precisão", fontsize=13)
+    ax.set_title("(b) Curva Precisão-Recall", fontsize=14, fontweight="bold")
+    ax.legend(loc="upper right", fontsize=11, framealpha=0.95)
     ax.grid(True, alpha=0.3)
+    ax.tick_params(axis="both", labelsize=11)
     ax.set_xlim(0, 1); ax.set_ylim(0, 1.02)
 
     fig.suptitle(
         "Figura 9 — Comparativo dos 3 modelos no test set (jun/2025)\n"
         f"n = {n_test:,} eventos | DGs reais (target_4h=1) = {n_pos:,} ({prev*100:.2f}%)",
-        fontsize=13, fontweight="bold", y=1.02,
+        fontsize=15, fontweight="bold", y=1.00,
     )
     plt.tight_layout()
     ARQ_FIG.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(ARQ_FIG, dpi=130, bbox_inches="tight")
+    plt.savefig(ARQ_FIG, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Salvo: {ARQ_FIG.relative_to(ROOT.parent)}")
     print("=" * 70)

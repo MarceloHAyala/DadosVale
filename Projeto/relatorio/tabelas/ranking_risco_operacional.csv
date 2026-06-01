@@ -1,0 +1,34 @@
+TAG,eventos,dgs,frota,tipo,taxa_pct,if_auc_test,nivel_risco,acao_recomendada
+CA65926,13661,4923,793-D 4S,Caminhao,36.04,0.8969,ALTO,Auditoria imediata + revisão da manutenção
+CA65931,19669,1710,793-D 5S,Caminhao,8.69,0.351,ALTO,Auditoria imediata + revisão da manutenção
+CA65930,21821,1622,793-D 5S,Caminhao,7.43,0.515,ALTO,Auditoria imediata + revisão da manutenção
+CA65792,18217,1589,793-D 2S,Caminhao,8.72,0.7185,ALTO,Auditoria imediata + revisão da manutenção
+CA65927,24355,1313,793-D 5S,Caminhao,5.39,0.6011,ALTO,Auditoria imediata + revisão da manutenção
+CA65925,14007,915,793-D 4S,Caminhao,6.53,0.5219,MÉDIO,Monitoramento mensal estratificado
+CA65937,11115,740,793-D 5S,Caminhao,6.66,0.6768,MÉDIO,Monitoramento mensal estratificado
+CA65934,38769,705,793-D 5S,Caminhao,1.82,0.5805,MÉDIO,Monitoramento mensal estratificado
+CA65908,7686,703,793-D 3S,Caminhao,9.15,,MÉDIO,Monitoramento mensal estratificado
+CA65928,44009,674,793-D 5S,Caminhao,1.53,0.6981,MÉDIO,Monitoramento mensal estratificado
+CA65924,16512,588,793-D 4S,Caminhao,3.56,0.7915,MÉDIO,Monitoramento mensal estratificado
+CA65933,11947,576,793-D 5S,Caminhao,4.82,0.6514,MÉDIO,Monitoramento mensal estratificado
+CA5926,6294,472,793-D 5S,Caminhao,7.5,0.5363,MÉDIO,Monitoramento mensal estratificado
+CA5927,7677,471,793-D 5S,Caminhao,6.14,0.6778,MÉDIO,Monitoramento mensal estratificado
+CA65902,4261,418,793-D 3S,Caminhao,9.81,,MÉDIO,Monitoramento mensal estratificado
+CA65922,17003,355,793-D 4S,Caminhao,2.09,,MÉDIO,Monitoramento mensal estratificado
+CA65935,7308,332,793-D 5S,Caminhao,4.54,0.425,MÉDIO,Monitoramento mensal estratificado
+CA65932,4670,270,793-D 5S,Caminhao,5.78,0.8367,MÉDIO,Monitoramento mensal estratificado
+CA65936,10735,236,793-D 5S,Caminhao,2.2,0.584,MÉDIO,Monitoramento mensal estratificado
+CA65923,8658,234,793-D 4S,Caminhao,2.7,,MÉDIO,Monitoramento mensal estratificado
+CA65909,6280,229,793-D 3S,Caminhao,3.65,0.6109,MÉDIO,Monitoramento mensal estratificado
+CA65929,17719,220,793-D 5S,Caminhao,1.24,0.4267,MÉDIO,Monitoramento mensal estratificado
+CA65921,24990,200,793-D 4S,Caminhao,0.8,0.483,MÉDIO,Monitoramento mensal estratificado
+CA65915,7806,188,793-D 4S,Caminhao,2.41,0.5989,BAIXO,Operação normal (rotina padrão)
+PE3798,36282,146,LeTourneau L 1850,Escavadeira,0.4,,BAIXO,Operação normal (rotina padrão)
+CA65790,6852,65,793-D 2S,Caminhao,0.95,0.7288,BAIXO,Operação normal (rotina padrão)
+CA65789,2405,39,793-D 2S,Caminhao,1.62,0.5794,BAIXO,Operação normal (rotina padrão)
+PE3797,44242,12,LeTourneau L 1850,Escavadeira,0.03,0.9263,BAIXO,Operação normal (rotina padrão)
+CA65793,783,6,793-D 2S,Caminhao,0.77,0.4914,BAIXO,Operação normal (rotina padrão)
+PE3796,58073,4,LeTourneau L 1850,Escavadeira,0.01,,BAIXO,Operação normal (rotina padrão)
+PE3795,12999,3,LeTourneau L 1850,Escavadeira,0.02,0.9254,BAIXO,Operação normal (rotina padrão)
+PE3799,16657,2,LeTourneau L 1850,Escavadeira,0.01,,BAIXO,Operação normal (rotina padrão)
+CA65916,1395,2,793-D 4S,Caminhao,0.14,0.748,BAIXO,Operação normal (rotina padrão)

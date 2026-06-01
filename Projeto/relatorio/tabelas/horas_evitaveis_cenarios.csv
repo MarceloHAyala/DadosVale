@@ -1,0 +1,4 @@
+cenario,recall,dgs_antecipados,horas_sem_modelo,horas_com_modelo,horas_evitadas,pct_reducao,premissa
+Conservador,0.21,4192,79848.0,69368.0,10480.0,13.1,"Recall@0.5 do v3 no subgrupo primeiro_DG (4,3% → 21,1%)"
+Realista,0.75,14971,79848.0,42419.0,37429.0,46.9,"Recall@0.5 do v3 no geral (0,7527 no test set jun/2025)"
+Otimista,0.75,17433,79848.0,36266.0,43582.0,54.6,Recall geral + auditoria do CA65926 em março (50% dos 4.923 DGs evitáveis)

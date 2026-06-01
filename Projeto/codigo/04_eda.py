@@ -195,7 +195,8 @@ def fig3_tipo_x_criticidade(tel: pl.DataFrame) -> None:
 
 
 def fig4_serie_temporal_dgs(tel: pl.DataFrame) -> None:
-    print("\n[5/11] Fig 4 - Serie temporal de DGs (diaria + MA 7d)")
+    import datetime as _dt
+    print("\n[5/11] Fig 4 - Série temporal de DGs (diária + MA 7d)")
 
     dgs = tel.filter(pl.col("Is_Dont_Go") == 1)
     pivot = (
@@ -220,34 +221,50 @@ def fig4_serie_temporal_dgs(tel: pl.DataFrame) -> None:
         pl.col("Total").rolling_mean(7).alias("Total_MA7"),
     ])
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
 
     ax1.bar(pivot["dia"], pivot["Total"], color="#cccccc", width=1.0,
             label="DGs/dia")
     ax1.plot(pivot["dia"], pivot["Total_MA7"], color=COR_NEUTRO, linewidth=2,
-             label="Media movel 7d")
-    ax1.set_title("(a) DGs por dia (total)")
-    ax1.set_ylabel("DGs")
-    ax1.legend(loc="upper left")
+             label="Média móvel 7d")
+    ax1.set_title("(a) DGs por dia (total)", fontsize=13, fontweight="bold")
+    ax1.set_ylabel("DGs", fontsize=11)
+    ax1.legend(loc="upper left", fontsize=10)
+    ax1.tick_params(axis="both", labelsize=10)
+
+    # Anotação visual sobre a explosão de junho (CA65926)
+    anot_x = _dt.datetime(2025, 6, 26)  # pico do CA65926 (RFB-Active jun)
+    ymax = float(pivot["Total"].max())
+    ax1.annotate(
+        "Explosão de jun: 82% dos DGs do mês\n"
+        "vêm de UM equipamento (CA65926)\n"
+        "— falha mecânica progressiva",
+        xy=(anot_x, ymax * 0.92),
+        xytext=(_dt.datetime(2025, 3, 1), ymax * 0.75),
+        fontsize=10, color="#b22222", fontweight="bold",
+        arrowprops=dict(arrowstyle="->", color="#b22222", lw=1.5),
+        bbox=dict(boxstyle="round,pad=0.4", fc="#fff5f5", ec="#b22222", lw=1),
+    )
 
     ax2.plot(pivot["dia"], pivot["Critico_MA7"], color=COR_CRITICO,
-             linewidth=2, label="Critico (MA7)")
+             linewidth=2, label="Crítico (MA7)")
     ax2.plot(pivot["dia"], pivot["Nao_Critico_MA7"], color=COR_NAO_CRITICO,
-             linewidth=2, label="Nao_Critico (MA7)")
-    ax2.set_title("(b) DGs por dia separados por Criticidade (MA 7d)")
-    ax2.set_ylabel("DGs (media 7d)")
-    ax2.set_xlabel("Data")
-    ax2.legend(loc="upper left")
+             linewidth=2, label="Não-Crítico (MA7)")
+    ax2.set_title("(b) DGs por dia separados por Criticidade (MA 7d)",
+                  fontsize=13, fontweight="bold")
+    ax2.set_ylabel("DGs (média 7d)", fontsize=11)
+    ax2.set_xlabel("Data", fontsize=11)
+    ax2.legend(loc="upper left", fontsize=10)
+    ax2.tick_params(axis="both", labelsize=10)
     ax2.xaxis.set_major_locator(mdates.MonthLocator())
     ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
 
     plt.suptitle(
-        "Serie temporal de DGs (jan-jun/2025) - "
-        "alimenta investigacao da Obs 2.6",
-        y=1.00,
+        "Figura 4 — Série temporal de DGs (jan-jun/2025)",
+        fontsize=14, fontweight="bold", y=1.00,
     )
     plt.tight_layout()
-    plt.savefig(ARQ_FIG4)
+    plt.savefig(ARQ_FIG4, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"  -> {ARQ_FIG4.relative_to(ROOT)}")
 

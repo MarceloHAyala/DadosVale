@@ -2,15 +2,27 @@
 
 Documento de escrita progressiva que vai consolidando as seções do relatório final ao longo das semanas W2→W8. Será migrado para `Desenvolver_Template.docx` em W9.
 
-**Status atual:** seções preenchidas até **W6 parcial (LightGBM v2 canônico treinado)** — **Introdução**, **Entendimento do Negócio** (CM 1.1 + CM 1.2), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5), **Metodologia Parte 2** (Preparação dos Dados — limpeza + 7 famílias de *features* (35 cols, com Família 1 expandida em W5 para 5 janelas) + 3 *targets* multi-janela + *split* temporal *walk-forward* + *fix* de *leakage* de *encoding*, totalizando matriz canônica `v3.parquet` com 544.885 × 58 colunas) e **Metodologia Parte 3** (Modelagem — baseline heurístico W5, LightGBM v1 W5 com 5 variantes + GATE MARCO 1 PASS, **LightGBM v2 W6** com Optuna + TimeSeriesSplit CV + determinismo: AUC-PR test 0,8618). Figuras 7, 8 e Extra C integradas. Refatoração 24/05: detalhes técnicos dos scripts movidos para `notas_metodologicas.md` Seções 4-9 — `rascunho.md` mantém narrativa + resultados + interpretação, com referências aos detalhes computacionais. **Pendentes:** Análise SHAP sobre v2 (W6), Sobrevivência Weibull AFT + Isolation Forest (W6), Avaliação estratificada (W7), Conclusão (W8).
+**Status atual:** seções preenchidas até **W6 completa** — **Introdução** (reenquadrada 27/05 como estudo analítico com 2 frentes operacionais + 2 entregas complementares — garantia metodológica via IF + tradução para o negócio — e nota sobre L10), **Entendimento do Negócio** (CM 1.1 + CM 1.2 — cenário de aplicação reenquadrado em 2 frentes operacionais + nota separada sobre o IF como garantia metodológica), **Metodologia Parte 1** (Exploração de Dados — W2 EDA + Q4 + Q5), **Metodologia Parte 2** (Preparação dos Dados — limpeza + 7 famílias de *features* + 3 *targets* multi-janela + *split* temporal *walk-forward* + *fix* de *leakage* de *encoding*, matriz canônica `v3.parquet` com 544.885 × 58 colunas), **Metodologia Parte 3** (Modelagem completa W5+W6 — baseline heurístico, LightGBM v1, **LightGBM v2** com Optuna + CV + determinismo, **SHAP do v2** revelando predição de cascata, **LightGBM v3 promovido a canônico** sem `horas_desde_ultimo_DG` (AUC-PR test=0,8556 + Recall +16,72pp em primeiros DGs), **SHAP do v3**, **Weibull AFT** (C-index test=0,7444), **Isolation Forest** (Risco 3.3 parcialmente mitigado), **Fechamento W6** (validação cruzada SHAP×HR, Fig 9 comparativa, calibração + Platt rejeitado por drift, ablation por grupo)), **Resultados — leitura para o time de negócio e operacional** (3 figuras de negócio novas — timeline CA65926, ranking de risco operacional, horas de parada evitáveis — + promoção das figs ExA e ExG para o corpo principal), **Diferenciais metodológicos do trabalho** (6 pontos posicionando contra outras abordagens), **Síntese parcial de limitações** (L1-L10 atualizadas). Refatoração 24/05: detalhes técnicos dos scripts movidos para `notas_metodologicas.md` Seções 4-18 — `rascunho.md` mantém narrativa + resultados + interpretação. **Pendentes:** Avaliação estratificada final em W7 (`10_evaluation.py`), Conclusão + CM 6.3 (Trabalhos Futuros) em W8, migração para `Desenvolver_Template.docx` em W9.
 
 ---
 
 ## Introdução
 
-Este relatório apresenta o desenvolvimento de um modelo preditivo para a antecipação de alertas Don't Go (DG) em frotas de equipamentos de mineração da Vale, na região de Itabira, no escopo do desafio de Análise Avançada de Dados do Programa Desenvolver 2026. O problema central consiste em prever, a partir do histórico recente de telemetria e do contexto operacional de cada equipamento, a probabilidade de ocorrência de um alerta DG nas próximas quatro horas — janela compatível com o tempo necessário para mobilização de peças e equipe de manutenção corretiva no ciclo operacional típico da região.
+Este relatório apresenta um **estudo analítico** para a antecipação de alertas Don't Go (DG) em frotas de equipamentos de mineração da Vale, na região de Itabira, no escopo do desafio de Análise Avançada de Dados do Programa Desenvolver 2026. A entrega não é um sistema em produção, e sim um conjunto de **conclusões fundamentadas + recomendações operacionais acionáveis**, organizadas em duas frentes operacionais (com modelos correspondentes) e duas entregas complementares — uma de garantia metodológica, outra de tradução para o negócio:
 
-O conjunto de dados disponibilizado cobre seis meses (janeiro a junho de 2025): aproximadamente **37,16 milhões de eventos de telemetria** distribuídos entre 35 equipamentos com instrumentação contínua, e cerca de **378 mil ciclos de apontamento operacional** sobre 47 equipamentos. A taxa observada de DGs no semestre é de aproximadamente **0,054%** (19.962 ocorrências em 37,16 milhões de eventos), caracterizando um problema de classificação extremamente desbalanceado. O presente trabalho segue a metodologia CRISP-DM e estrutura-se nas seções de Entendimento do Negócio, Exploração de Dados (Metodologia, Parte 1), Preparação dos Dados, Modelagem, Avaliação e Resultados, e Conclusão.
+**Frentes operacionais:**
+
+1. **Modelo preditivo de classificação** (LightGBM v3) que estima `P(DG nas próximas 4 horas)` por equipamento, com AUC-PR test = 0,8556 (jun/2025) — **alvo: alerta antecipatório de curto prazo**, caso de uso de plantão.
+2. **Modelo de sobrevivência** (Weibull AFT) com *hazard ratios* interpretáveis (IC 95% e p-valor por feature) — **alvo: política de manutenção preventiva estratificada por frota e por equipamento**, sem dependência de *threshold*, caso de uso estratégico.
+
+**Entregas complementares:**
+
+3. **Diagnóstico do rótulo `Is_Dont_Go`** via *Isolation Forest* não-supervisionado — **garantia metodológica** (não é frente operacional): auditoria empírica do viés inerente das regras CMA (Risco 3.3), identificando em quais equipamentos o rótulo captura anomalia estatística real (CA65926, CA65932, CA65924) e em quais não. Sustenta a documentação da Limitação L10 e recomendações em CM 6.3.
+4. **Achados estruturais e recomendações operacionais** documentadas com figuras de negócio: timeline de deterioração do equipamento mais crítico (CA65926), ranking de risco operacional dos 33 equipamentos do parque com ação recomendada por nível, e tradução das métricas técnicas em valor operacional (horas de parada não planejada evitáveis no semestre observado).
+
+O conjunto de dados disponibilizado cobre seis meses (janeiro a junho de 2025): aproximadamente **37,16 milhões de eventos de telemetria** distribuídos entre 35 equipamentos com instrumentação contínua, e cerca de **378 mil ciclos de apontamento operacional** sobre 47 equipamentos. A taxa observada de DGs no semestre é de aproximadamente **0,054%** (19.962 ocorrências em 37,16 milhões de eventos), caracterizando um problema de classificação extremamente desbalanceado. O presente trabalho segue a metodologia CRISP-DM e estrutura-se nas seções de Entendimento do Negócio, Exploração de Dados (Metodologia, Parte 1), Preparação dos Dados, Modelagem, **Resultados** (com leitura específica para o time de negócio e operacional), Limitações e Conclusão.
+
+**Sobre o uso operacional dos achados (importante):** durante a análise, três técnicas independentes convergiram para um achado central que reorientou a forma de comunicar os resultados — a performance agregada do modelo de classificação no teste é largamente dirigida pela detecção de um único equipamento em deterioração progressiva (CA65926, responsável por 24,7% dos DGs do semestre). Em regimes sem essa anomalia dominante, a efetividade do modelo cai significativamente. Isso reposiciona a entrega: o modelo de classificação é uma das ferramentas do conjunto, mas o **valor operacional principal está no monitoramento estratificado por equipamento + decisão de manutenção informada pelas duas frentes em conjunto (LightGBM v3 + Weibull AFT)** — não num único *score* automático. Essa nuance permeia toda a seção de Resultados.
 
 ---
 
@@ -30,13 +42,28 @@ O **catálogo de regras "Muito Alto" da CMA** (bloco D) — consolidado em [`tab
 
 Quando alguma das 82 regras é satisfeita pela telemetria observada, o evento recebe a flag **`Is_Dont_Go = 1`** (bloco E), sinalizando que o equipamento **não deve sair da mina ou continuar operando** até que o problema seja resolvido. A **ação operacional** correspondente (bloco F) é então acionada pelo *dispatcher* responsável, que comanda a parada e dispara inspeção, intervenção ou manutenção corretiva. Tipicamente, o equipamento entra em um novo ciclo de apontamento com estado `Manutenção`, fechando o *loop* operacional. No semestre analisado, esse mecanismo gerou **19.962 ocorrências de DG**, distribuídas de forma fortemente desigual entre alarmes, frotas, estados operacionais e meses do semestre — assimetria detalhada nas seções de Caracterização e Análise temporal mais adiante.
 
-### Cenário de aplicação operacional do modelo (CM 1.2)
+### Cenário de aplicação operacional proposto (CM 1.2)
 
-O modelo proposto neste estudo encaixa-se **lateralmente** ao fluxo operacional descrito acima (bloco G da Figura 1) — não substitui a regra CMA, mas a **antecipa**. Ao consumir continuamente a telemetria recente (rolling windows de 1, 4 e 24 horas) junto com o estado operacional corrente, o histórico recente do operador e o histórico próprio do alarme, o modelo produz a cada instante uma estimativa de `P(DG nas próximas 4 horas)` para cada TAG instrumentada. A janela de 4 horas foi escolhida por três motivos convergentes: **(i) operacional** — compatível com o tempo médio de mobilização de peças e equipe de manutenção em Itabira; **(ii) preditivo** — curta o bastante para que o estado atual dos sensores ainda tenha valor informativo; **(iii) metodológico** — análise de sensibilidade prevista para W4 testa janelas alternativas (2h e 8h) para validar empiricamente a escolha em vez de fundamentá-la apenas em argumento operacional.
+A proposta do estudo se encaixa **lateralmente** ao fluxo operacional descrito acima (bloco G da Figura 1) — não substitui a regra CMA, mas a complementa em **duas frentes operacionais distintas**, cada uma servida por uma das ferramentas analíticas entregues:
 
-O cenário de aplicação proposto opera da seguinte forma. A cada início de turno operacional (cadência típica de 6h-18h e 18h-6h, ou alternativamente em cadência horária se a infraestrutura suportar), o modelo recalcula a probabilidade de DG das próximas 4h para cada uma das 35 TAGs com telemetria contínua. As TAGs cuja probabilidade ultrapassa um limiar de operação calibrado em W7 — definido pela curva *precision-recall* e por análise de custo-benefício explícita entre falsos positivos (inspeções desnecessárias) e falsos negativos (paradas não planejadas) — aparecem no painel do *dispatcher* como **fila priorizada de inspeção preventiva**, ranqueada pelo score do modelo. O *dispatcher* aciona a manutenção, que mobiliza peça e equipe enquanto o equipamento ainda opera, evitando a parada não planejada caso o DG real efetivamente venha a ocorrer quatro horas depois — ou, no melhor cenário, evitando o DG por completo via intervenção precoce no problema subjacente.
+**Frente 1 — Alerta antecipatório de curto prazo (LightGBM v3).** Ao consumir continuamente a telemetria recente (*rolling windows* de 1, 2, 4, 8 e 24 horas) junto com o estado operacional corrente, o histórico recente do operador e o histórico próprio do alarme, o modelo de classificação produz a cada instante uma estimativa de `P(DG nas próximas 4 horas)` para cada TAG instrumentada. A janela de 4 horas foi escolhida por três motivos convergentes: **(i) operacional** — compatível com o tempo médio de mobilização de peças e equipe de manutenção em Itabira; **(ii) preditivo** — curta o bastante para que o estado atual dos sensores ainda tenha valor informativo; **(iii) metodológico** — análise de sensibilidade nas janelas 2h e 8h (W5, ver tabela `comparacao_horizontes_lightgbm.csv`) validou empiricamente a escolha. Esta ferramenta entrega o **caso de uso de plantão**: priorização de inspeção a cada turno.
 
-O ganho operacional esperado é a conversão de uma fração das paradas não planejadas (reativas, custo alto, equipamento desativado sem aviso) em inspeções preventivas (planejadas, custo baixo, executadas em janelas de operação ociosa ou em troca de turno). A magnitude desse ganho será quantificada em W7-W8 a partir das métricas finais do modelo escolhido — Recall sobre DG e tempo médio de antecipação — traduzidas em horas de parada evitadas e estimativa de custo evitado por equipamento e por frota.
+**Frente 2 — Política de manutenção preventiva estratificada (Weibull AFT + ranking estrutural).** O modelo de sobrevivência entrega *hazard ratios* interpretáveis com intervalo de confiança 95% e p-valor por feature. Diferente do modelo de classificação, **não depende de threshold**: a saída é uma estimativa de tempo até o próximo DG em função do estado atual. Combinado com o ranking de risco por equipamento (Figura `figNeg02` na seção de Resultados — 5 ALTO, 18 MÉDIO, 10 BAIXO, com ação recomendada por nível), entrega o **caso de uso estratégico**: revisar o plano de manutenção preventiva com base em diferenças quantificadas entre frotas (LeTourneau vs 793-D 5S, por exemplo, com *time ratio* de 0,17) e entre equipamentos individuais — política orientada por evidência, não por intuição.
+
+**Modo de operação proposto (visão integrada).** A cada início de turno, o painel operacional consolida:
+
+- **Alertas curtos** (Frente 1): TAGs cuja `P(DG ≤ 4h)` ultrapassa um limiar calibrado por curva *precision-recall* e análise de custo-benefício explícita (W7) — fila priorizada de inspeção a cada turno.
+- **Risco estrutural** (Frente 2): ranking dos 33 equipamentos com telemetria significativa por *hazard* e por taxa observada de DG, com indicador visual de nível (ALTO/MÉDIO/BAIXO — Figura `figNeg02`) e ação recomendada por nível — informação atualizada mensalmente, base para a política de manutenção preventiva.
+
+**Ganho operacional esperado.** A conversão de uma fração das paradas não planejadas (reativas, custo alto, equipamento desativado sem aviso) em inspeções preventivas (planejadas, custo baixo). A magnitude desse ganho é quantificada na seção de Resultados em três cenários com premissas explícitas — entre **10.480h e 43.582h-equipamento de parada não planejada evitáveis no semestre observado** sobre uma base atual estimada de 79.848h.
+
+**Limitação operacional reconhecida desde o entendimento do negócio.** Análise empírica posterior (Resultados + Limitação L10) revela que a alta performance agregada do modelo de classificação em junho é largamente dirigida pela detecção de um equipamento em deterioração progressiva (CA65926). Em regimes sem essa anomalia dominante, a efetividade da Frente 1 cai significativamente — para próximo da AUC mediana por TAG (~0,61), em vez do agregado de 0,86. Isso reforça a importância da **operação integrada das duas frentes**: a Frente 1 isoladamente não realiza todo o valor proposto; a combinação com a Frente 2 (visão estrutural por equipamento + política de manutenção informada por sobrevivência) é o que sustenta o ganho operacional estimado.
+
+#### Nota sobre o terceiro modelo entregue: o Isolation Forest como garantia metodológica
+
+Um terceiro modelo é entregue no escopo do estudo — o *Isolation Forest* não-supervisionado treinado sem o rótulo `Is_Dont_Go` (`11_isolation_forest.py`). Sua finalidade **não é operacional** e por isso não compõe as duas frentes acima. Sua função é **metodológica**: testar empiricamente o Risco 3.3 (viés do rótulo `Is_Dont_Go`, gerado por 82 regras CMA cuja calibração é ~95% herdada do fabricante dos equipamentos). A pergunta respondida é: *"em quais equipamentos as anomalias estatísticas detectáveis no espaço de features coincidem com os DGs rotulados pela CMA?"*
+
+O achado — convergência forte em apenas 3 equipamentos (CA65926, CA65932, CA65924) com volume significativo — é o que sustenta a documentação honesta da **Limitação L10** em CM 6.2 e a **recomendação CM 6.3** de investigação manual dos eventos com alto *anomaly score* que não foram rotulados como DG (possíveis "DGs perdidos" pelas regras CMA). O modelo IF como ferramenta de **detecção contínua de deterioração em deployment** seria uma extensão natural (treino em janela móvel) e fica registrada em Trabalhos Futuros (CM 6.3), mas **não foi implementada neste estudo** — o IF aqui rodou uma única vez, sobre os splits fixos.
 
 ---
 
@@ -1088,6 +1115,137 @@ O SHAP disse que `qtd_alarmes_muito_alto_360min` é 41% do peso (rank #1) e `tip
 **O v3 entrega 0,8556 AUC-PR no test através de múltiplas rotas redundantes**, não através de um sinal único insubstituível. Isso é **coerente com L10** (sinal do CA65926 é fortemente identificável por múltiplas *features* simultaneamente: tipo_caminhao, frota, count_critico_24h, razao_alarme_*, etc.).
 
 **Implicação operacional:** o v3 é **robusto a perda de *features*** em deployment (sensores quebrados, fontes intermitentes). Mesmo perdendo 8 das 34 *features* (G6 inteiro), AUC-PR mantém-se em 0,86. Material direto para CM 6.3 (Trabalhos Futuros — robustez operacional).
+
+---
+
+## Resultados — leitura para o time de negócio e operacional
+
+Esta seção traduz os achados técnicos do projeto em **decisões e recomendações acionáveis**, com figuras desenhadas para o público de negócio. Três peças centrais consolidam a entrega:
+
+### Caso CA65926 — janela de antecipação real de 3 meses
+
+[Figura — Deterioração progressiva do CA65926 (jan-jun/2025)](figuras/figNeg01_timeline_ca65926.png)
+
+A figura acima reconstrói a história operacional do **CA65926**, equipamento responsável por **24,7% de todos os DGs do semestre** (4.923 de 19.962). A leitura é direta:
+
+- **Janeiro–fevereiro:** comportamento próximo ao baseline do parque (taxa 2-4%).
+- **Março:** **sinal precursor não capturado pela operação atual** — 438 DGs (taxa 20,28%), **5× a taxa global do parque** (3,66%), mas via alarmes diversos (não o sensor que falharia em junho).
+- **Abril–maio:** aparente recuperação (taxa volta a 3-13%) — equipamento parecia "controlado" pelas métricas agregadas.
+- **Junho:** **crise** — 4.298 DGs (taxa **60,68%**), 98% deles via Right Front Brake Temperature, manifestação visível da falha mecânica progressiva.
+
+**Janela de antecipação real entre sinal e crise: 3 meses.** Esse intervalo seria suficiente para auditoria física, mobilização de peça e intervenção planejada — *se a operação monitorasse taxa de DG por equipamento*, não apenas por frota.
+
+### Ranking de risco por equipamento — onde focar a atenção
+
+[Figura — Ranking de risco operacional dos 33 equipamentos do parque](figuras/figNeg02_ranking_risco_operacional.png)
+
+A figura ranqueia os 33 equipamentos com telemetria significativa (≥ 100 eventos no semestre) por **volume de DGs + taxa**. Aplicando critérios operacionais combinados, o parque divide-se em:
+
+| Nível | Critério | Quantidade | Ação recomendada |
+|---|---|---:|---|
+| **ALTO** 🔴 | DGs ≥ 1000 OU taxa ≥ 30% | **5 equipamentos** | Auditoria imediata + revisão da política de manutenção |
+| **MÉDIO** 🟠 | DGs ≥ 200 OU taxa ≥ 5% | **18 equipamentos** | Monitoramento mensal estratificado |
+| **BAIXO** 🟢 | resto | **10 equipamentos** | Operação normal (rotina padrão) |
+
+Os 5 equipamentos em risco ALTO (CA65926, CA65931, CA65930, CA65792, CA65927) **concentram a maior parte dos DGs do parque**. Política de manutenção preventiva operada por equipamento — não por frota — captura essa heterogeneidade. Tabela completa em `relatorio/tabelas/ranking_risco_operacional.csv`.
+
+### Valor operacional do modelo — horas de parada evitáveis
+
+[Figura — Valor operacional do modelo: horas de parada evitáveis](figuras/figNeg03_horas_parada_evitavel.png)
+
+Traduzindo as métricas técnicas (Recall@0.5 = 75% no geral, 21% em primeiros DGs) em **horas-equipamento de parada não planejada evitáveis** no semestre, com premissas operacionais explícitas (4h de parada corretiva por DG vs 1,5h de inspeção preventiva planejada = 2,5h preservadas por DG antecipado):
+
+| Cenário | Recall | DGs antecipados | Horas evitadas | Redução |
+|---|---:|---:|---:|---:|
+| Conservador (só primeiros DGs) | 21% | 4.192 | **10.480h** | 13% |
+| Realista (Recall geral do v3) | 75% | 14.971 | **37.429h** | 47% |
+| Otimista (Realista + CA65926 em mar) | 75% + auditoria | 17.433 | **43.582h** | 55% |
+
+**Base de comparação:** 79.848 horas-equipamento de parada não planejada no semestre observado (jan-jun/2025). O cenário realista converte praticamente metade dessas horas em manutenção planejada.
+
+**Importante:** todos os cenários assumem **threshold operacional adequado** (calibrado por custo-benefício em deployment) e **monitoramento estratificado por equipamento** (sem o qual o modelo perde ~88% da sua efetividade nos demais equipamentos do parque — limitação L10).
+
+### Heterogeneidade entre frotas — quem opera com menos risco
+
+[Figura Extra A — Curva Kaplan-Meier por frota (7 dias)](figuras/figExA_kaplan_meier_por_frota.png)
+
+A análise de sobrevivência mostra a **probabilidade de um equipamento ainda não ter sofrido novo DG** em função das horas desde o último evento, separada por frota:
+
+- **LeTourneau L 1850** (escavadeira) — curva no topo: ~92% ainda sem DG após 7 dias.
+- **793-D 4S** (caminhão mais recente) — ~40% após 7 dias.
+- **793-D 5S** (caminhão mais antigo) — ~12% após 7 dias.
+
+Material direto para política de manutenção: **frotas mais antigas (5S) precisam de inspeção mais frequente** que frotas mais recentes (4S) ou escavadeiras. Confirmado por três técnicas independentes (LightGBM SHAP, Weibull AFT hazard ratios, Isolation Forest) — convergência metodológica.
+
+### Concentração dos DGs em poucos equipamentos
+
+[Figura Extra G — Pareto top-15 TAGs com mais DGs](figuras/figExG_pareto_tags.png)
+
+Lei de Pareto se aplica fortemente ao parque: **CA65926 sozinho responde por 24,7%** dos DGs do semestre; **top 5 equipamentos concentram >50%**. Combinada com a Figura Extra B (top 5 alarmes = 87% dos DGs), a conclusão operacional é clara: **o foco de auditoria deveria estar em poucos equipamentos × poucos alarmes**, não numa varredura uniforme do parque.
+
+---
+
+## Diferenciais metodológicos do trabalho
+
+Esta seção posiciona o trabalho frente a outras abordagens possíveis para o mesmo desafio (incluindo classificadores supervisionados padrão como Random Forest ou XGBoost). **Não há diferencial significativo no algoritmo específico** usado — LightGBM, Random Forest e XGBoost pertencem à mesma família de *gradient boosting* sobre árvores e produzem desempenho comparável em problemas tabulares com a mesma matriz de *features*. O que diferencia este estudo está na **forma de tratar o problema**, não no algoritmo escolhido. Seis pontos sustentam essa afirmação:
+
+### 1. Honestidade metodológica: corrigimos o modelo após descobrir o que ele realmente fazia
+
+A primeira versão treinada (v2, AUC-PR test = 0,8618 com 35 features) passou todos os critérios estabelecidos a priori (GATE MARCO 1, AUC-PR > 0,63 em test). **A análise SHAP posterior revelou que o modelo era, em essência, um detector de continuação de cascatas, não um preditor de primeiros DGs.** A *feature* dominante (`horas_desde_ultimo_DG`, 39,3% do peso) operava como atalho: 100% dos eventos com SHAP positivo alto tinham DG anterior em ≤ 2h (mediana 1 minuto). Para eventos sem DG recente — o caso operacional valioso — o v2 detectava **apenas 1% dos primeiros DGs**.
+
+A resposta foi treinar uma variante v3 removendo a *feature* problemática. O v3 (canônico final do relatório) tem AUC-PR aggregate quase idêntico (0,8556, −0,62 pp) mas **captura 5× mais primeiros DGs** (Recall@0.5 de 4,3% → 21,1%). v2 fica preservado no projeto como modelo intermediário diagnóstico, com explicação completa em `controle_alteracoes.md` (entrada 24/05). **A maioria dos trabalhos não detecta esse tipo de problema** — entrega o modelo com AUC alto e a discussão acaba ali. A combinação SHAP + diagnóstico ad-hoc + retreinamento é diferencial direto de qualidade.
+
+### 2. Triangulação metodológica: três modelos com matemáticas radicalmente diferentes
+
+O relatório entrega três modelos independentes que respondem perguntas diferentes:
+
+- **LightGBM v3** — classificação supervisionada via *gradient boosting* (Shapley values para interpretabilidade)
+- **Weibull AFT** — sobrevivência paramétrica via *maximum likelihood* (hazard ratios com IC 95% para interpretabilidade)
+- **Isolation Forest** — detecção de anomalia não-supervisionada via *isolation trees*
+
+As três técnicas concordam em quatro *features* estruturais (`tipo_caminhao`, `tag_freq`, `frota_793D_4S`, `frota_793D_5S`) — convergência metodológica como **validação empírica de validade**, não como redundância. Quando divergem (LightGBM dá 41% para `qtd_alarmes_muito_alto`, Weibull não), a divergência é informativa (sinais antecipativos para horizonte específico vs sinais de *base rate* estrutural). Detalhes em `notas_metodologicas.md` Seções 11-14 e tabela `validacao_sentido_features.csv`.
+
+**Um trabalho com apenas Random Forest entrega uma perspectiva única.** Três técnicas independentes que convergem sobre os mesmos *drivers* é evidência muito mais forte de que o sinal aprendido é real e não artefato do método.
+
+### 3. Auditoria do rótulo: questionamos a confiabilidade do próprio `Is_Dont_Go`
+
+O rótulo `Is_Dont_Go` é gerado por 82 regras da CMA, das quais ~95% são *wrappers* sobre alarmes nativos do fabricante (Caterpillar). Em princípio, o modelo poderia estar aprendendo a replicar as regras CMA, não a antecipar falhas mecânicas reais. O Risco 3.3 (viés do label) foi explicitado no início do projeto e testado empiricamente em W6 via Isolation Forest treinado **sem usar `Is_Dont_Go`**.
+
+Resultado: assimetria forte por equipamento. Para anomalias dominantes (CA65926-like, falha mecânica progressiva), IF e CMA concordam fortemente (AUC=0,90). Para 88% dos demais equipamentos, AUC mediana = 0,61 (próximo do aleatório) — o rótulo CMA pode estar capturando eventos sem assinatura estatística distintiva no espaço de *features* atual. **Risco 3.3 parcialmente confirmado, parcialmente mitigado.** Material direto para a seção de Limitações (L10) e Trabalhos Futuros.
+
+**A maioria dos trabalhos aceita o rótulo como verdade.** Este estudo trata o rótulo como hipótese a testar.
+
+### 4. Achados estruturais acionáveis, não apenas "o modelo prediz"
+
+A entrega contém recomendações operacionais quantificadas que não dependem de o modelo estar em produção:
+
+- **Caso CA65926** (Figura `figNeg01`): timeline mês a mês mostra sinal precursor em março (438 DGs, taxa 20,28% — 5× a média do parque) **3 meses antes** da crise de junho. **Janela de antecipação real existe nos dados** se o monitoramento operar por equipamento, não por frota.
+- **Ranking de risco do parque** (Figura `figNeg02`): 5 equipamentos em risco ALTO (auditoria imediata), 18 em MÉDIO (monitoramento mensal), 10 em BAIXO (operação normal). Ação recomendada por equipamento, não por categoria genérica.
+- **Tradução em valor operacional** (Figura `figNeg03`): em 3 cenários com premissas declaradas, entre 10.480h e 43.582h-equipamento de parada não planejada evitáveis no semestre observado (base: 79.848h).
+
+Esses achados são **utilizáveis pelo time operacional independentemente** de o modelo de classificação estar deployado. Um relatório que entrega apenas "o modelo classifica DGs com AUC=X" deixa o leitor com a pergunta "e agora?" — este entrega "e agora **estes 5 equipamentos**, com **esta janela de antecipação**, gerando **este ganho estimado em horas**".
+
+### 5. Rigor temporal: validação *walk-forward* sem *leakage*
+
+O *split* temporal é fixo `jan-abr / mai / jun`, com cortes nos limites de mês. O *tuning* (Optuna, 50 *trials*) usa **TimeSeriesSplit CV de 4 *folds* expandidos** (jan→fev, jan-fev→mar, jan-mar→abr, jan-abr→mai), garantindo que o conjunto de teste (junho) **nunca** é tocado durante a otimização de hiperparâmetros. *Feature encoding* (`tag_freq`, `operador_freq`) é calculado **apenas sobre o conjunto de treino** após detecção e correção de *leakage* sutil em W5 (`06b_fix_encoding_leakage.py`, gerou `v3.parquet`).
+
+Adicionalmente, o LightGBM v3 é configurado com `deterministic=True` + `force_col_wise=True`: dois *runs* produzem o mesmo modelo *bit-exact* até a última casa decimal — requisito para auditoria. Detalhes em `notas_metodologicas.md` Seções 6, 9.
+
+**Muitos trabalhos usam *split* aleatório** (treino/teste sorteado sobre todo o semestre) ou *cross-validation* aleatório — **introduz *leakage* temporal** (modelo "vê" o futuro durante o treino) e reporta métricas infladas. A AUC-PR test = 0,8556 deste trabalho é menor que a que se obteria com *split* aleatório, mas é **real** — corresponde à performance esperada em deployment com dados fora da janela observada.
+
+### 6. Rastreabilidade total e refutação como sinal de qualidade
+
+O projeto mantém quatro documentos de rastreabilidade complementares ao código: `controle_alteracoes.md` (8 entradas com decisões metodológicas ANTES/DEPOIS + justificativa + impacto), `hipoteses_eda.md` (15 hipóteses testadas com veredito empírico), `notas_metodologicas.md` (14 seções com detalhamento técnico de cada script), e `observacoes_importantes.md` (checklist vivo de itens em aberto). Todo o pipeline analítico é reproduzível *bit-exact* a partir dos dados brutos via `uv sync` + execução dos scripts em ordem (ver Anexo A).
+
+**Quantitativamente:** das 15 hipóteses analíticas testadas, **11 caíram (refutadas ou refutadas com reinterpretação)** — taxa de refutação de 73%. Esse é sinal claro de que a exploração cumpriu o papel de **testar premissas**, não apenas confirmar intuições prévias. As 3 hipóteses confirmadas (H2.1 top 5 alarmes, H4.1 LeTourneau, H7.1 equipamentos individuais problemáticos) são todas estruturalmente fortes — duas delas emergiram como **padrões não-hipotetizados a priori**, validados pela convergência de múltiplas evidências independentes.
+
+### Síntese
+
+Frase de posicionamento para a defesa do trabalho:
+
+> *"Não entregamos só uma previsão — entregamos uma previsão que entendemos, três modelos complementares que respondem perguntas diferentes, uma auditoria do próprio rótulo que estamos aprendendo, e recomendações operacionais cujos ganhos foram quantificados em horas-equipamento. As limitações estão documentadas com a mesma honestidade dos achados."*
+
+Um modelo Random Forest com 90% de acurácia que ninguém entende e que secretamente só detecta cascatas é **pior** que o v3 canônico deste trabalho — com AUC-PR ligeiramente menor mas com diagnóstico do próprio comportamento + complementos analíticos + recomendações acionáveis.
 
 ---
 
