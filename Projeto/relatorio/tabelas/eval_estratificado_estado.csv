@@ -1,0 +1,4 @@
+estado_pre_evento,n_eventos,n_DG_real,prevalencia_pct,auc_pr,precision_thr_op,recall_thr_op,n_alertas_thr_op
+Manutenção,4776,885,18.53,0.7902,0.471,0.8825,1658
+Operando,54108,9770,18.06,0.863,0.7057,0.812,11241
+Parado,12179,1383,11.36,0.838,0.6566,0.8004,1686

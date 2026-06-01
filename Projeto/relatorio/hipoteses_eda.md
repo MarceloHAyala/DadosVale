@@ -167,6 +167,15 @@ Tabela `relatorio/tabelas/obs29_rfb_junho_decomposicao.csv` (34 linhas long-form
 
 **Implicação:** A causa do achado 4 tem três interpretações possíveis: (i) **genuína** — escavadeiras realmente quebram menos (são ferramentas estacionárias com menos componentes em movimento contínuo); (ii) **viés da regra CMA** — thresholds calibrados para caminhões, mal adaptados a escavadeiras; (iii) **subreporte sistêmico** — confluência dos achados 1-3 sugere que a instrumentação da frota é problemática e DGs podem estar ocorrendo mas não sendo capturados. **Análise estratificada Caminhão vs Escavadeira em W7 (Qualidade C) é mandatória** — modelo não pode ser avaliado em métricas agregadas sem essa quebra.
 
+**Atualização pós-W7 (27/05/2026 — análise estratificada via `10_evaluation.py`):** A análise estratificada por frota e por tipo no test set revela um achado categórico que **amplia a confirmação de H4.1 com 5ª evidência empírica:**
+
+| Frota | n eventos (test) | DGs | AUC-PR | Precision | Recall | n alertas emitidos |
+|---|---:|---:|---:|---:|---:|---:|
+| **LeTourneau L 1850** | **31.909 (45%)** | **92** | **0,0077** | **0,000** | **0,000** | **0** |
+| 793-D (todas) | 39.180 (55%) | 11.946 | 0,8608 | 0,673 | 0,822 | 14.585 |
+
+O modelo LightGBM v3 emite **zero alertas** em 31.909 ocorrências de escavadeiras. AUC-PR = 0,008 (essencialmente aleatório). Isso **operacionaliza** as 4 evidências anteriores: o efeito não é só de menor base rate na frota, é de **falência operacional do modelo de classificação** para esse tipo de equipamento. Causa provável: a feature `tipo_caminhao` (24% do peso SHAP) atua como *gating* — quando = 0 (escavadeira), o modelo virtualmente desliga predições positivas. **Registrada como nova limitação L11 em CM 6.2** (`rascunho.md` Síntese de Limitações). Mitigações propostas em CM 6.3 (Trabalhos Futuros): modelo dedicado para escavadeiras, ou política via Frente 2 (Weibull AFT — naturalmente reconhece baixo *base rate*).
+
 ---
 
 ## 5. Estado operacional e contexto dos DGs
@@ -385,4 +394,4 @@ A EDA agregada esconde esses indivíduos; **três técnicas de modelagem complet
 
 ---
 
-**Última atualização:** 2026-05-25 (W6 conclusão — Obs 2.11 / H5.2 fracamente refutada via SHAP; H6.1 / Risco 3.3 parcialmente mitigado via Isolation Forest; H7.1 ratificada por convergência tripla SHAP × HR × IF; CA65924 validado por método independente)
+**Última atualização:** 2026-05-27 (W7 Grupo A — H4.1 reforçada com 5ª evidência empírica via análise estratificada por frota: modelo emite ZERO alertas em escavadeiras, novo achado categórico → L11. Threshold operacional canônico definido em 0,30. Achado contra-intuitivo registrado: modelo performa ligeiramente MELHOR em categorias unknown que conhecidas no treino — refuta expectativa W5 sobre extrapolação.)

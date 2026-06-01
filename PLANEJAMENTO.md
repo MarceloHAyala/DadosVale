@@ -1576,7 +1576,24 @@ W6 fechou a etapa de modelagem com **três modelos** (v3 canônico + Weibull AFT
 
 **Objetivo:** pipeline analítico fechado. A partir daqui só escrita.
 
-- [ ] `Projeto/codigo/10_evaluation.py`:
+- [X] **`Projeto/codigo/10_evaluation.py` — Grupo A executado em 27/05 (~30 s):**
+  - Tabela custo-benefício: 11 thresholds × 4 ratios (1:1, 3:1, 5:1, 10:1). **Threshold canônico = 0,30 (ratio 5:1, max F2=0,783).**
+  - **Q6 (faixas):** Verde < 0,145 / Amarelo 0,145-0,30 / Vermelho ≥ 0,30. Vermelho concentra **67% de DGs reais em 20% dos eventos**.
+  - **Análise estratificada por frota:** **L11 nova — escavadeira LeTourneau L 1850 tem AUC-PR=0,008, zero alertas no test (45% dos eventos)**.
+  - Estratificação por tipo: Caminhão 0,86 / Escavadeira 0,008 (mesma história).
+  - Estratificação por estado pré-evento: Operando 0,86 / Manutenção 0,79 / Parado 0,84 — modelo robusto, confirma Obs 2.7.
+  - **Insight contra-intuitivo CM 6.1:** unknown no treino performa ligeiramente MELHOR que conhecido (0,89 vs 0,86) — refuta expectativa W5 de degradação por extrapolação.
+  - **Fig 10** gerada com anotações de impacto operacional. Tradução: redução de 17.406h (36,1%) de parada não planejada no semestre observado.
+  - Saídas: 6 tabelas (`eval_*.csv`) + `fig10_matriz_confusao_v3.png`. Detalhes em `controle_alteracoes.md` entrada 27/05.
+- [X] **`Projeto/codigo/16_random_forest_comparativo.py` — RF tunado em paralelo (~30-60 min)** com mesma config rigorosa do v3 (Optuna 50 trials + TimeSeriesSplit CV 4 folds + mesma seed). Em execução para reforçar Diferencial #1 (algoritmo não é o diferencial).
+
+#### W7 Grupo B — análises complementares (01/06)
+
+- [X] **`Projeto/codigo/17_distribuicao_antecipacao.py` — B#2 (Qualidade B):** Distribuição temporal dos TPs do v3. **50% são detecções diretas (próprio evento é DG, antecipação=0); dos 50% restantes (antecipações reais), mediana=5,7 min, P75=56 min, P90=146 min.** Apenas 18% atingem janela de mobilização (90 min). **Nova limitação L12** registrada — v3 é mais "detector de DG iminente" que "antecipador 4h". Saídas: `distribuicao_antecipacao.csv` + `figNeg04_distribuicao_antecipacao.png` (2 painéis: decomposição + distribuição). Tempo: ~15 s.
+- [X] **`Projeto/codigo/18_top100_fps_if.py` — B#3 (Risco 3.3 inverso):** Top 100 FPs do Isolation Forest. **94 dos 100 vêm da PE3797 (escavadeira LeTourneau).** Apenas 6% têm DG futuro em 4h, mas 99% têm eventos Críticos próximos (mediana 9). **6ª evidência convergente sobre LeTourneau** somando às 5 de H4.1+L11. Material para CM 6.1 (Insight: IF revela regime anômalo em LeTourneau que CMA não classifica) + CM 6.3 (auditoria manual + revisão regras CMA). Saídas: `top100_fps_if.csv` + `top100_fps_if_concentracoes.csv` + `figExH_top100_fps_if.png` (3 painéis). Tempo: ~30 s.
+- [X] **B#4 — Insights Não Óbvios consolidados (CM 6.1):** 11 insights documentados na nova seção do `rascunho.md`. Material direto para a redação de CM 6.1 em W8.
+- [ ] **`Projeto/codigo/08d_comparacao_horizontes_cv.py` — B#1 (Profundidade 1 rigorosa):** comparação T2/T4/T8 via TimeSeriesSplit CV 4 folds com hiperparâmetros fixos do v3. **Em execução em background (~6 min).**
+- [ ] **Tarefas originais de W7 — NÃO REPETIDAS porque já foram entregues antes:**
   - [ ] **Fig 10** — Matriz de confusão do modelo escolhido com anotações de impacto operacional (CM 5.2)
   - [ ] Análise dos falsos negativos: que TAGs/frotas/operadores escapam?
   - [ ] **[Qualidade C] Análise de erro estratificada**: matriz de confusão e métricas por **frota** e por **tipo** (Caminhão vs. Escavadeira) — modelo não pode falhar mais em uma frota

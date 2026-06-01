@@ -1053,6 +1053,186 @@ Em todos os ângulos analisados, o **regime de teste é atípico** — dominado 
 
 ---
 
+### 2026-05-27 — W7 Grupo A: Avaliação estratificada, threshold operacional 0,30 (FN:FP=5:1), L11 (escavadeira), insight unknown
+
+Aplicado por `Projeto/codigo/10_evaluation.py` (~30 s). Avaliação técnica final do LightGBM v3 no test set jun/2025 cobrindo os itens do Grupo A de W7 (excluídos os já entregues em W6 + figuras de negócio Neg01-Neg03 + Fig 5 → reserva).
+
+#### Decisão metodológica 1 — threshold operacional canônico = 0,30 (ratio FN:FP = 5:1)
+
+**ANTES:** o modelo v3 foi avaliado e SHAP-analisado, mas não havia ponto de operação canônico definido. Fig 9 (curvas) mostrava AUC-PR=0,8556 sem associar a um corte específico.
+
+**DEPOIS:** tabela `eval_custo_beneficio.csv` testa 11 thresholds (0,05 a 0,80) × 4 premissas de custo (1:1, 3:1, 5:1, 10:1). Threshold ótimo (mínimo custo total) por premissa:
+
+| Custo FN:FP | Thr* | TP | FP | FN | P | R | F1 | F2 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1:1 | 0,70 | 8.430 | 946 | 3.608 | 0,899 | 0,700 | 0,787 | 0,733 |
+| 3:1 | 0,40 | 9.408 | 3.193 | 2.630 | 0,747 | 0,782 | 0,764 | 0,774 |
+| **5:1 (CANÔNICO)** | **0,30** | **9.821** | **4.764** | **2.217** | **0,673** | **0,816** | **0,738** | **0,783** |
+| 10:1 | 0,15 | 10.624 | 10.478 | 1.414 | 0,503 | 0,883 | 0,641 | 0,767 |
+
+**Justificativa:** ratio puro das premissas operacionais (FN=4h corretiva vs FP=1,5h preventiva) é 2,7:1. Considerando custos não monetizados (mobilização emergencial, peças em estoque, segurança), o ratio efetivo é estimado entre 3:1 e 10:1. **5:1 é compromisso razoável** e maximiza F2 (0,783) — métrica adequada para mineração onde FN é claramente mais custoso. Decisão aprovada pelo usuário (27/05) após revisão da tabela completa.
+
+**Q6 — Faixas operacionais derivadas:**
+
+| Faixa | Intervalo P(DG≤4h) | n eventos | % | DGs reais na faixa | Prevalência |
+|---|---|---:|---:|---:|---:|
+| 🟢 VERDE | < 0,145 | 49.762 | 70,0% | 1.383 | 2,78% |
+| 🟡 AMARELO | 0,145 ≤ P < 0,300 | 6.742 | 9,5% | 834 | 12,37% |
+| 🔴 VERMELHO | ≥ 0,300 | 14.585 | 20,5% | 9.821 | **67,34%** |
+
+Faixa vermelha (20,5% do volume) concentra **81,6% dos DGs reais** — fator de enriquecimento 4× sobre prevalência base. Boa operacionalização do modelo.
+
+#### Decisão metodológica 2 — Nova limitação L11 (modelo não opera em escavadeiras LeTourneau)
+
+**Achado:** análise estratificada por frota no test set revela que LeTourneau L 1850 (escavadeira, 31.909 eventos = 44,9% do volume) tem **AUC-PR=0,0077** (essencialmente aleatório), Precision=0, Recall=0, **n_alertas = 0** no threshold operacional.
+
+**Implicação categórica:** a Frente 1 do modelo NÃO atende escavadeiras com o pipeline atual. Causa provável (não totalmente verificada): a feature `tipo_caminhao` (binária, 24% do peso SHAP do v3) atua como *gating* — quando = 0 (escavadeira), o modelo virtualmente desliga as predições positivas.
+
+**Registro:** Nova **limitação L11** adicionada à seção "Síntese parcial de limitações" do `rascunho.md`. Mitigações sugeridas em CM 6.3:
+- Modelo dedicado para escavadeiras com features específicas
+- Política de monitoramento via Frente 2 (Weibull AFT) — naturalmente reconhece baixo *base rate*
+- Revisão do conjunto de features para incluir variáveis específicas de escavadeira
+
+**Coerência com L8:** L11 não duplica L8 — L8 fala da influência GERAL da composição da frota na *base rate* aprendida; L11 é o achado CATEGÓRICO de que para 45% do parque o modelo simplesmente não emite alertas. Decisão aprovada pelo usuário (27/05).
+
+#### Achado adicional registrado em CM 6.1 — categorias unknown performam ligeiramente MELHOR que conhecidas
+
+**Achado contra-intuitivo:** análise estratificada "categoria conhecida vs unknown no treino" no test:
+
+| Categoria | n | DGs | AUC-PR | Recall@thr |
+|---|---:|---:|---:|---:|
+| Conhecido em treino | 69.277 | 11.870 | 0,8554 | 0,8153 |
+| **Unknown em treino** | **1.812** | **168** | **0,8887** | **0,8512** |
+
+Refuta a expectativa inicial do estudo W5 (`notas_metodologicas.md` Seção 2) de degradação por extrapolação. Possíveis explicações: (i) sample pequeno (n_DG=168) introduz variância amostral; (ii) convenção `freq=0` para unknown atua como feature binária implícita "equipamento novo" que o modelo aprende; (iii) categorias unknown podem ter padrões operacionais menos ambíguos.
+
+**Independente da causa, valida empiricamente a Opção 1 do encoding fix** (registrada em `controle_alteracoes.md` 22/05) — não há necessidade de Opção 3 (features binárias `is_unknown` explícitas). Insight registrado para **CM 6.1** (Insights Não Óbvios) no relatório final.
+
+#### Outras análises estratificadas validadas (Qualidade C)
+
+- **Por tipo:** Caminhão AUC-PR=0,86 vs Escavadeira 0,01 (mesmo achado da estratificação por frota, agregação).
+- **Por estado pré-evento:** Operando 0,86 / Manutenção 0,79 / Parado 0,84 — modelo robusto a estado operacional. Refuta preocupação inicial de que "DGs em Manutenção seriam ruído" (Obs 2.7 — agora confirmada como DGs legítimos via re-ativações).
+
+#### Fig 10 — Matriz de confusão com impacto operacional
+
+No threshold canônico 0,30: TP=9.821 (DGs antecipados, 1,5h custo), FP=4.764 (inspeções desnecessárias, 1,5h custo), FN=2.217 (paradas não planejadas, 4h custo), TN=54.287 (operação normal).
+
+**Tradução operacional:** cenário sem modelo = 48.152h-equipamento; com modelo = 30.746h. **Redução de 17.406h (36,1%)** — consistente com cenário Realista da Fig Neg03 (47%, considerando horas totais de parada vs só DGs reais).
+
+#### Saídas geradas (W7 Grupo A)
+
+| Arquivo | Conteúdo |
+|---|---|
+| `relatorio/tabelas/eval_custo_beneficio.csv` | 11 thresholds × 4 ratios + métricas P/R/F1/F2 |
+| `relatorio/tabelas/eval_q6_faixas.csv` | 3 faixas Verde/Amarelo/Vermelho com ação operacional |
+| `relatorio/tabelas/eval_estratificado_frota.csv` | 5 frotas × P/R/AUC-PR/n_alertas |
+| `relatorio/tabelas/eval_estratificado_tipo.csv` | Caminhão vs Escavadeira |
+| `relatorio/tabelas/eval_estratificado_estado.csv` | 4 estados pré-evento |
+| `relatorio/tabelas/eval_estratificado_unknown.csv` | Conhecido vs unknown |
+| `relatorio/figuras/fig10_matriz_confusao_v3.png` | Matriz 2×2 com anotações de impacto operacional |
+
+#### Próximos passos
+
+- W7 ainda: integrar Random Forest tunado (`16_random_forest_comparativo.py`, em execução) à seção "Diferenciais" para reforçar empiricamente que o algoritmo não é o diferencial deste estudo.
+- W8: refinamento de CM 6.1 (insights consolidados), CM 6.3 (trabalhos futuros incluindo L11), Conclusão.
+
+---
+
+### 2026-06-01 — W7 Grupo B: Tempo de antecipação (L12) + Top-100 FPs do IF (6ª evidência LeTourneau)
+
+Aplicado por dois scripts complementares de W7 Grupo B, executados em 01/06 enquanto o Random Forest tunado roda em background.
+
+#### B#2 — `17_distribuicao_antecipacao.py` → Nova limitação L12
+
+**ANTES:** Tínhamos as métricas agregadas P/R/F1 no threshold operacional 0,30, mas não a distribuição temporal das antecipações — métricas Qualidade B do edital pendentes.
+
+**DEPOIS:** Análise da distribuição temporal dos 9.821 TPs do v3 no test set revela achado crítico:
+
+| Subgrupo | n | Percentual |
+|---|---:|---:|
+| Total TPs | 9.821 | 100% |
+| **Detecções diretas** (próprio evento é DG, antecipação=0) | **4.945** | **50,4%** |
+| **Antecipações reais** (DG futuro estritamente em 4h) | **4.876** | **49,6%** |
+| Outros (target=1 mas sem DG válido) | 0 | 0% |
+
+**Distribuição dos 4.876 com antecipação real (em minutos):**
+
+| Percentil | Antecipação |
+|---|---:|
+| P10 | 0,2 min |
+| P25 | 0,8 min |
+| **P50 (mediana)** | **5,7 min** |
+| P75 | 56 min |
+| P90 | 146 min |
+
+**Apenas 18% dos TPs atingem a janela de mobilização típica (≥ 90 min); 50% têm antecipação ≤ 6 min.**
+
+**Nova limitação L12 registrada em CM 6.2** (`rascunho.md` Síntese de Limitações). Interpretação: o v3 funciona muito mais como **detector de DG iminente** do que como **antecipador de janela 4h**. Manifestação residual do mesmo padrão do v2 (cascade detection) que o v3 mitigou parcialmente mas não eliminou.
+
+**Mitigações propostas em CM 6.3:**
+- Treinar variante com target mais longo (8h, 12h) — explora trade-off entre AUC-PR e tempo útil
+- Usar Frente 2 (Weibull AFT) como complemento — modela tempo até qualquer DG futuro
+- Combinar score do v3 com probabilidade de sobrevivência em horizonte mais longo
+
+**Saídas:** `relatorio/tabelas/distribuicao_antecipacao.csv` + `relatorio/figuras/figNeg04_distribuicao_antecipacao.png` (2 painéis: decomposição + distribuição com percentis marcados).
+
+#### B#3 — `18_top100_fps_if.py` → 6ª evidência convergente sobre LeTourneau
+
+**Análise:** Top 100 eventos no test set com **maior `anomaly_score` do Isolation Forest** que **NÃO foram rotulados como DG pela CMA**. Para cada um, examinados os eventos nos 4h seguintes (mesmo TAG).
+
+**Resultados:**
+
+| Métrica | Valor |
+|---|---:|
+| Range de `anomaly_score` | [0,0592, 0,0896] |
+| Mediana eventos próximos 4h | 46 |
+| Mediana Críticos próximos 4h | 9 |
+| **% com ≥ 1 DG futuro nas 4h** | **6%** |
+| **% com ≥ 1 evento Crítico nas 4h** | **99%** |
+
+**Concentração por equipamento:**
+
+| Frota | n FPs entre top-100 |
+|---|---:|
+| **LeTourneau L 1850 (escavadeira)** | **94** |
+| 793-D 4S | 5 |
+| 793-D 5S | 1 |
+
+**94 dos 100 FPs vêm da MESMA escavadeira (PE3797).**
+
+**Veredito honesto sobre o Risco 3.3 (leitura inversa):**
+
+- ❌ **IF NÃO complementa a CMA para antecipar mais DGs** — apenas 6% dos top-FPs têm DG futuro nas 4h.
+- ⚠️ **MAS o IF revela um regime sistematicamente diferente em escavadeiras LeTourneau:** 99% dos top-FPs têm eventos Críticos próximos (mediana 9), concentrados em UMA escavadeira (PE3797). Padrão de **alarmes Críticos elevados que NUNCA vira DG na CMA**.
+
+**Possíveis interpretações (mutuamente não-exclusivas):**
+1. Escavadeiras toleram criticidade alta sem falhar (modo de operação diferente, ferramenta estacionária)
+2. Regras CMA (~95% Caterpillar OEM) são subreportadoras para LeTourneau (regras calibradas para caminhões)
+3. Combinação dos dois efeitos
+
+**Material para CM 6.1 (Insight Não Óbvio):** o Isolation Forest, sem ver o rótulo, identifica um **regime operacional anômalo em LeTourneau que a regra CMA não classifica como DG**. Confirma indiretamente que o rótulo `Is_Dont_Go` tem viés direcionado por tipo de equipamento (Risco 3.3 manifestação adicional).
+
+**Material para CM 6.3 (Recomendação Operacional Concreta):**
+- **Auditoria manual dos 100 eventos da PE3797** identificados pelo IF — validar com domain expert se são anomalias mecânicas reais não classificadas ou ruído operacional aceito.
+- **Revisão das regras CMA para escavadeiras** — possivelmente novo conjunto de regras específicas ou recalibração dos thresholds existentes.
+
+**6ª evidência convergente sobre LeTourneau** (junto com as 5 já documentadas em H4.1 + L11):
+
+| # | Evidência | Origem |
+|---|---|---|
+| 1 | 5/13 escavadeiras sem telemetria | W1 (H1.1) |
+| 2 | 95% dos bypasses do operador | W1 (H1.2) |
+| 3 | 88% dos erros de medição de peso | W1 (H1.3) |
+| 4 | 22× menos DGs por equipamento que caminhões 793-D 5S | W2 (Q4) |
+| 5 | AUC-PR=0,008 e zero alertas do v3 no test | W7 (L11) |
+| **6** | **94% dos top-100 FPs do IF concentrados em PE3797** | **W7 (este achado)** |
+
+**Saídas:** `relatorio/tabelas/top100_fps_if.csv` (100 eventos × 12 colunas) + `relatorio/tabelas/top100_fps_if_concentracoes.csv` (concentrações por frota/TAG) + `relatorio/figuras/figExH_top100_fps_if.png` (3 painéis: contexto, frota, TAGs).
+
+---
+
+---
+
 ### 2026-05-25 — Fechamento de W6: validação cruzada de features + Fig 9 + calibração + ablation por grupo
 
 Quatro tarefas pendentes de W6 executadas em sequência (2026-05-25, ~15 min total), agrupadas aqui por se referirem ao **fechamento metodológico** do pipeline modelagem antes de W7 (avaliação final).

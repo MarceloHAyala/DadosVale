@@ -1,0 +1,4 @@
+nome,intervalo,acao,n_eventos,pct_eventos,n_DG_real,n_nao_DG,prevalencia_DG_faixa_pct
+VERDE,P(DG) < 0.145,Operar normalmente (rotina padrão),49762,70.0,1383,48379,2.78
+AMARELO,0.145 ≤ P(DG) < 0.300,Monitoramento intensivo (alertas adicionais ao plantão),6742,9.48,834,5908,12.37
+VERMELHO,P(DG) ≥ 0.300,Inspeção preventiva planejada (mobilizar peça e equipe),14585,20.52,9821,4764,67.34

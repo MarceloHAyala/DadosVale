@@ -1,0 +1,101 @@
+TAG,Tag_Frota,Tipo,Data_Evento,Criticidade,Alarme,anomaly_score,qtd_alarmes_nivel_muito_alto_360min,n_eventos_proximos_4h,n_critico_proximos_4h,n_nao_critico_proximos_4h,n_DG_proximos_4h
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:44:38.317000,Critico,Drive Cooling Pump Controller #1 Data Link Missing (L-1850),0.08960204569860608,0,2,2,0,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:44:38.383000,Critico,Drive Cooling Pump Controller #2 Data Link Missing (L-1850),0.08939657107095011,0,1,1,0,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:44:38.387000,Critico,Drive Cooling Pump Controller #3 Data Link Missing (L-1850),0.08939657107095011,0,0,0,0,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:44:35.680000,Nao_Critico,Engine ECM Data Link Missing (L-1850),0.08852054107800678,0,3,3,0,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:44:35.673000,Nao_Critico,Generator Master Data Link Missing (L-1850),0.08835034469877956,0,4,3,1,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:15.907000,Nao_Critico,Motor #3 ( Left Rear ) Master Data Link Missing (L-1850),0.0883154433516199,0,5,3,2,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:06.417000,Critico,Auxiliary Steering System Fault (L-1850),0.08771867695894653,0,6,3,3,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.183000,Nao_Critico,Right Rear Motor Drive Fault (L-1850),0.08489536843084233,0,15,5,10,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.463000,Nao_Critico,Left Rear Motor Drive Fault (L-1850),0.08489536843084233,0,14,5,9,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.510000,Nao_Critico,Left Front Motor Drive Fault (L-1850),0.08489536843084233,0,13,5,8,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.937000,Nao_Critico,Motor #2 ( Right Front ) Master Data Link Missing (L-1850),0.08489536843084233,0,12,5,7,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.940000,Critico,Left Joystick Data Link Missing (L-1850),0.08489536843084233,0,10,4,6,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:05.457000,Nao_Critico,Motor #1 ( Left Front ) Master Data Link Missing (L-1850),0.08488936467248842,0,9,4,5,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:05.460000,Nao_Critico,Motor #4 ( Right Rear ) Master Data Link Missing (L-1850),0.08488936467248842,0,7,4,3,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:05.460000,Nao_Critico,Motor #3 ( Left Rear ) Master Data Link Missing (L-1850),0.08488936467248842,0,7,4,3,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.940000,Nao_Critico,Right Joystick Data Link Missing (L-1850),0.084691534066761,0,10,4,6,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.043000,Nao_Critico,System Air Pressure Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,23,5,18,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.047000,Nao_Critico,Autolube Grease Pressure Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,22,5,17,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.067000,Nao_Critico,Fuel Level Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,21,5,16,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.073000,Nao_Critico,Hydraulic Reservoir Oil Temperature Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,20,5,15,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.080000,Nao_Critico,Lift Arm Position Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,19,5,14,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.103000,Nao_Critico,HPD Gearbox Oil Temperature Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,18,5,13,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.107000,Nao_Critico,Right Front Motor Drive Fault (L-1850),0.08351194438033815,0,16,5,11,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.107000,Nao_Critico,Steer Position Sensor Or Cable Fail Low (L-1850),0.08351194438033815,0,16,5,11,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:03.977000,Nao_Critico,Klenz Reservoir Air Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,28,5,23,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:03.977000,Nao_Critico,Hydraulic Reservoir Air Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,28,5,23,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:03.977000,Nao_Critico,Hoist Cylinder Base Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,28,5,23,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.013000,Nao_Critico,HPD Gearbox Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,27,5,22,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.037000,Nao_Critico,Rear Service Brakes Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,24,5,19,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.037000,Nao_Critico,Rear Park Brakes Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,24,5,19,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:04.037000,Nao_Critico,Radiator Fan Pump Pressure Sensor Or Cable Fail Low (L-1850),0.08250130478464679,0,24,5,19,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:03.973000,Nao_Critico,Front Service Brakes Pressure Sensor Or Cable Fail Low (L-1850),0.08072584698546548,0,31,5,26,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:43:03.973000,Nao_Critico,Front Park Brakes Pressure Sensor Or Cable Fail Low (L-1850),0.08072584698546548,0,31,5,26,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:36.630000,Critico,Drive Cooling Pump Controller #3 Data Link Missing (L-1850),0.07738504665436863,0,33,5,28,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:36.630000,Critico,Drive Cooling Pump Controller #1 Data Link Missing (L-1850),0.07738504665436863,0,33,5,28,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:36.630000,Critico,Drive Cooling Pump Controller #2 Data Link Missing (L-1850),0.07738504665436863,0,33,5,28,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:36.623000,Nao_Critico,Generator Master Data Link Missing (L-1850),0.07643752312105456,0,36,8,28,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:33.480000,Nao_Critico,Motor #2 ( Right Front ) Master Data Link Missing (L-1850),0.0754587160315765,0,40,8,32,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:34.047000,Nao_Critico,Motor #4 ( Right Rear ) Master Data Link Missing (L-1850),0.0754587160315765,0,37,8,29,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:34.047000,Nao_Critico,Motor #3 ( Left Rear ) Master Data Link Missing (L-1850),0.0754587160315765,0,37,8,29,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:34.047000,Nao_Critico,Motor #1 ( Left Front ) Master Data Link Missing (L-1850),0.0754587160315765,0,37,8,29,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:33.220000,Nao_Critico,Left Front Motor Drive Fault (L-1850),0.07448157098400221,0,41,8,33,0
+CA65926,793-D 4S,Caminhao,2025-06-08T18:46:03.337000,Nao_Critico,Left Rear Suspension Cylinder - Active,0.07447815102668565,79,20,10,10,10
+CA65926,793-D 4S,Caminhao,2025-06-08T18:47:57.210000,Nao_Critico,Left Rear Suspension Cylinder - Active,0.07447815102668565,79,19,10,9,10
+CA65926,793-D 4S,Caminhao,2025-06-08T18:48:31.017000,Nao_Critico,Left Rear Suspension Cylinder - Active,0.0738379078354171,79,19,11,8,11
+CA65926,793-D 4S,Caminhao,2025-06-30T21:32:48.363000,Nao_Critico,Brake Stroke - Active,0.07371344665460366,348,107,107,0,107
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:25.723000,Nao_Critico,Cab Emergency Stop Switch Pressed (L-1850),0.07370276466867898,0,46,9,37,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:28.203000,Critico,Auxiliary Steering System Fault (L-1850),0.07370276466867898,0,45,8,37,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:32.633000,Nao_Critico,Right Front Motor Drive Fault (L-1850),0.07330885162427747,0,44,8,36,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:32.843000,Nao_Critico,Right Rear Motor Drive Fault (L-1850),0.07330885162427747,0,43,8,35,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:33.197000,Nao_Critico,Left Rear Motor Drive Fault (L-1850),0.07330885162427747,0,42,8,34,0
+CA65926,793-D 4S,Caminhao,2025-06-08T18:53:44.490000,Nao_Critico,Left Rear Suspension Cylinder - Active,0.0732939780678814,81,17,10,7,10
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:18.797000,Nao_Critico,Klenz Reservoir Air Pressure Sensor Or Cable Fail High (L-1850),0.07269909734934221,0,47,9,38,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:18.797000,Nao_Critico,Hydraulic Reservoir Air Pressure Sensor Or Cable Fail High (L-1850),0.07269909734934221,0,47,9,38,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:18.797000,Nao_Critico,HPD Gearbox Pressure Sensor Or Cable Fail High (L-1850),0.07269909734934221,0,47,9,38,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:18.797000,Nao_Critico,Rear Service Brakes Pressure Sensor Or Cable Fail High (L-1850),0.07269909734934221,0,47,9,38,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:18.797000,Nao_Critico,Rear Park Brakes Pressure Sensor Or Cable Fail High (L-1850),0.07269909734934221,0,47,9,38,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:41:18.793000,Nao_Critico,Fuel Level Sensor Or Cable Fail High (L-1850),0.07105602119722632,0,52,9,43,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:50.310000,Critico,Drive Cooling Pump Controller #3 Data Link Missing (L-1850),0.0704832794613296,0,53,9,44,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:50.307000,Critico,Drive Cooling Pump Controller #1 Data Link Missing (L-1850),0.0688785043151825,0,54,10,44,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:50.307000,Critico,Drive Cooling Pump Controller #2 Data Link Missing (L-1850),0.0688785043151825,0,54,10,44,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:49.597000,Nao_Critico,Rear Service Brakes Pressure Sensor Or Cable Fail High (L-1850),0.06724638946077155,0,57,12,45,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:50.267000,Nao_Critico,Generator Master Data Link Missing (L-1850),0.06724638946077155,0,56,12,44,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:37.957000,Nao_Critico,Cab Emergency Stop Switch Pressed (L-1850),0.06654136269061961,0,64,13,51,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:40.480000,Critico,Auxiliary Steering System Fault (L-1850),0.06654136269061961,0,63,12,51,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:49.587000,Nao_Critico,Fuel Level Sensor Or Cable Fail High (L-1850),0.06634392464507721,0,61,12,49,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:49.587000,Nao_Critico,Hydraulic Reservoir Air Pressure Sensor Or Cable Fail High (L-1850),0.06634392464507721,0,61,12,49,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:49.590000,Nao_Critico,Klenz Reservoir Air Pressure Sensor Or Cable Fail High (L-1850),0.06634392464507721,0,59,12,47,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:49.590000,Nao_Critico,HPD Gearbox Pressure Sensor Or Cable Fail High (L-1850),0.06634392464507721,0,59,12,47,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:40:49.593000,Nao_Critico,Rear Park Brakes Pressure Sensor Or Cable Fail High (L-1850),0.06634392464507721,0,58,12,46,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.390000,Nao_Critico,Bucket Limits Bypassed By User (L-1850),0.06415097580209772,0,65,13,52,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.390000,Critico,Battery Voltage High (L-1850),0.06415097580209772,0,65,13,52,0
+CA65929,793-D 5S,Caminhao,2025-06-13T18:06:37.440000,Nao_Critico,MC - QUEDA PRESSÃO DO ÓLEO MOTOR <280KPA,0.06404700378887429,1,400,2,398,1
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.377000,Nao_Critico,Speed Control Pedal Sensor Or Cable Fail High (L-1850),0.06357420924791446,0,67,14,53,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.377000,Nao_Critico,Bucket Limits Bypassed (L-1850),0.06357420924791446,0,67,14,53,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.377000,Nao_Critico,Speed Control Pedal Supply High (L-1850),0.06357420924791446,0,67,14,53,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.313000,Nao_Critico,Radiator Fan Pump Pressure Sensor Or Cable Fail High (L-1850),0.06245967526191021,0,73,14,59,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.327000,Nao_Critico,Steer Position Sensor Or Cable Fail High (L-1850),0.06245967526191021,0,71,14,57,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.327000,Nao_Critico,System Air Pressure Sensor Or Cable Fail High (L-1850),0.06245967526191021,0,71,14,57,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.337000,Nao_Critico,Autolube Grease Pressure Sensor Or Cable Fail High (L-1850),0.06245967526191021,0,70,14,56,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.267000,Nao_Critico,Lift Arm Position Sensor Or Cable Fail High (L-1850),0.062269431183328616,0,75,14,61,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.307000,Nao_Critico,HPD Gearbox Oil Temperature Sensor Or Cable Fail High (L-1850),0.062269431183328616,0,74,14,60,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.257000,Nao_Critico,Hydraulic Reservoir Oil Temperature Sensor Or Cable Fail High (L-1850),0.060987178108032336,0,76,14,62,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.257000,Nao_Critico,Klenz Restriction Pressure Sensor Or Cable Fail High (L-1850),0.060987178108032336,0,76,14,62,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.217000,Nao_Critico,Accessory Pump Pressure Sensor Or Cable Fail High (L-1850),0.06076928984561414,0,81,14,67,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.217000,Nao_Critico,Bellcrank To Lift Arm Sensor Or Cable Fail High (L-1850),0.06076928984561414,0,81,14,67,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.243000,Nao_Critico,Front Park Brakes Pressure Sensor Or Cable Fail High (L-1850),0.06076928984561414,0,80,14,66,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.247000,Nao_Critico,Front Service Brakes Pressure Sensor Or Cable Fail High (L-1850),0.06076928984561414,0,79,14,65,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:48.250000,Nao_Critico,Hoist Cylinder Base Pressure Sensor Or Cable Fail High (L-1850),0.0606077502327218,0,78,14,64,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:38:51.487000,Nao_Critico,Motor #1 ( Left Front ) Master Data Link Missing (L-1850),0.05981685069865739,0,89,14,75,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:27.593000,Nao_Critico,Fuel Level Sensor Or Cable Fail Low (L-1850),0.05981685069865739,0,88,14,74,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:27.597000,Nao_Critico,Rear Park Brakes Pressure Sensor Or Cable Fail Low (L-1850),0.05981685069865739,0,83,14,69,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:27.597000,Nao_Critico,Hydraulic Reservoir Air Pressure Sensor Or Cable Fail Low (L-1850),0.05981685069865739,0,83,14,69,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:27.597000,Nao_Critico,HPD Gearbox Pressure Sensor Or Cable Fail Low (L-1850),0.05981685069865739,0,83,14,69,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:27.597000,Nao_Critico,Rear Service Brakes Pressure Sensor Or Cable Fail Low (L-1850),0.05981685069865739,0,83,14,69,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:39:27.597000,Nao_Critico,Klenz Reservoir Air Pressure Sensor Or Cable Fail Low (L-1850),0.05981685069865739,0,83,14,69,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:38:40.013000,Nao_Critico,Left Front Motor Drive Fault (L-1850),0.05930569452053325,0,95,14,81,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:38:40.043000,Nao_Critico,Left Rear Motor Drive Fault (L-1850),0.05918380715527427,0,94,14,80,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:38:40.457000,Nao_Critico,Motor #2 ( Right Front ) Master Data Link Missing (L-1850),0.05918380715527427,0,93,14,79,0
+PE3797,LeTourneau L 1850,Escavadeira,2025-06-17T04:38:40.957000,Nao_Critico,Motor #1 ( Left Front ) Master Data Link Missing (L-1850),0.05918380715527427,0,91,14,77,0
