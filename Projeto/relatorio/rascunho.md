@@ -1463,6 +1463,18 @@ Convergência tripla SHAP × HR × IF mostra que a performance agregada do v3 em
 
 O v3 prediz `P(DG ≤ 4h)` mas a análise da distribuição temporal dos TPs revela que **na prática o modelo detecta DG iminente, não antecipa em janela ampla**: 50% dos TPs são detecções diretas (próprio evento é DG, antecipação=0), e nos 50% restantes, mediana = 5,7 min, P75 = 56 min, P90 = 146 min. Apenas 18% dos TPs atingem a janela de mobilização típica (90 min). **A métrica que importa operacionalmente (tempo entre alerta e DG) NÃO é capturada por Precision/Recall agregados.** L12 registrada.
 
+### Insight 12 — CV temporal agregada mascara colapso no fold mais recente
+
+A comparação T2 vs T4 vs T8 via TimeSeriesSplit CV de 4 folds (`08d_comparacao_horizontes_cv.py`) confirma a equivalência estatística dos três horizontes (Cenário 1, Δ/σ = 0,29 entre T2 e T4 — mantém T4 canônico). Mas o achado **lateral** é mais valioso: o **fold 4 colapsa em todos os horizontes**:
+
+| Horizonte | Fold 1 | Fold 2 | Fold 3 | **Fold 4** |
+|---|---:|---:|---:|---:|
+| T2 | 0,899 | 0,905 | 0,866 | **0,537** |
+| T4 | 0,910 | 0,894 | 0,834 | **0,171** |
+| T8 | 0,913 | 0,892 | 0,802 | **0,129** |
+
+Os 3 primeiros folds (jan→fev, jan-fev→mar, jan-mar→abr) produzem AUC-PR ~0,87-0,91 consistentes. O **fold 4 (jan-abr → mai)** desaba — quanto maior o horizonte, mais forte o colapso (T8 cai 0,80 pp; T2 cai 0,36 pp). A AUC-PR média da CV (0,70-0,80) é estatística enganosa: oculta um **colapso de regime que ocorre exatamente onde o modelo seria mais cobrado em deployment** (transição do treino para validação/teste). **Lição metodológica:** em problemas temporais com drift conhecido, reportar AUC-PR média da CV sem decomposição por fold pode dar segurança falsa. A análise fold-a-fold revela onde o modelo realmente quebra. Reforça empiricamente a L4 (drift mai→jun) e a L10 (dependência de CA65926) — agora visíveis também no fold de CV mais próximo do regime de mudança.
+
 ### Insight 11 — Refutação como sinal de qualidade
 
 Das 15 hipóteses analíticas formuladas no projeto, **11 caíram** (refutadas ou refutadas com reinterpretação) — **taxa de refutação de 73%**. Em pesquisa científica madura, isso não é sinal de problemas — é sinal de **rigor**: a exploração cumpriu o papel de testar premissas, não apenas confirmá-las. As 3 hipóteses confirmadas (H2.1 top 5 alarmes, H4.1 LeTourneau, H7.1 equipamentos individuais problemáticos) são estruturalmente fortes. As 11 refutadas geraram **achados sempre mais ricos** que a hipótese original previa — H5.2 virou "Família 6 domain-specific vence Família 1 genérica", H3.3 virou "falha localizada do CA65926", H5.3 virou "operador correlaciona difusamente com DG".

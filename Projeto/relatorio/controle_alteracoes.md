@@ -1216,6 +1216,42 @@ Aplicado por dois scripts complementares de W7 Grupo B, executados em 01/06 enqu
 - **Auditoria manual dos 100 eventos da PE3797** identificados pelo IF — validar com domain expert se são anomalias mecânicas reais não classificadas ou ruído operacional aceito.
 - **Revisão das regras CMA para escavadeiras** — possivelmente novo conjunto de regras específicas ou recalibração dos thresholds existentes.
 
+#### B#1 — `08d_comparacao_horizontes_cv.py` → Cenário 1 confirmado + Insight #12 (colapso fold 4)
+
+**Análise:** Treino de 3 modelos v3 (T2, T4, T8) com hiperparâmetros idênticos via TimeSeriesSplit CV de 4 folds expandidos. Objetivo: validar empiricamente a escolha de horizonte 4h (target_4h canônico do CM 1.2).
+
+**Resultados:**
+
+| Horizonte | Prevalência train | AUC-PR média | ± std |
+|---|---:|---:|---:|
+| T2 | 29,77% | 0,8019 | ± 0,1535 |
+| **T4 (canônico)** | 33,64% | **0,7023** | ± 0,3082 |
+| T8 | 38,69% | 0,6841 | ± 0,3230 |
+
+**Comparação T2 vs T4:** Δ = +0,0996, σ_combined = 0,3443, Δ/σ = 0,29 < 2σ → **Cenário 1: indistinguíveis**. Mantém **T4 como horizonte canônico do relatório**. Decisão de W4/W5 validada empiricamente.
+
+**Achado lateral CRÍTICO — colapso do fold 4 em todos os horizontes:**
+
+| Horizonte | Fold 1 | Fold 2 | Fold 3 | **Fold 4** | Queda fold3→fold4 |
+|---|---:|---:|---:|---:|---:|
+| T2 | 0,8990 | 0,9054 | 0,8660 | **0,5372** | −0,33 pp |
+| T4 | 0,9105 | 0,8937 | 0,8343 | **0,1708** | **−0,66 pp** |
+| T8 | 0,9126 | 0,8921 | 0,8023 | **0,1292** | **−0,67 pp** |
+
+Os folds 1-3 (treino expandindo até abr, validando em meses internos do treino) produzem AUC-PR ~0,87-0,91 consistentes. O **fold 4 (treina jan-abr, valida em mai)** desaba — quanto maior o horizonte, mais forte o colapso.
+
+**Interpretação:** essa é a manifestação mais clara até agora do drift mai→jun em CV temporal. O fold 4 é exatamente onde o regime começa a mudar (transição treino→val). A AUC-PR média da CV (0,70-0,80) **é estatística enganosa** — oculta um colapso de regime que ocorre **exatamente onde o modelo seria mais cobrado em deployment**.
+
+**Registrado como Insight #12 em CM 6.1** (`rascunho.md` — "CV temporal agregada mascara colapso no fold mais recente"). Reforça empiricamente:
+- L4 (drift mai→jun quantificado): agora visível também na CV
+- L10 (performance dirigida por poucos equipamentos): mesmo padrão no fold 4
+
+**Lição metodológica:** em problemas com drift conhecido, reportar AUC-PR média da CV sem decomposição por fold pode dar segurança falsa. Análise fold-a-fold é mandatória para auditar onde o modelo realmente quebra. **Material para CM 5.2.**
+
+**Tempo de execução real:** 8h (vs 6 min estimado originalmente). Causa: tempos por fold variaram drasticamente (T8 fold 3 levou 5h sozinho). Para auditoria futura, vale rodar amostra antes de full CV. **Saída:** `relatorio/tabelas/comparacao_horizontes_cv.csv`.
+
+---
+
 **6ª evidência convergente sobre LeTourneau** (junto com as 5 já documentadas em H4.1 + L11):
 
 | # | Evidência | Origem |

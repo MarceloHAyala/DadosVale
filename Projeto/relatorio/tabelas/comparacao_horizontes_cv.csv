@@ -1,0 +1,4 @@
+horizonte,target_col,n_positivos_train,prevalencia_train,auc_pr_fold1,auc_pr_fold2,auc_pr_fold3,auc_pr_fold4,auc_pr_media,auc_pr_std
+T2,target_2h,117564,29.7652,0.899,0.9054,0.866,0.5372,0.8019,0.1535
+T4,target_4h,132877,33.6422,0.9105,0.8937,0.8343,0.1708,0.7023,0.3082
+T8,target_8h,152819,38.6912,0.9126,0.8921,0.8023,0.1292,0.6841,0.323
