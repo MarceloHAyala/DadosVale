@@ -394,4 +394,4 @@ A EDA agregada esconde esses indivíduos; **três técnicas de modelagem complet
 
 ---
 
-**Última atualização:** 2026-05-27 (W7 Grupo A — H4.1 reforçada com 5ª evidência empírica via análise estratificada por frota: modelo emite ZERO alertas em escavadeiras, novo achado categórico → L11. Threshold operacional canônico definido em 0,30. Achado contra-intuitivo registrado: modelo performa ligeiramente MELHOR em categorias unknown que conhecidas no treino — refuta expectativa W5 sobre extrapolação.)
+**Última atualização:** 2026-06-01 (W7 COMPLETO — H4.1 reforçada com 6ª evidência via IF top-100 FPs (94 dos 100 vêm de PE3797). L12 nova (tempo de antecipação curto). T2≈T4≈T8 indistinguíveis na CV (Cenário 1 confirmado). RF tunado em 0,8541 vs v3 em 0,8556 — algoritmo não é o diferencial. 12 insights consolidados em CM 6.1.)

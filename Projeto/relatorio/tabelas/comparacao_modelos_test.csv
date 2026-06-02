@@ -1,4 +1,5 @@
 modelo,auc_roc,auc_pr,n_test,n_positivos,prevalencia
 Baseline (count_critico_4h),0.7661,0.5803,71089,12038,0.1693
 LightGBM v3 (canonico),0.9391,0.8556,71089,12038,0.1693
+Random Forest tunado (Optuna 50 trials),,0.8541,71089,12038,0.1693
 Weibull AFT,0.7869,0.3148,71089,12038,0.1693

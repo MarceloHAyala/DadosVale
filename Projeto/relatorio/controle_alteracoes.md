@@ -1133,8 +1133,8 @@ No threshold canônico 0,30: TP=9.821 (DGs antecipados, 1,5h custo), FP=4.764 (i
 
 #### Próximos passos
 
-- W7 ainda: integrar Random Forest tunado (`16_random_forest_comparativo.py`, em execução) à seção "Diferenciais" para reforçar empiricamente que o algoritmo não é o diferencial deste estudo.
-- W8: refinamento de CM 6.1 (insights consolidados), CM 6.3 (trabalhos futuros incluindo L11), Conclusão.
+- W7 ainda: ~~integrar Random Forest tunado (`16_random_forest_comparativo.py`, em execução) à seção "Diferenciais" para reforçar empiricamente que o algoritmo não é o diferencial deste estudo.~~ **CONCLUÍDO em 01/06.** Veja entrada `2026-06-01 — W7 Item 6 (RF comparativo)` abaixo.
+- W8: refinamento de CM 6.1 (12 insights consolidados), CM 6.3 (trabalhos futuros incluindo L11, L12), Conclusão.
 
 ---
 
@@ -1264,6 +1264,43 @@ Os folds 1-3 (treino expandindo até abr, validando em meses internos do treino)
 | **6** | **94% dos top-100 FPs do IF concentrados em PE3797** | **W7 (este achado)** |
 
 **Saídas:** `relatorio/tabelas/top100_fps_if.csv` (100 eventos × 12 colunas) + `relatorio/tabelas/top100_fps_if_concentracoes.csv` (concentrações por frota/TAG) + `relatorio/figuras/figExH_top100_fps_if.png` (3 painéis: contexto, frota, TAGs).
+
+---
+
+### 2026-06-01 — W7 Item 6 (RF comparativo): algoritmo não é o diferencial — confirmado empiricamente
+
+**ANTES:** O Diferencial #1 ("rigor > algoritmo") do relatório era argumento teórico baseado em conhecimento de domínio (RF e LightGBM são família de ensembles de árvores, performance similar esperada). Faltava validação empírica.
+
+**DEPOIS:** `16_random_forest_comparativo.py` treinou **Random Forest com EXATA MESMA estratégia rigorosa do v3** — Optuna 50 trials, TimeSeriesSplit CV de 4 folds expandidos, mesma seed=42, 34 features alinhadas ao v3, mesma imputação NaN.
+
+**Comparação final no test set (n=71.089, prev=16,93%):**
+
+| Métrica | RF tunado | LightGBM v3 canônico | Diferença |
+|---|---:|---:|---:|
+| AUC-PR test | 0,8541 | **0,8556** | **−0,0015** |
+| Recall@0.5 test | 0,7520 | 0,7527 | −0,0007 |
+
+**Diferença de 0,15 pp em AUC-PR e 0,07 pp em Recall — praticamente nula.** Confirma empiricamente que **algoritmo não é o diferencial** deste estudo.
+
+**Best hyperparams do RF (trial #42/50 do Optuna):**
+- n_estimators = 359
+- max_depth = 10
+- min_samples_split = 29
+- min_samples_leaf = 16
+- max_features = sqrt
+- class_weight = balanced
+
+**Best CV AUC-PR:** 0,7988 (vs v3 = 0,8530 best CV).
+
+**Tempo de execução real:** 10h+ (vs 30-60 min estimado originalmente). RF é mais lento que LightGBM em tunning porque cada árvore é treinada independentemente (sem o boosting que reusa cálculos).
+
+**Integração no relatório (`rascunho.md`):**
+- Seção "Diferenciais metodológicos do trabalho" → Diferencial #1 → adicionado o parágrafo "Validação empírica do ponto 'algoritmo não é o diferencial'" com a tabela comparativa.
+- Tabela `comparacao_modelos_test.csv` atualizada com linha do RF.
+
+**Insight final para a defesa:** "Um grupo que entrega RF com 85% AUC-PR sem nenhum dos passos metodológicos rigorosos deste estudo (descoberta do cascade via SHAP, triangulação SHAP × HR × IF, auditoria do label, recomendações operacionais quantificadas) entrega menos valor que este estudo, mesmo com algoritmo equivalente. O diferencial é a metodologia."
+
+**Saídas:** `modelos/random_forest_comparativo.joblib` (12,1 MB) + `relatorio/tabelas/rf_metricas.csv` + `relatorio/tabelas/rf_hiperparametros.csv` + `modelos/optuna_study_rf.pkl`.
 
 ---
 

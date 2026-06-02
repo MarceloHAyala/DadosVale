@@ -1,0 +1,4 @@
+split,n_eventos,n_positivos,auc_pr,recall_thr_05
+train,394971,132877,0.9681,0.9264
+val,78825,14481,0.7299,0.5078
+test,71089,12038,0.8541,0.752

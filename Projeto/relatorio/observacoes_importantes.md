@@ -198,4 +198,4 @@ Este arquivo (`observacoes_importantes.md`) é **temporário** — contém apena
 
 ---
 
-**Última atualização:** 2026-06-01 (W7 Grupo B parcial — L12 nova (tempo de antecipação curto), 6ª evidência LeTourneau via IF top-100 FPs, 11 insights consolidados em CM 6.1. B#1 (comparação horizontes) e RF comparativo em execução em background.)
+**Última atualização:** 2026-06-01 (W7 COMPLETO — Grupo A + Grupo B + Item 6 todos concluídos. L12 nova, 6ª evidência LeTourneau, 12 insights consolidados em CM 6.1, Cenário 1 confirmado para horizontes (T2≈T4≈T8) + insight #12 sobre colapso fold 4, RF tunado em 0,8541 vs v3 em 0,8556 — diferença de 0,15 pp confirma empiricamente que algoritmo não é o diferencial.)

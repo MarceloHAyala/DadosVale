@@ -1,0 +1,7 @@
+hiperparametro,best_value
+n_estimators,359
+max_depth,10
+min_samples_split,29
+min_samples_leaf,16
+max_features,sqrt
+class_weight,balanced

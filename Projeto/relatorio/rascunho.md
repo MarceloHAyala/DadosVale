@@ -1353,6 +1353,15 @@ A primeira versão treinada (v2, AUC-PR test = 0,8618 com 35 features) passou to
 
 A resposta foi treinar uma variante v3 removendo a *feature* problemática. O v3 (canônico final do relatório) tem AUC-PR aggregate quase idêntico (0,8556, −0,62 pp) mas **captura 5× mais primeiros DGs** (Recall@0.5 de 4,3% → 21,1%). v2 fica preservado no projeto como modelo intermediário diagnóstico, com explicação completa em `controle_alteracoes.md` (entrada 24/05). **A maioria dos trabalhos não detecta esse tipo de problema** — entrega o modelo com AUC alto e a discussão acaba ali. A combinação SHAP + diagnóstico ad-hoc + retreinamento é diferencial direto de qualidade.
 
+**Validação empírica do ponto "algoritmo não é o diferencial":** treinamos um **Random Forest tunado com a EXATA MESMA estratégia rigorosa do v3** (Optuna 50 trials, TimeSeriesSplit CV de 4 folds expandidos, mesma seed=42, 34 features alinhadas, mesma imputação NaN) em `16_random_forest_comparativo.py`. Resultado:
+
+| Métrica (test) | RF tunado | LightGBM v3 | Diferença |
+|---|---:|---:|---:|
+| AUC-PR | 0,8541 | **0,8556** | −0,0015 |
+| Recall@0.5 | 0,7520 | 0,7527 | −0,0007 |
+
+**Diferença de 0,15 pp em AUC-PR e 0,07 pp em Recall — praticamente nula.** Random Forest e LightGBM, ambos pertencentes à família de *ensembles* de árvores, atingem performance estatisticamente equivalente quando submetidos ao mesmo rigor metodológico. **O diferencial deste estudo, portanto, NÃO está na escolha entre RF e LightGBM** — está na descoberta do cascade detection via SHAP (que faria com o RF também), na triangulação metodológica (SHAP × HR × IF), na auditoria do rótulo, e nas recomendações operacionais quantificadas. Um grupo que entrega "RF com 85% AUC-PR" sem nenhum desses passos entrega menos valor que este estudo, mesmo com algoritmo equivalente.
+
 ### 2. Triangulação metodológica: três modelos com matemáticas radicalmente diferentes
 
 O relatório entrega três modelos independentes que respondem perguntas diferentes:

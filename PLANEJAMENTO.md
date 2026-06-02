@@ -1585,7 +1585,7 @@ W6 fechou a etapa de modelagem com **três modelos** (v3 canônico + Weibull AFT
   - **Insight contra-intuitivo CM 6.1:** unknown no treino performa ligeiramente MELHOR que conhecido (0,89 vs 0,86) — refuta expectativa W5 de degradação por extrapolação.
   - **Fig 10** gerada com anotações de impacto operacional. Tradução: redução de 17.406h (36,1%) de parada não planejada no semestre observado.
   - Saídas: 6 tabelas (`eval_*.csv`) + `fig10_matriz_confusao_v3.png`. Detalhes em `controle_alteracoes.md` entrada 27/05.
-- [X] **`Projeto/codigo/16_random_forest_comparativo.py` — RF tunado em paralelo (~30-60 min)** com mesma config rigorosa do v3 (Optuna 50 trials + TimeSeriesSplit CV 4 folds + mesma seed). Em execução para reforçar Diferencial #1 (algoritmo não é o diferencial).
+- [X] **`Projeto/codigo/16_random_forest_comparativo.py` — RF tunado CONCLUÍDO em 01/06 (~10h)**: Optuna 50 trials + TimeSeriesSplit CV 4 folds + mesma seed=42 do v3 + mesmas 34 features + mesma imputação NaN. **Resultados:** AUC-PR test = 0,8541 / Recall@0.5 test = 0,7520. **Comparação com v3 (canônico): Δ AUC-PR = −0,0015 (0,15 pp), Δ Recall = −0,0007 (0,07 pp).** Praticamente equivalente. **Confirma empiricamente o Diferencial #1: algoritmo não é o diferencial deste estudo.** Best params: n_estimators=359, max_depth=10, class_weight=balanced. Tabela `comparacao_modelos_test.csv` atualizada. Detalhes em `controle_alteracoes.md` entrada 01/06.
 
 #### W7 Grupo B — análises complementares (01/06)
 
