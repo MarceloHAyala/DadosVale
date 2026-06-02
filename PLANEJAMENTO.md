@@ -1593,46 +1593,89 @@ W6 fechou a etapa de modelagem com **três modelos** (v3 canônico + Weibull AFT
 - [X] **`Projeto/codigo/18_top100_fps_if.py` — B#3 (Risco 3.3 inverso):** Top 100 FPs do Isolation Forest. **94 dos 100 vêm da PE3797 (escavadeira LeTourneau).** Apenas 6% têm DG futuro em 4h, mas 99% têm eventos Críticos próximos (mediana 9). **6ª evidência convergente sobre LeTourneau** somando às 5 de H4.1+L11. Material para CM 6.1 (Insight: IF revela regime anômalo em LeTourneau que CMA não classifica) + CM 6.3 (auditoria manual + revisão regras CMA). Saídas: `top100_fps_if.csv` + `top100_fps_if_concentracoes.csv` + `figExH_top100_fps_if.png` (3 painéis). Tempo: ~30 s.
 - [X] **B#4 — Insights Não Óbvios consolidados (CM 6.1):** 11 insights documentados na nova seção do `rascunho.md`. Material direto para a redação de CM 6.1 em W8.
 - [X] **`Projeto/codigo/08d_comparacao_horizontes_cv.py` — B#1 (Profundidade 1 rigorosa) — concluído em 8h (não 6min como estimado):** comparação T2/T4/T8 via TimeSeriesSplit CV 4 folds com hiperparâmetros fixos do v3. **Resultados:** T2=0,8019±0,1535 / T4=0,7023±0,3082 / T8=0,6841±0,3230. **Cenário 1 confirmado** (Δ/σ T2 vs T4 = 0,29 < 2σ): T4 mantido como horizonte canônico. **Achado lateral importante — colapso do fold 4 em todos os horizontes** (fold 4 = treina jan-abr, valida em mai): T4 cai de ~0,88 nos 3 primeiros folds para 0,17 no fold 4. **Insight #12 registrado em CM 6.1** ("CV temporal agregada mascara colapso no fold mais recente"). Reforça empiricamente L4 (drift) e L10 (dependência de poucos equipamentos). Saída: `comparacao_horizontes_cv.csv`.
-- [ ] **Tarefas originais de W7 — NÃO REPETIDAS porque já foram entregues antes:**
-  - [ ] **Fig 10** — Matriz de confusão do modelo escolhido com anotações de impacto operacional (CM 5.2)
-  - [ ] Análise dos falsos negativos: que TAGs/frotas/operadores escapam?
-  - [ ] **[Qualidade C] Análise de erro estratificada**: matriz de confusão e métricas por **frota** e por **tipo** (Caminhão vs. Escavadeira) — modelo não pode falhar mais em uma frota
-  - [ ] **[Novo após Obs 2.7]** Métricas estratificadas por **estado operacional do DG** (Operando / Manutenção / Parado / Hibernando) — separa "DG operacional" (alvo principal) de "DG em teste de manutenção" (ruído contextual). Reportar Precision/Recall em cada subgrupo.
-  - [ ] **[Novo após Obs 2.9, H7.1]** Análise estratificada **"com vs sem CA65926"** no teste de junho — quantifica quanto da degradação esperada em jun é mecânica de UM equipamento (CA65926 = 82,2% dos DGs de jun = 4.298 de 5.226) vs distribuída entre os demais 29 equipamentos. **Justificativa empírica:** Obs 2.9 confirmou que a anomalia RFB de jun é falha localizada do CA65926, não drift regimal genérico. Sem essa separação, métricas agregadas misturam "modelo aprendeu deterioração de equipamento conhecido" (positivo) com "modelo manteve performance nos demais" (também positivo) — duas histórias diferentes que pedem narrativas distintas no relatório.
-  - [ ] **[Novo derivado do estudo W5 sobre encoding fix — `notas_metodologicas.md` Seção 2]** Análise estratificada **"TAG/operador conhecidos vs unknown no treino"** no teste — reportar AUC-PR / Recall / Precisão separadamente para:
-    - (a) **69.277 eventos / 5.093 DGs** em categorias conhecidas (97,45% do teste)
-    - (b) **1.812 eventos / 133 DGs** em categorias unknown (2,55% do teste)
-    - Detalhar: TAGs unknown identificadas (`CA65791` com 1.394 eventos, `CA65916`) + 7 operadores unknown (418 eventos).
-    - **Justificativa empírica:** o estudo de W5 mediu que 2,55% dos eventos do teste vêm de TAGs/operadores que não existiam no treino — análise agregada esconde se o modelo extrapola bem para essas categorias ou não. Se AUC-PR cai mais que 30% no subgrupo (b) vs (a), vira limitação concreta em CM 6.2 e argumento empírico para a recomendação de retreino rolling em CM 6.3.
-  - [ ] Drift mensal: AUC-PR mês a mês no teste
-  - [ ] Tabela custo-benefício: FN × FP × limiar ótimo
-- [ ] **`Projeto/codigo/08d_comparacao_horizontes_cv.py` — Profundidade 1 rigorosa via TimeSeriesSplit CV** (agendado em 24/05 após v2 mostrar T2 vs T4 indistinguíveis em single-fold; renomeado de `08c` em 24/05 para liberar slot `08c` ao `08c_shap_v2.py`). Treinar 3 modelos v2 (T2 / T4 / T8) com hiperparâmetros idênticos sobre **TimeSeriesSplit CV de 4 folds expandidos** (mesma estrutura da Mitigação 1), reportar AUC-PR média ± desvio padrão de cada horizonte. **Custo:** ~1-2h (3 × 4 = 12 treinos curtos, cada ~30s). **Saída:** `relatorio/tabelas/comparacao_horizontes_cv.csv` (3 horizontes × média + std) + 1 parágrafo de análise.
-  - **Cenário 1 — T2 ≈ T4 indistinguíveis:** mantém T4 canônico, registra equivalência em CM 5.x.
-  - **Cenário 2 — T2 vence T4 com significância (> 2σ):** vira Insight CM 6.1 + entrada em CM 6.3 sobre deployment multi-horizonte.
-  - **Cenário 3 — T4 vence T2 com significância:** justifica empiricamente a escolha do CM 1.2, encerra a questão.
-  - **Em nenhum cenário** somos forçados a duplicar o pipeline canônico — esta é análise informativa, não compromisso de deployment.
-- [ ] **Fig 13** — Comparação visual de performance: baseline vs. modelos desenvolvidos (CM 6.1)
-- [ ] **Q3:** análise da feature `taxa_DG_operador_30d` via SHAP
-- [ ] **Q6:** definir faixas de probabilidade → ações (continuar/preventiva/parar)
-- [ ] **Q7:** ranking priorizado de inspeção por turno (top 5 TAGs)
-- [ ] Tradução de Recall/Precision em horas de parada evitada e custo monetário estimado
-- [ ] **[Qualidade B] Distribuição do tempo de antecipação**: P25 / mediana / P75 / P95 — não só média. Histograma do tempo entre predição positiva e DG real
-- [ ] **[Qualidade E] Sanity check do viés inerente**: discussão honesta de que `Is_Dont_Go` é gerado pelas regras CMA, então o modelo aprende a antecipar a regra (não a falha física real). **Agora reforçado empiricamente pelo Isolation Forest do W6** — não é só retórica
-- [ ] **[K — análise "o que a regra não vê"] (~2h)**: a partir dos resultados do IF no teste (jun):
-  - [ ] Selecionar top-100 TAG×timestamp com maior anomaly score que **não** dispararam `Is_Dont_Go`
-  - [ ] Examinar eventos/criticidades nas 4h seguintes — há concentração de níveis Alto/Muito Alto acima da base?
-  - [ ] Cruzar com TAGs/frotas — algum grupo específico aparece desproporcionalmente?
-  - [ ] **Fig Extra F** — barplot top-N TAGs anômalos × prevalência de eventos não cobertos pela regra
-  - [ ] Conclusão honesta em 1 parágrafo: o sinal não supervisionado **complementa** (encontra modos de falha além da regra), **dispensa** (recupera os mesmos DGs sem ver rótulo), ou apenas **duplica** o sinal da regra?
-- [ ] **Insights não óbvios** (CM 6.1): seção específica em rascunho com 3-5 achados surpreendentes ou contra-intuitivos da análise
-- [ ] Atualizar `rascunho.md` com seção Avaliação e Resultados
-- [ ] Registrar em `controle_alteracoes.md` escolha do limiar de operação
+- [X] **`Projeto/codigo/19_drift_semanal_junho.py` — Drift INTRA-MÊS no test (01/06, ~10 s):** adaptação do "Drift mensal" original para o test (apenas junho). **Achado dramático:** AUC-PR varia entre 0,3539 (S3, 15-21/jun, prev 3,75%) e 0,9472 (S4, 22-30/jun, prev 25,22%). Amplitude de **0,59 pp em 4 semanas**. **Insight #13 registrado em CM 6.1** — drift detectável em janela semanal, não mensal. Reforça L4 e L10. Saída: `drift_semanal_junho.csv` + `figExI_drift_semanal_junho.png`.
 
-**Entregável:** todas as 6 perguntas respondidas + Fig 10 + Fig 13 + Fig Extra F + análise estratificada + distribuição de antecipação + análise "o que a regra não vê" + seção de insights.
+**Fig 13** (Comparação visual baseline × modelos): **coberta pela Fig 9** (curvas comparativas) — não criada por redundância.
+
+#### Itens originais de W7 — todos cobertos (mapa abaixo)
+
+A lista [ ] original de W7 foi mantida no histórico de plano mas TODOS os itens foram cobertos por scripts diferentes do nome original. Mapa de equivalência:
+
+| Item original W7 | Onde foi entregue |
+|---|---|
+| Fig 10 matriz confusão | `10_evaluation.py` (Grupo A) |
+| Análise falsos negativos | Análise estratificada por frota/tipo |
+| Qualidade C estratificada | `10_evaluation.py` |
+| Métricas por estado pré-evento | `10_evaluation.py` |
+| Com vs sem CA65926 | IF estratificado (W6) → L10 |
+| TAG/operador unknown vs conhecido | `10_evaluation.py` (insight CM 6.1 surpresa: unknown ≥ conhecido) |
+| Drift mensal AUC-PR | `19_drift_semanal_junho.py` (adaptado para semanal) |
+| Tabela custo-benefício + limiar | `10_evaluation.py` |
+| 08d comparação horizontes | B#1 (Cenário 1 + Insight #12 colapso fold 4) |
+| Fig 13 | Coberta pela Fig 9 (redundância) |
+| Q3 operador SHAP | W5 Obs 2.4 + W6 SHAP rank #12 |
+| Q6 faixas | `10_evaluation.py` (Verde/Amarelo/Vermelho) |
+| Q7 ranking | `figNeg02_ranking_risco_operacional.png` |
+| Tradução em horas | `figNeg03_horas_parada_evitavel.png` |
+| Qualidade B distribuição antecipação | B#2 → L12 |
+| Qualidade E sanity check viés CMA | IF (W6) + B#3 top-100 FPs |
+| K top-100 anômalos | B#3 (`18_top100_fps_if.py`) |
+| Insights não óbvios CM 6.1 (3-5) | **13 insights consolidados** no rascunho |
+| Atualizar rascunho com Avaliação | Seção "Avaliação estratificada e calibração operacional do v3" criada |
+| Registrar limiar operacional | `controle_alteracoes.md` entrada 27/05 |
+
+**Entregável de W7:** ✅ todas as 6 perguntas do edital respondidas (Q1-Q7) + 12 limitações documentadas (L1-L12) + 13 insights não óbvios + 4 figuras de negócio + Fig 10 (CM 5.2) + Fig 9 (CM 5.1) + Fig Extra A, B, C, D, E, F, G, H, I (anexo técnico).
 
 #### Observações e Conclusões (W7)
 
-*(A preencher quando observações de W7 forem investigadas — origem: `Projeto/relatorio/observacoes_importantes.md` ou novas descobertas durante a semana.)*
+W7 entregou avaliação estratificada final + duas limitações novas (L11 escavadeiras, L12 tempo de antecipação) + dois insights de drift granular (Insight #12 colapso fold 4, Insight #13 drift semanal) + validação empírica do Diferencial #1 (RF tunado equivalente ao v3). Síntese dos achados centrais:
+
+##### 1. Threshold operacional canônico definido empiricamente (`10_evaluation.py`, 27/05)
+
+Tabela custo-benefício em 11 thresholds × 4 ratios FN:FP. **Threshold canônico = 0,30 (ratio 5:1, max F2=0,783)** — coerente com ratio de horas (4h corretiva : 1,5h preventiva = 2,7:1) acrescido de custos não-monetários (mobilização emergencial, segurança). Decisão registrada em `controle_alteracoes.md` 27/05.
+
+**Q6 — Faixas operacionais semafóricas:**
+- 🟢 VERDE (P < 0,145) — 70% dos eventos, prev 2,78% — operar normal
+- 🟡 AMARELO (0,145–0,300) — 9,5% dos eventos, prev 12,37% — monitoramento intensivo
+- 🔴 VERMELHO (P ≥ 0,300) — 20,5% dos eventos, prev 67,34% — inspeção preventiva planejada
+
+Vermelho concentra 81,6% dos DGs reais em 20% do volume — boa operacionalização.
+
+##### 2. Nova limitação L11 — modelo não opera em escavadeiras LeTourneau
+
+Análise estratificada por frota revela achado categórico: **AUC-PR=0,008 em LeTourneau L 1850 (45% do volume do test), zero alertas emitidos**. A feature `tipo_caminhao` (binária, 24% do peso SHAP) atua como *gating* — quando =0 (escavadeira), o modelo virtualmente desliga. **5ª evidência convergente sobre LeTourneau** (somando às 4 anteriores de H4.1). Mitigação CM 6.3: modelo dedicado para escavadeiras OU política via Frente 2 (Weibull AFT).
+
+##### 3. Nova limitação L12 — tempo de antecipação curto (`17_distribuicao_antecipacao.py`, 01/06)
+
+Apesar de o v3 prever `target_4h`, a análise temporal dos TPs revela: **50% são detecções diretas** (próprio evento é DG, antecipação=0); dos restantes, **mediana = 5,7 min**, P75=56 min, P90=146 min. **Apenas 18% atingem janela de mobilização típica (90 min).** Modelo na prática funciona mais como detector imediato que antecipador 4h — resíduo do mesmo padrão do v2 (cascade detection) mitigado mas não eliminado. Mitigação CM 6.3: target mais longo (8-12h) ou uso combinado com Weibull AFT.
+
+##### 4. 6ª evidência convergente sobre LeTourneau via IF top-100 FPs (`18_top100_fps_if.py`, 01/06)
+
+Top 100 eventos com maior `anomaly_score` do IF que NÃO são DG: **94 dos 100 vêm da PE3797 (escavadeira)**. Apenas 6% têm DG futuro em 4h, mas **99% têm eventos Críticos próximos** (mediana 9). Regime de alarmes Críticos elevados que NUNCA vira DG na CMA — evidência adicional do viés do rótulo direcionado por tipo. Material para CM 6.1 + CM 6.3 (auditoria manual + revisão regras CMA para escavadeiras).
+
+##### 5. Insight #12 — colapso do fold 4 na CV temporal (`08d_comparacao_horizontes_cv.py`, 01/06)
+
+Comparação T2/T4/T8 confirma **Cenário 1** (Δ/σ T2 vs T4 = 0,29 < 2σ): T4 mantido como horizonte canônico. **Achado lateral importante:** os 3 primeiros folds da CV produzem AUC-PR ~0,87-0,91 consistentes, mas o **fold 4 (jan-abr → mai) desaba** em todos os horizontes (T4 cai para 0,17). A média agregada da CV mascara esse colapso — **lição metodológica para CM 6.1**: em problemas com drift conhecido, reportar média de CV sem decomposição por fold pode dar segurança falsa.
+
+##### 6. Insight #13 — drift INTRA-MÊS dramático (`19_drift_semanal_junho.py`, 01/06)
+
+Análise semanal do test (apenas junho): **AUC-PR varia entre 0,3539 (S3, 15-21/jun) e 0,9472 (S4, 22-30/jun) — amplitude de 0,59 pp em 30 dias.** S3 é regime "calmo" sem dominância CA65926 (prev 3,75%); S4 é a explosão CA65926 (prev 25,22%). **Manifestação mais granular da L4 + L10** — agora visível em janela semanal. Implicação CM 6.3: monitoramento em produção precisa operar semanalmente, não mensalmente.
+
+##### 7. Validação empírica do Diferencial #1 — RF tunado ≈ LightGBM v3 (`16_random_forest_comparativo.py`, 01/06)
+
+Random Forest com **EXATA MESMA estratégia rigorosa do v3** (Optuna 50 trials, TimeSeriesSplit CV 4 folds, seed=42, 34 features alinhadas). **Resultados:** AUC-PR test = 0,8541 vs v3 = 0,8556 (**Δ = −0,15 pp**), Recall@0,5 = 0,7520 vs 0,7527 (**Δ = −0,07 pp**). **Praticamente equivalentes** — confirma que **algoritmo não é o diferencial** deste estudo. Material para Diferencial #1 do relatório (tabela comparativa adicionada).
+
+##### Insight contra-intuitivo CM 6.1 — categorias unknown ≥ conhecidas
+
+Análise estratificada "unknown vs conhecido no treino" revela: unknown_em_treino tem **AUC-PR=0,89** (LIGEIRAMENTE MELHOR que conhecido=0,86). Refuta expectativa W5 de degradação por extrapolação. Valida empiricamente a Opção 1 (freq=0) do encoding fix. Possível causa: convenção `freq=0` atua como feature binária implícita "equipamento novo" que o modelo aprende.
+
+##### Status final de limitações documentadas
+
+**12 limitações L1-L12 registradas em CM 6.2** (2 resolvidas, 10 persistentes). Todas com magnitude, evidência empírica e mitigação proposta em CM 6.3. **13 insights consolidados em CM 6.1** — material direto para a escrita do relatório em W8.
+
+##### Status para entrada em W8
+
+W7 fechou o pipeline analítico. Todos os entregáveis técnicos prontos. Em W8 é apenas escrita: Introdução, Entendimento do Negócio, Metodologia, Resultados, Limitações, Conclusão, Trabalhos Futuros. Conteúdo já consolidado em `rascunho.md` (12 seções), só falta refinamento estilístico + migração para `Desenvolver_Template.docx`.
 
 ---
 

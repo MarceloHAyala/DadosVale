@@ -1472,6 +1472,21 @@ Convergência tripla SHAP × HR × IF mostra que a performance agregada do v3 em
 
 O v3 prediz `P(DG ≤ 4h)` mas a análise da distribuição temporal dos TPs revela que **na prática o modelo detecta DG iminente, não antecipa em janela ampla**: 50% dos TPs são detecções diretas (próprio evento é DG, antecipação=0), e nos 50% restantes, mediana = 5,7 min, P75 = 56 min, P90 = 146 min. Apenas 18% dos TPs atingem a janela de mobilização típica (90 min). **A métrica que importa operacionalmente (tempo entre alerta e DG) NÃO é capturada por Precision/Recall agregados.** L12 registrada.
 
+### Insight 13 — Drift intra-mês dramático: AUC-PR varia 0,35 a 0,95 em 4 semanas de junho
+
+A análise semanal do test set (`19_drift_semanal_junho.py`) revela que a performance do v3 **NÃO é estável dentro do próprio mês de teste**. AUC-PR varia dramaticamente entre as 4 semanas de junho/2025, alinhado com a prevalência local de DG:
+
+| Semana | n eventos | Prevalência | AUC-PR | Recall@thr |
+|---|---:|---:|---:|---:|
+| S1 (01-07/jun) | 12.325 | 20,1% | **0,9375** | 0,966 |
+| S2 (08-14/jun) | 24.097 | 15,4% | 0,6762 | 0,577 |
+| **S3 (15-21/jun)** | 13.536 | **3,75%** | **0,3539** | 0,726 |
+| S4 (22-30/jun) | 21.131 | 25,2% | **0,9472** | 0,921 |
+
+**Amplitude de 0,59 pp em AUC-PR dentro de 30 dias.** Quando a prevalência cai (S3, regime "calmo" sem dominância CA65926), o modelo desaba. Quando a prevalência sobe (S4, explosão CA65926), modelo brilha. **Esta é a manifestação mais granular até agora da L4 (drift) + L10 (dependência de poucos equipamentos)** — agora visível semanalmente, não apenas mensalmente. **Implicação para deployment:** monitoramento em produção precisa operar em janela semanal, não mensal — a degradação pode ser detectada em 7 dias, não esperar o fechamento do mês. Material reforça L4 + L10 + recomendação CM 6.3 de monitoramento estratificado contínuo.
+
+[Figura Extra I — Drift semanal do v3 em junho](figuras/figExI_drift_semanal_junho.png)
+
 ### Insight 12 — CV temporal agregada mascara colapso no fold mais recente
 
 A comparação T2 vs T4 vs T8 via TimeSeriesSplit CV de 4 folds (`08d_comparacao_horizontes_cv.py`) confirma a equivalência estatística dos três horizontes (Cenário 1, Δ/σ = 0,29 entre T2 e T4 — mantém T4 canônico). Mas o achado **lateral** é mais valioso: o **fold 4 colapsa em todos os horizontes**:

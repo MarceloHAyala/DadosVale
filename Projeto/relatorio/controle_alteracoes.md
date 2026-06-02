@@ -1267,6 +1267,54 @@ Os folds 1-3 (treino expandindo até abr, validando em meses internos do treino)
 
 ---
 
+### 2026-06-01 — W7 Fechamento: drift semanal de junho (Insight #13) + limpeza PLANEJAMENTO
+
+Aplicado por `Projeto/codigo/19_drift_semanal_junho.py` (~10 s). Última análise empírica de W7, fechando os itens originais "Drift mensal: AUC-PR mês a mês" (adaptado para semanal porque o test é apenas junho).
+
+**Achado:** o v3 NÃO é estável dentro do próprio mês de teste. AUC-PR varia dramaticamente:
+
+| Semana de junho | n | Prevalência | AUC-PR |
+|---|---:|---:|---:|
+| S1 (01-07) | 12.325 | 20,14% | 0,9375 |
+| S2 (08-14) | 24.097 | 15,43% | 0,6762 |
+| **S3 (15-21)** | 13.536 | **3,75%** | **0,3539** |
+| S4 (22-30) | 21.131 | 25,22% | 0,9472 |
+
+**Amplitude de 0,59 pp em AUC-PR em 30 dias.** S3 (regime "calmo" sem dominância CA65926) tem AUC-PR baixa (0,35); S4 (explosão CA65926) tem AUC-PR alta (0,95). **Insight #13 registrado em CM 6.1** — drift detectável em janela semanal, não mensal.
+
+**Implicação para CM 6.3:** monitoramento em produção precisa operar em janela semanal, não mensal — degradação detectável em 7 dias. Reforça empiricamente L4 + L10.
+
+**Saídas:** `relatorio/tabelas/drift_semanal_junho.csv` + `relatorio/figuras/figExI_drift_semanal_junho.png` (2 painéis).
+
+#### Status final de W7
+
+Todos os entregáveis originais de W7 cobertos (alguns por scripts diferentes do plano original):
+
+| Item original W7 | Onde foi entregue |
+|---|---|
+| Fig 10 matriz confusão | `10_evaluation.py` (W7 Grupo A) |
+| Análise falsos negativos | Estratificada por frota |
+| Qualidade C estratificada | `10_evaluation.py` |
+| Métricas por estado pré-evento | `10_evaluation.py` |
+| Com vs sem CA65926 | IF estratificado (W6) → L10 |
+| TAG/operador unknown vs conhecido | `10_evaluation.py` (insight CM 6.1) |
+| Tabela custo-benefício + limiar | `10_evaluation.py` |
+| 08d comparação horizontes | B#1 (Cenário 1 confirmado + Insight #12) |
+| Q3 operador SHAP | W5 (Obs 2.4) + W6 (SHAP rank #12) |
+| Q6 faixas | `10_evaluation.py` (Verde/Amarelo/Vermelho) |
+| Q7 ranking | `figNeg02_ranking_risco_operacional.png` |
+| Tradução em horas | `figNeg03_horas_parada_evitavel.png` |
+| Qualidade B distribuição antecipação | B#2 → L12 |
+| Qualidade E sanity check viés | IF (W6) + B#3 (W7) |
+| K análise top-100 FPs | B#3 |
+| Insights não óbvios CM 6.1 | 13 insights consolidados |
+| Drift mensal | **`19_drift_semanal_junho.py` (este, adaptado para semanal)** |
+| Fig 13 | **Coberto pela Fig 9 (curvas comparativas)** — não criada por redundância |
+
+**W7 oficialmente fechado.** Próximo: W8 (escrita final + CM 6.3 detalhado + Conclusão).
+
+---
+
 ### 2026-06-01 — W7 Item 6 (RF comparativo): algoritmo não é o diferencial — confirmado empiricamente
 
 **ANTES:** O Diferencial #1 ("rigor > algoritmo") do relatório era argumento teórico baseado em conhecimento de domínio (RF e LightGBM são família de ensembles de árvores, performance similar esperada). Faltava validação empírica.
