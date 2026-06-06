@@ -286,7 +286,7 @@ Isolation Forest treinado em 394.971 eventos de train com 34 features alinhadas 
 - Weibull AFT: `tipo_caminhao` TR=0,038, `frota_793D_5S` TR=0,169
 - Isolation Forest: AUC dominado pelo CA65926
 
-Material para CM 6.1 (Insight Não Óbvio — três métodos independentes convergindo é evidência forte) + CM 6.2 (nova limitação L10: performance do v3 em test largamente dirigida pelo CA65926) + CM 6.3 (Trabalhos Futuros: investigar manualmente os FPs do IF como possíveis "DGs perdidos pelo CMA" — leitura inversa do Risco 3.3).
+Material para CM 6.1 (Insight Não Óbvio — três métodos iluminam aspectos complementares: o IF expõe o viés do rótulo, SHAP e Weibull mostram a generalização do v3) + CM 6.2 (limitação L10, re-nuançada em 06/06: a limitação real é o viés do rótulo CMA, equipamento-específico; o v3 supervisionado generaliza, AUC-PR 0,7693 sem CA65926, AUC-ROC 0,9368) + CM 6.3 (Trabalhos Futuros: investigar manualmente os FPs do IF como possíveis "DGs perdidos pelo CMA" — leitura inversa do Risco 3.3).
 
 **Implicação para narrativa do relatório:**
 - Em CM 6.2 (Limitações): registrar explicitamente que `Is_Dont_Go` é artefato regulatório com **validade heterogênea por equipamento** — forte onde há anomalia mecânica dominante, fraca no resto.
@@ -345,7 +345,7 @@ O modelo de modelagem em W6 produziu **convergência metodológica forte** que r
 1. **SHAP do v3 canônico** (`08f_shap_v3.py`, 24/05): `tipo_caminhao` é a feature #2 com 23,9% do peso; `frota_793D_5S` rank #9. O modelo aprende explicitamente que **identidade do equipamento/frota é driver principal da predição**.
 2. **Weibull AFT** (`09_sobrevivencia.py`, 25/05): TR `tipo_caminhao`=0,038 (sobrevida ~3% da escavadeira), TR `frota_793D_5S`=0,169 (frota mais antiga, maior risco). Top 4 hazard ratios são todos **estruturais por equipamento** (frotas 5S, 4S, 3S, 2S + tipo_caminhao). Validação por método independente.
 3. **Isolation Forest** (`11_isolation_forest.py`, 25/05): análise estrutural **por TAG** (todas as 26 TAGs com AUC válido) confirma: **CA65926 AUC=0,897, CA65932 AUC=0,837, CA65924 AUC=0,792** — os 3 únicos com sinal forte E sample significativo. **CA65924 (paradigma de W4) detectado SEM o IF usar o rótulo** — 4ª evidência convergente para H7.1.
-4. **Análise estratificada CA65926 vs resto:** test completo AUC=0,860 mas decompõe-se em CA65926=0,897 vs resto=0,541. Confirma que o sinal do test é dirigido por poucos equipamentos.
+4. **Análise estratificada CA65926 vs resto:** test completo AUC=0,860 mas decompõe-se em CA65926=0,897 vs resto=0,541. Confirma que o sinal do **IF (não-supervisionado)** é dirigido por poucos equipamentos. Atenção: isso vale para o IF, não para o classificador v3, que generaliza (AUC-PR 0,7693 sem CA65926 via `22_v3_estratificado_ca65926.py`; ver L10).
 5. **Ablation por grupo** (`15_ablation_grupos.py`, 25/05): G6 categóricas (8 features, inclui `tipo_caminhao` e 4 dummies de frota) tem ablation Δ=+0,0064 (modelo melhora ligeiramente ao remover) — sinal de **alta redundância** (modelo encontra rotas alternativas), não de irrelevância. Coerente com L10.
 
 **Veredito reforçado pós-W6: H7.1 CONFIRMADA com convergência metodológica de 4 evidências independentes em 3 equipamentos:**
@@ -353,7 +353,7 @@ O modelo de modelagem em W6 produziu **convergência metodológica forte** que r
 - **CA65926** (W2 outlier de DGs + W5 anomalia RFB + W6 SHAP/Weibull/IF) — confirmado por múltiplas técnicas
 - **CA65924** (W4 caso paradigma + W6 IF independente) — confirmação independente em W6
 
-**Implicação direta para CM 6.1, 6.2, 6.3 (nova nota):** a "EDA agregada esconde indivíduos" tem agora demonstração empírica via 3 técnicas de modelagem independentes. Material extremamente forte para CM 6.1 + nova limitação **L10** em CM 6.2 (performance do v3 em test largamente dirigida pelo CA65926 — pode degradar em deployment sem anomalia dominante similar).
+**Implicação direta para CM 6.1, 6.2, 6.3 (nova nota):** a "EDA agregada esconde indivíduos" tem agora demonstração empírica via 3 técnicas de modelagem independentes. Material extremamente forte para CM 6.1 + limitação **L10** em CM 6.2 (re-nuançada em 06/06: a limitação real é o viés do rótulo CMA, equipamento-específico; o v3 supervisionado generaliza, AUC-PR 0,7693 sem CA65926, AUC-ROC 0,9368).
 
 **Trabalho Futuro registrado em CM 6.3:** análise sistemática de outliers por TAG ao longo de múltiplas dimensões (taxa de DG, volume, perfil de alarmes, AUC isolado do IF) para construir *ranking* defensável de equipamentos a auditar manualmente. Investigação manual dos FPs do IF como possíveis "DGs perdidos pelo CMA" (leitura inversa do Risco 3.3) também listada.
 
@@ -383,7 +383,7 @@ O modelo de modelagem em W6 produziu **convergência metodológica forte** que r
 - **H5.1 → DGs em Manutenção são legítimos** (reativações de teste, não falsos positivos)
 - **H5.2 (W4 → W6) → "acúmulo de criticidade" fracamente refutado via SHAP** (Família 1 rolling em rank #15–#31 nos dois modelos canônicos; **Família 6 *domain-specific* venceu Família 1 genérica** — material direto para CM 6.1)
 - **H5.3 (W5) → operador correlaciona com DG de forma difusa** (OP_067 não é outlier, mas Q3 tem resposta empírica; ver tabela `obs24_taxa_dg_por_operador.csv`)
-- **H6.1 (W6) → Risco 3.3 PARCIALMENTE MITIGADO (assimétrico por regime)** — Isolation Forest concorda com CMA em anomalias dominantes (CA65926 AUC=0,90) mas é aleatório em DGs distribuídos (AUC mediana por TAG = 0,61). Convergência tripla SHAP × HR × IF como validação independente. Nova limitação **L10** registrada em CM 6.2 (performance do v3 em test largamente dirigida pelo CA65926).
+- **H6.1 (W6) → Risco 3.3 PARCIALMENTE MITIGADO (assimétrico por regime)** — Isolation Forest concorda com CMA em anomalias dominantes (CA65926 AUC=0,90) mas é aleatório em DGs distribuídos (AUC mediana por TAG = 0,61). Convergência tripla SHAP × HR × IF iluminando aspectos complementares. Limitação **L10** em CM 6.2, re-nuançada em 06/06 (a limitação real é o viés do rótulo CMA; o v3 supervisionado generaliza, AUC-PR 0,7693 sem CA65926).
 
 **Padrão emergente forte ratificado em W6 (validação tripla — H7.1):** equipamentos individuais problemáticos aparecem em múltiplos contextos independentes:
 - **CA65789** (W3): 100% das sobreposições de apontamento

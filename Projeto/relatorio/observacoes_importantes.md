@@ -133,9 +133,9 @@ IF treinado em 394.971 eventos de train com 34 features alinhadas ao v3 canônic
 - ✅ **Para anomalias dominantes (CA65926-like, falhas mecânicas progressivas):** IF e CMA concordam fortemente (AUC=0,90). O rótulo CMA captura anomalia estatisticamente real nesse regime.
 - ⚠️ **Para DGs distribuídos (>88% das TAGs):** IF e CMA discordam (AUC mediana=0,61, 8 TAGs em ~aleatório). O rótulo CMA pode estar capturando eventos sem assinatura estatística distintiva no espaço de features atual.
 
-**Convergência metodológica como validação independente:** três técnicas (LightGBM v3 via SHAP, Weibull AFT via hazard ratios, Isolation Forest não-supervisionado) chegam à mesma conclusão. Material para CM 6.1.
+**Convergência metodológica (atualizada em 06/06):** as três técnicas iluminam aspectos COMPLEMENTARES, não a mesma conclusão. O IF (não-supervisionado) expõe o viés do rótulo (colapsa fora do CA65926); o SHAP do v3 e os hazard ratios do Weibull mostram que o modelo supervisionado usa sinais transferíveis (tipo, frota, regime) e generaliza. Material para CM 6.1.
 
-**Nova limitação registrada (L10 em CM 6.2):** performance do v3 em test (AUC-PR=0,8556) é largamente dirigida pela detecção do CA65926; em deployment sem anomalia dominante similar, performance pode degradar para próximo da AUC mediana por TAG (~0,61).
+**Limitação L10 (CM 6.2) — RE-NUANÇADA em 06/06 via `22_v3_estratificado_ca65926.py`:** a leitura anterior ("performance do v3 largamente dirigida pelo CA65926") foi refutada pela medição direta do próprio modelo. AUC-PR do v3: completo 0,8556 (lift 5,06×) / CA65926 apenas 0,9723 (lift só 1,20×, prevalência 80,9%) / **sem CA65926 0,7693 (lift 7,77×)**, com AUC-ROC quase intacta (0,9391 → 0,9368). Conclusão correta: o número absoluto é parcialmente inflado pela alta prevalência do CA65926, mas a generalização do v3 é genuína (lift MAIOR nos demais 29 equipamentos). A limitação real é o **viés do rótulo CMA** (evidenciado pelo IF), não a fragilidade do classificador. Ver `controle_alteracoes.md` entrada 06/06.
 
 **Trabalho Futuro registrado em CM 6.3:** investigação manual dos FPs do IF como possíveis "DGs perdidos pelo CMA" (leitura inversa do Risco 3.3) + validação prospectiva com dados de manutenção corretiva (registros de falha física).
 

@@ -1018,6 +1018,8 @@ Lift vs prevalência (7,35%): no threshold 0,10, precisão 0,4085 = **5,56× ran
 
 **Implicação operacional crítica (a entrar em CM 6.2 como nova limitação L10):**
 
+> ⚠️ **CORREÇÃO POSTERIOR (06/06):** esta conclusão de 25/05 foi REFUTADA pela medição direta do v3 em `22_v3_estratificado_ca65926.py`. Ver a entrada "2026-06-06 — Estratificação do v3 com vs sem CA65926" mais abaixo. O parágrafo a seguir é preservado como registro histórico do que se acreditava na época (integridade do log ANTES/DEPOIS).
+
 A performance alta do LightGBM v3 em test (AUC-PR=0,8556) é **largamente dirigida pela detecção do CA65926**. Em regime sem anomalia dominante (cenário esperado em deployment futuro), a performance pode degradar significativamente — possivelmente para perto do baseline original (AUC-PR train ~ AUC-PR val), já que o sinal "extra" em test vinha de um único equipamento.
 
 **Recomendações (CM 6.3 — Trabalhos Futuros):**

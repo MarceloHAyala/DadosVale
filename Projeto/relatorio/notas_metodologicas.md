@@ -165,7 +165,7 @@ A *feature* `is_tag_unknown_in_train` tem propriedade peculiar **por construçã
 A Opção 3 só entrega valor preditivo real em duas condições:
 
 1. Com **TimeSeriesSplit CV** (Mitigação 1 prevista para W6) — alguns *folds* têm TAGs que outros não têm, gerando variação intra-treino que torna a *feature* aprendível.
-2. Com **target encoding com KFold temporal** (refinamento agendado para W5/W6) — mesma lógica.
+2. Com **target encoding com KFold temporal** (avaliado em 06/06, `21_target_encoding_comparativo.py`) — mesma lógica. Resultado: target encoding piorou a AUC-PR (val −2,25pp, test −0,62pp) vs frequency encoding, abaixo do critério de substituição de +1pp; **frequency encoding mantido**. Causa: drift temporal (taxas-alvo de jan-abr não transferem para mai/jun). Ver `controle_alteracoes.md` entrada 06/06.
 
 Em *single-fold* (configuração de W5: treino jan-abr / val mai / teste jun), Opção 1 e Opção 3 produzem **predições matematicamente equivalentes**.
 
@@ -1185,7 +1185,7 @@ Três técnicas independentes chegam ao mesmo achado:
 | **Weibull AFT** | TR `tipo_caminhao` = 0,038 (sobrevida 3% da escavadeira) | Equipamento-específico domina hazard |
 | **Isolation Forest** | AUC CA65926=0,897 vs resto=0,541 | Equipamento-específico domina anomalia |
 
-**Esse alinhamento é evidência forte de uma realidade subjacente:** o test set é dominado pela anomalia do CA65926. Três métodos com fundamentação matemática completamente diferente (Shapley values + maximum likelihood paramétrico + isolation tree não-supervisionado) chegam à mesma conclusão. Material direto para **CM 6.1 (Insight Não Óbvio — convergência metodológica como validação)**.
+**Esse alinhamento mostra que o CA65926 é o equipamento mais saliente do test set, mas é preciso separar dois fatos (correção de 06/06):** o **sinal estrutural não-supervisionado** (Isolation Forest) é dominado pelo CA65926 (AUC cai a 0,54 sem ele), o que é um achado sobre o **rótulo CMA** (Risco 3.3). O **modelo supervisionado v3**, porém, NÃO depende do CA65926: a estratificação direta da AUC-PR do v3 (`22_v3_estratificado_ca65926.py`) mostra que sem o CA65926 ela cai apenas de 0,8556 para 0,7693, com AUC-ROC praticamente intacta (0,9391 → 0,9368) e lift sobre o acaso MAIOR nos demais 29 equipamentos (7,77×) do que no CA65926 (1,20×, alvo fácil por prevalência de 80,9%). Portanto, SHAP e Weibull identificam que o modelo usa `tipo_caminhao`/frota/regime como drivers **transferíveis** (não específicos de um equipamento), enquanto o IF expõe que o **rótulo** tem assinatura clara só em poucos equipamentos. As três técnicas iluminam aspectos COMPLEMENTARES, não a mesma conclusão de "dependência de um equipamento". Material direto para **CM 6.1 (Insight Não Óbvio — convergência metodológica revela a dissociação entre viés do rótulo e generalização do modelo)**.
 
 ### Limitações específicas do Isolation Forest (CM 6.2)
 
