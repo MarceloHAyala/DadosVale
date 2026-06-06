@@ -1,0 +1,4 @@
+subgrupo,n_eventos,n_positivos_target4h,prevalencia,auc_pr,auc_roc,recall_05
+test_completo (com CA65926),71089,12038,0.1693,0.8556,0.9391,0.7527
+CA65926_apenas,7083,5730,0.809,0.9723,0.8762,0.8197
+test_sem_CA65926,64006,6308,0.0986,0.7693,0.9368,0.6918

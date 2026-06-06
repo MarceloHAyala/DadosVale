@@ -1493,4 +1493,13 @@ Nenhuma nova limitação registrada hoje (L1-L10 cobrem o relevante). Mas a **ca
 
 ---
 
+### 2026-06-06 — Estratificação do v3 com vs sem CA65926: L10 re-nuançada (CM 5.2 / CM 6.2)
+
+- **ANTES:** a limitação L10 afirmava que "a performance alta do v3 em teste (AUC-PR=0,8556) é largamente dirigida pela detecção do CA65926". O argumento se apoiava num PROXY: o Isolation Forest não supervisionado, cujo AUC-ROC desaba de 0,86 (test completo) para 0,54 (test sem CA65926). A AUC-PR do próprio v3 estratificada por CA65926 nunca havia sido calculada.
+- **DEPOIS:** calculada em `22_v3_estratificado_ca65926.py` (06/06), sobre o target real do modelo (`target_4h`). Resultados: test completo AUC-PR=0,8556 (prev 0,169, lift 5,06×); CA65926 apenas AUC-PR=0,9723 (prev 0,809, lift apenas 1,20×); **test sem CA65926 AUC-PR=0,7693 (prev 0,099, lift 7,77×)**. AUC-ROC praticamente inalterado entre completo (0,9391) e sem CA65926 (0,9368). Queda de AUC-PR ao remover CA65926: apenas 8,63pp, NÃO um colapso.
+- **Justificativa da re-nuança:** o número absoluto de AUC-PR é parcialmente inflado pela prevalência altíssima do CA65926 (80,9%), que levanta o teto do AUC-PR. Mas em termos de habilidade discriminativa (lift sobre o baseline aleatório), o modelo é MAIS forte nos demais 29 equipamentos (7,77×) do que no próprio CA65926 (1,20×, alvo "fácil" por prevalência). O colapso do IF (0,54) refletia o sinal estrutural não supervisionado dominado pelo CA65926, não a capacidade preditiva do modelo supervisionado. **A crítica "o modelo só detecta um equipamento" fica refutada pelos próprios números do v3.**
+- **Impacto:** L10 deve ser reescrita em W8 com formulação mais precisa e favorável: "AUC-PR absoluto parcialmente inflado pela prevalência do CA65926, mas generalização genuína (AUC-ROC estável, lift 7,77× nos demais equipamentos)". Ajusta também a sugestão T1.1 (PLANEJAMENTO W8): apresentar AMBOS os números e usar o lift para refutar a crítica, em vez de tratar o headline como frágil. Saída: `relatorio/tabelas/eval_v3_ca65926.csv`.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->
