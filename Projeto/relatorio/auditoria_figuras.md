@@ -114,6 +114,12 @@ Auditoria completa das figuras do projeto, classificadas em **Negócio** (gerent
 - **Arquivo:** `fig09d_shap_beeswarm_v3.png`
 - **Função:** Direção do efeito. Anexo técnico (CM 5.3).
 
+#### Figura 12 — SHAP waterfall local ⭐ **NOVA (06/06)**
+- **Arquivo:** `fig12_shap_waterfall_v3.png`
+- **Script:** `Projeto/codigo/20_shap_waterfall_v3.py`
+- **Função:** Explicação local de uma predição individual (CM 5.3). Complementa as figs globais 9c/9d. Evento: CA65933 (caminhão 793-D 5S), 04/jun, `Engine Coolant Level`, p=0,969, DG real ocorreu. Drivers: `qtd_alarmes_nivel_muito_alto_360min` (+2,94), `razao_alarme_7d_vs_30d_anterior` (+0,84), `tipo_caminhao` (+0,40). Escolhido fora do CA65926 para demonstrar generalização.
+- **Saída adicional:** `relatorio/tabelas/shap_waterfall_evento.csv` (34 contribuições).
+
 #### Figura Extra C — Cadeia CA65924
 - **Arquivo:** `figExC_ca65924_cadeia.png`
 - **Função:** Validação empírica W4 da H5.2. Anexo.
@@ -165,8 +171,10 @@ Em ordem de prioridade:
 
 1. **Acertar acentos das figuras técnicas restantes** se forem usadas no corpo do relatório final (W8). Para as que ficarem só em anexo, opcional.
 2. **Validar a Fig Neg03 (horas evitáveis) com o time operacional da Vale** — as premissas de 4h corretiva / 1,5h preventiva são estimativas razoáveis, mas o time operacional pode ter números mais precisos.
-3. **(Opcional) Adicionar SHAP waterfall** (Fig 12 do plano) de uma predição específica do CA65926, mostrando como o modelo chegou ao score alto — fortalece a narrativa de interpretabilidade individual. ~30 min.
+3. ✅ **FEITO (06/06) — SHAP waterfall (Fig 12)** gerado em `20_shap_waterfall_v3.py`. Decisão: em vez do CA65926 (originalmente sugerido), escolhido o **CA65933** (caminhão comum, fora do equipamento dominante) para demonstrar generalização do v3, decisão mais defensável para o relatório dado o achado L10.
+
+> **Nota:** este snapshot de 27/05 tem o sumário executivo defasado (não contabiliza figuras criadas depois: ExH top-100 FPs, ExI drift semanal, Neg04 antecipação, e Fig 12). Será reconsolidado em W8 na auditoria final de figuras para o `.docx`.
 
 ---
 
-**Última atualização:** 2026-05-27 (segunda rodada de auditoria — 3 figs de negócio criadas, Fig 9 regenerada, Fig 4 ajustada com anotação CA65926, Fig 5 para /reserva/, ExA e ExG promovidas para Resultados)
+**Última atualização:** 2026-06-06 (Fig 12 SHAP waterfall local adicionada — item 3 dos próximos passos concluído; CA65933 escolhido em vez de CA65926 para demonstrar generalização)

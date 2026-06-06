@@ -1475,4 +1475,22 @@ Nenhuma nova limitação registrada hoje (L1-L10 cobrem o relevante). Mas a **ca
 
 ---
 
+### 2026-06-06 — Fig 12 (SHAP waterfall local) gerada + escolha do evento (item de W6 adiado, agora fechado)
+
+- **ANTES:** Fig 12 (waterfall SHAP de uma predição individual, CM 5.3) marcada no plano como adiada para W8, com sugestão original de usar uma predição do **CA65926** (equipamento dominante do test).
+- **DEPOIS:** gerada em `20_shap_waterfall_v3.py`. Evento escolhido por critério principiado e determinístico: verdadeiro positivo na faixa vermelha (p ≥ 0,30, acerto), **fora do CA65926**, com contribuições diversificadas (menor fração do empurrão positivo concentrada na feature #1, dentre os 30 TPs mais confiantes na faixa [0,60; 0,97]). Selecionado: **CA65933** (caminhão 793-D 5S), 04/jun/2025, alarme `Engine Coolant Level - Active`, p = 0,969, DG real ocorreu. Drivers: `qtd_alarmes_nivel_muito_alto_360min` = 322 (SHAP +2,94), `razao_alarme_7d_vs_30d_anterior` = 3,98 (+0,84), `tipo_caminhao` = 1 (+0,40).
+- **Justificativa:** a sugestão original (CA65926) reforçaria a narrativa do equipamento dominante; escolher um caminhão comum num regime calmo (semana 1 de junho, antes da explosão do CA65926) demonstra que o v3 **generaliza** além do CA65926, resposta direta à L10. As três features que sustentam o alerta são antecipativas legítimas (Família 6 regra de negócio, Família 4 regimal, base rate por tipo), fechando a narrativa da promoção do v3 (não é cascade detector).
+- **Impacto:** fecha o último item técnico aberto de W6. Saídas: `fig12_shap_waterfall_v3.png` + `shap_waterfall_evento.csv` (34 contribuições). Referência inserida no `rascunho.md` (subseção "Explicação local de uma predição individual"). Sem impacto em métricas ou modelo.
+
+---
+
+### 2026-06-06 — Target encoding vs frequency encoding: comparação empírica fecha item de W5 (CM 3.2)
+
+- **ANTES:** o encoding das categóricas de alta cardinalidade (`TAG`, `Nome_Operador_Anon`) usava **frequency encoding** (Família 7), com fix de leakage aplicado em 22/05 (`06b`). O plano de W5 previa avaliar a substituição por **target encoding com KFold temporal** como refinamento incremental, mas a comparação nunca havia sido executada (item permanecia aberto, classificado como opcional).
+- **DEPOIS:** target encoding implementado e comparado em `21_target_encoding_comparativo.py` (06/06). Protocolo: KFold temporal por mês (jan/fev/mar/abr) com out-of-fold no treino, smoothing α=10, ajuste sobre treino completo para val/test; comparação apples-to-apples com **hiperparâmetros fixos do v3** (mesma metodologia do ablation 15), variando somente o encoding das 2 features, treinando ambas as variantes no mesmo pipeline. **Resultado:** frequency (= v3 canônico) val=0,7132 / test=0,8556; target encoding val=0,6907 / test=0,8494. **Target encoding PIORA: −2,25pp em validação, −0,62pp em teste.** Critério de substituição do plano (ganho_val > 1pp) não atingido. **Decisão: manter frequency encoding.**
+- **Justificativa:** além do critério não ser atingido, a degradação tem causa coerente com a narrativa do projeto. (i) Drift temporal (L4): as taxas-alvo por categoria calibradas em jan-abr não transferem para o regime de mai/jun; frequency encoding é mais estável sob mudança de regime. (ii) Correlação negativa entre frequência e taxa de DG no treino (−0,31 para TAG, −0,22 para operador): equipamento mais frequente não é equipamento com mais DG, então as duas codificações carregam sinais diferentes, e o target encoding superajusta ao regime de treino. Sanity check: a variante baseline reproduziu o v3 canônico bit-a-bit no teste (0,8556), confirmando fidelidade do pipeline de comparação.
+- **Impacto:** fecha o último item analítico aberto de W5 (antes opcional, agora resolvido com evidência empírica). `v3.parquet` permanece canônico sem alteração. Saída: `relatorio/tabelas/target_encoding_comparativo.csv`. Reforça empiricamente a robustez do frequency encoding sob drift e dá material adicional para a discussão de L4/L10.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

@@ -1,0 +1,3 @@
+variante,auc_pr_train,recall_train,auc_pr_val,recall_val,auc_pr_test,recall_test,ganho_val_pp_vs_baseline,ganho_test_pp_vs_baseline
+frequency (v3 canonico),0.9653,0.9553,0.7132,0.5303,0.8556,0.7527,-2.25,-0.62
+target_encoding_kfold,0.9656,0.9538,0.6907,0.5093,0.8494,0.7499,-2.25,-0.62
