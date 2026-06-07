@@ -1504,4 +1504,13 @@ Nenhuma nova limitação registrada hoje (L1-L10 cobrem o relevante). Mas a **ca
 
 ---
 
+### 2026-06-07 — L12 re-nuançada: a antecipação existe no score (CM 5.2 / CM 6.2)
+
+- **ANTES:** a L12 (de `17_distribuicao_antecipacao.py`, 01/06) concluía que "o v3 funciona mais como detector de DG iminente que antecipador de 4h", com base em que 50% dos TPs no limiar 0,5 são detecções diretas e só 18% atingem 90 min de antecedência. A interpretação implícita era de incapacidade de antecipar.
+- **DEPOIS:** `23_antecedencia_vs_acuracia.py` (07/06) redefiniu o alvo como "existe DG em [t+L, t+4h]" para L em {0, 15, 30, 60, 90, 120} min, mantendo o score do v3, e mediu AUC-PR, AUC-ROC, prevalência e lift. **Resultado:** a AUC-ROC (independente de prevalência) quase não cai (0,942 em L=0 → 0,913 em L=90min → 0,910 em L=120min) e o lift fica estável em ~5×. A AUC-PR cai (0,867 → 0,617 em L=90min) acompanhando a queda da prevalência (0,173 → 0,125), que é o piso da métrica, não perda de habilidade. Sanity check: L=0 reproduz o alvo original (prevalência 0,173, AUC-PR 0,867). Sem CA65926, AUC-ROC em L=90min ainda é 0,90 (lift ~6×).
+- **Justificativa:** os dois fatos convivem. No limiar 0,5, um evento 90 min antes do DG recebe nota alta mas logo abaixo de 0,5 (não dispara, vira FN no Fato 1), porém continua bem ranqueado acima dos eventos sem DG (Fato 2). A capacidade de antecipar 90-120 min existe no score; realizá-la é escolher o ponto de operação (a faixa Amarela do Q6, limiar 0,145, é exatamente esse mecanismo), ao custo de menor precisão.
+- **Impacto:** L12 reescrita em rascunho.md, observacoes_importantes.md e PLANEJAMENTO.md de "incapacidade de antecipar" para "trade-off precisão × antecedência, gerenciável por ponto de operação". Nova **Figura Extra J** (`figExJ_antecedencia_vs_acuracia.png`) promovida como candidata ao corpo do relatório (CM 5.2). Saídas: `antecedencia_vs_acuracia.csv` + figura. Fortalece a Frente 1 sem inflar nada: a antecipação é real e demonstrada empiricamente.
+
+---
+
 <!-- Próximas entradas serão adicionadas conforme decisões forem tomadas em W3, W4, etc. -->

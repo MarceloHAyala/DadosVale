@@ -1,0 +1,7 @@
+lead_min,limiar_nome,limiar,n_pos_alvo,recall,precision,n_alertas,n_DGs_antecipados_pegos
+90,Amarelo Q6,0.145,8856,0.8677,0.3608,21296,7684
+90,Vermelho Q6,0.3,8856,0.8113,0.4926,14585,7185
+90,Padrão,0.5,8856,0.7534,0.5894,11320,6672
+120,Amarelo Q6,0.145,7911,0.8718,0.3239,21296,6897
+120,Vermelho Q6,0.3,7911,0.8195,0.4445,14585,6483
+120,Padrão,0.5,7911,0.7645,0.5343,11320,6048

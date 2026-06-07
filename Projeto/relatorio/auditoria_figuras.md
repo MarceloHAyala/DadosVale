@@ -114,6 +114,12 @@ Auditoria completa das figuras do projeto, classificadas em **Negócio** (gerent
 - **Arquivo:** `fig09d_shap_beeswarm_v3.png`
 - **Função:** Direção do efeito. Anexo técnico (CM 5.3).
 
+#### Figura Extra J — Antecipação real vs detecção do instante ⭐ **NOVA (07/06)**
+- **Arquivo:** `figExJ_antecedencia_vs_acuracia.png`
+- **Script:** `Projeto/codigo/23_antecedencia_vs_acuracia.py`
+- **Função:** Sustenta a re-nuança da L12 (CM 5.2). Alvo redefinido como "DG em [t+L, t+4h]" para L crescente; mostra que a AUC-ROC do v3 quase não cai (0,942 → 0,913 em L=90min) e o lift fica estável em ~5×, ou seja, a antecipação de 90-120 min existe no score. A queda do AUC-PR acompanha a prevalência (piso da métrica), não perda de habilidade. **Candidata forte ao corpo do relatório** (transforma a L12 de fraqueza em trade-off gerenciável).
+- **Saída adicional:** `relatorio/tabelas/antecedencia_vs_acuracia.csv`.
+
 #### Figura 12 — SHAP waterfall local ⭐ **NOVA (06/06)**
 - **Arquivo:** `fig12_shap_waterfall_v3.png`
 - **Script:** `Projeto/codigo/20_shap_waterfall_v3.py`
