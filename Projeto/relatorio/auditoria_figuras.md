@@ -114,11 +114,12 @@ Auditoria completa das figuras do projeto, classificadas em **Negócio** (gerent
 - **Arquivo:** `fig09d_shap_beeswarm_v3.png`
 - **Função:** Direção do efeito. Anexo técnico (CM 5.3).
 
-#### Figura Extra J — Antecipação real vs detecção do instante ⭐ **NOVA (07/06)**
-- **Arquivo:** `figExJ_antecedencia_vs_acuracia.png`
-- **Script:** `Projeto/codigo/23_antecedencia_vs_acuracia.py`
-- **Função:** Sustenta a re-nuança da L12 (CM 5.2). Alvo redefinido como "DG em [t+L, t+4h]" para L crescente; mostra que a AUC-ROC do v3 quase não cai (0,942 → 0,913 em L=90min) e o lift fica estável em ~5×, ou seja, a antecipação de 90-120 min existe no score. A queda do AUC-PR acompanha a prevalência (piso da métrica), não perda de habilidade. **Candidata forte ao corpo do relatório** (transforma a L12 de fraqueza em trade-off gerenciável).
-- **Saída adicional:** `relatorio/tabelas/antecedencia_vs_acuracia.csv`.
+#### Figura Extra K — Antecipação honesta: inclusivo vs estrito ⭐ **NOVA (07/06)** — substitui a figExJ
+- **Arquivo:** `figExK_antecipacao_honesta.png`
+- **Script:** `Projeto/codigo/26_figura_antecipacao_honesta.py`
+- **Função:** Sustenta a L12 (CM 5.2). Duas linhas de AUC-ROC vs antecedência mínima L: a **inclusiva** (0,91 em L=90min, inflada por acerto via DG mais próximo) e a **estrita/honesta** (próximo DG entre L e 4h, nada iminente antes), que fica em **0,82** com lift ~5×. O vão laranja entre elas é a contaminação. A linha azul (estrita) é a capacidade honesta de antecipação: modesta porém real. **Candidata forte ao corpo do relatório**, mostra rigor (separa antecipação genuína de acerto por DG iminente).
+- **Saídas adicionais:** `antecipacao_inclusivo_vs_estrito.csv`, `antecipacao_estrita.csv`, `limiar_para_antecipacao.csv`.
+- **Nota:** a `figExJ_antecedencia_vs_acuracia.png` (script 23, só a curva inclusiva) foi **superada** pela figExK; manter apenas como artefato preliminar, não usar no corpo.
 
 #### Figura 12 — SHAP waterfall local ⭐ **NOVA (06/06)**
 - **Arquivo:** `fig12_shap_waterfall_v3.png`
