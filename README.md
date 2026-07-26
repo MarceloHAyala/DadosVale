@@ -41,7 +41,8 @@ AnaliseDadosVale/                          ← raiz do repo Git
 | `Projeto/relatorio/figuras/` | PNGs finais para o relatório | ✅ Sim (entrega) |
 | `Projeto/relatorio/tabelas/` | CSVs finais para o relatório | ✅ Sim (entrega) |
 | `Projeto/relatorio/rascunho.md` | Escrita progressiva W2→W8 | ✅ Sim |
-| `Projeto/relatorio/relatorio_final.docx` | Entrega final (W9) | ✅ Sim |
+| `Projeto/relatorio/relatorio_final.md` | Texto do relatório final, fonte do .docx (W8) | ✅ Sim |
+| `Relatorio_Final_Marcelo_Ayala_Gomes.docx` | Entrega final (raiz do repositório, W9) | ✅ Sim |
 
 ---
 
@@ -168,6 +169,7 @@ uv run python Projeto/codigo/23_antecedencia_vs_acuracia.py # W7 (L12, 07/06) - 
 uv run python Projeto/codigo/24_limiar_para_antecipacao.py  # W7 (L12, 07/06) - **Qual limiar realiza a antecipação de 90min** (CM 5.2). Para o alvo "DG em [t+90,t+4h]": recall/precisão por limiar. Vermelho 0,30: recall 81%/prec 49%; Amarelo 0,145: recall 87%/prec 36%. → limiar_para_antecipacao.csv + figExK_... Tempo: ~30 s
 uv run python Projeto/codigo/25_antecipacao_estrita.py      # W7 (L12, 07/06) - **Antecipação ESTRITA (honesta)**. Alvo "próximo DG em [L,4h], nada iminente antes" — remove acerto por DG mais próximo. **AUC-ROC 0,82 em L=90min (vs 0,91 inflado), lift ~5×.** Recall@0,30=43%, prec=16%. Antecipação genuína mas modesta. → antecipacao_estrita.csv. Tempo: ~30 s
 uv run python Projeto/codigo/26_figura_antecipacao_honesta.py # W7 (L12, 07/06) - **Figura honesta inclusivo vs estrito** (CM 5.2). Duas linhas de AUC-ROC: inclusivo 0,91 (inflado) vs estrito 0,82 (honesto); vão = acerto por DG mais próximo. → figExK_antecipacao_honesta.png + antecipacao_inclusivo_vs_estrito.csv. Tempo: ~30 s
+uv run python Projeto/codigo/gerar_docx.py              # W8/W9 - **Gera o .docx final** a partir de `Projeto/relatorio/relatorio_final.md`, usando `Original/Desenvolver_Template.docx` como base (herda cabeçalho/logo, estilos, layout). → **Relatorio_Final_Marcelo_Ayala_Gomes.docx** (raiz do repositório, movido para lá em 19/07). Tempo: ~5 s
 ```
 
 **Scripts auxiliares (investigações ad-hoc, rodam independentemente):**

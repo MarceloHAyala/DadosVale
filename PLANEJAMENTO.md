@@ -130,8 +130,10 @@ AnaliseDadosVale/                            ← raiz do repositório Git
         ├── observacoes_importantes.md      (checklist vivo de pendências e riscos)
         ├── notas_exploracao_inicial.md     (notas iniciais 11/05 — dicionário + CMA + Is_Dont_Go; base para CM 1.1 em W8)
         ├── rascunho.md                      (escrita progressiva W2→W8)
-        └── relatorio_final.docx             (W9)
+        └── relatorio_final.md               (texto final, fonte do .docx — W8)
 ```
+
+**Nota (19/07):** o `.docx` de entrega final não fica em `Projeto/relatorio/`, e sim na **raiz do repositório**: `Relatorio_Final_Marcelo_Ayala_Gomes.docx`. Gerado por `Projeto/codigo/gerar_docx.py` a partir do `relatorio_final.md` acima, usando `Original/Desenvolver_Template.docx` como base.
 
 **Convenção:** todos os scripts dentro de `Projeto/codigo/` usam `Path(__file__).resolve().parents[1]` como raiz — ou seja, resolvem caminhos relativos a `Projeto/`. Por isso `Projeto/codigo/01_ingestao.py` lê de `Projeto/Alterado/...` e escreve em `Projeto/dados/...` sem hardcoded paths.
 
@@ -1735,15 +1737,15 @@ Auditoria CM a CM confirmou que o projeto supera o mínimo em 15 dos 16 Conteúd
 
 **Objetivo:** versão `.docx` final pronta.
 
-- [ ] Migrar markdown → `Projeto/Alterado/Desenvolver_Template.docx`
-- [ ] Inserir figuras com legenda numerada
-- [ ] Formatar tabelas
-- [ ] 2 leituras críticas (manhã + tarde de dias diferentes)
-- [ ] Checklist dos 6 CMs cobertos
-- [ ] Anexos: dicionário de features + tabela ANTES/DEPOIS
-- [ ] Validar referências bibliográficas
+- [X] **Migrar markdown → template oficial (19/07).** O template mudou no meio do W9: a Vale substituiu o `Desenvolver_Template.docx` original (6 seções, CM 1.1-6.3) por uma versão nova de 4 seções (Introdução / Metodologia / Resultados e Discussões / Conclusão e Trabalhos Futuros), ver `atualizacao/Desenvolver_Template.docx.pdf` e as notas de revisão. O `relatorio_final.md` foi reescrito na nova estrutura (sem perder conteúdo, só reorganizando) e migrado via script `Projeto/codigo/gerar_docx.py`, que abre o template oficial (herdando cabeçalho com logo, estilos e layout) e reconstrói o corpo a partir do markdown.
+- [X] Inserir figuras com legenda numerada — 13 figuras embutidas automaticamente pelo script, com legenda em itálico centralizada.
+- [X] Formatar tabelas — tabela comparativa de modelos com estilo "Table Grid" do template.
+- [ ] 2 leituras críticas (manhã + tarde de dias diferentes) — pendente, a fazer pelo usuário antes do envio.
+- [X] Checklist dos tópicos do Estudo Guiado cobertos — auditoria específica das perguntas Q3-Q7 feita em 25/07 (ver `controle_alteracoes.md`), Q3 e Q5 tinham lacunas e foram corrigidas.
+- [ ] Anexos: dicionário de features + tabela ANTES/DEPOIS — ainda não anexados ao `.docx` (existem como CSVs separados: `documentacao_features.csv`, `controle_alteracoes.csv`).
+- [ ] Validar referências bibliográficas — pendente.
 
-**Entregável:** `Projeto/relatorio/relatorio_final.docx`.
+**Entregável:** `Relatorio_Final_Marcelo_Ayala_Gomes.docx`, na **raiz do repositório** (não em `Projeto/relatorio/` — movido pelo usuário em 19/07). Gerado a partir de `Projeto/relatorio/relatorio_final.md`.
 
 #### Observações e Conclusões (W9)
 

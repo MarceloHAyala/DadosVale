@@ -22,7 +22,7 @@ Alertas Don't Go sinalizam que um equipamento de mineração não deve operar, e
 
 ---
 
-## 1. Introdução
+## Introdução
 
 A operação de uma mina a céu aberto gira em torno de um ciclo contínuo de carga e transporte. Caminhões fora de estrada e escavadeiras trabalham em turnos de doze horas, e cada intervalo de atividade de um equipamento é registrado como um **ciclo de apontamento**: uma linha com o instante de início e de fim, a identificação do equipamento (a TAG, por exemplo `CA65926`), a frota a que ele pertence (`793-D 5S`, `LeTourneau L 1850`, entre outras), o tipo de equipamento (caminhão ou escavadeira) e a classe da atividade (operando, parado, em manutenção, hibernando). Em paralelo, os equipamentos emitem um fluxo de telemetria: milhões de eventos de sensores e alarmes que descrevem, minuto a minuto, o estado de cada máquina, incluindo a identificação do operador, sempre anonimizada.
 
@@ -38,9 +38,7 @@ A Figura 1 reconstrói o fluxo operacional, do ciclo de apontamento à telemetri
 
 > **Dado o histórico recente de telemetria de um equipamento, qual a probabilidade de ele gerar um alerta Don't Go nas próximas 4 horas?**
 
-A escolha da janela de 4 horas é operacional, não arbitrária. É tempo suficiente para a manutenção mobilizar peça e equipe, mas curto o bastante para que o estado atual do equipamento ainda seja informativo sobre o futuro próximo. A Seção 2.5 detalha e fundamenta empiricamente essa escolha.
-
-Em torno dessa pergunta primária, o estudo responde a um conjunto de perguntas secundárias, todas derivadas do mesmo pipeline de dados:
+A escolha da janela de 4 horas é operacional, não arbitrária. É tempo suficiente para a manutenção mobilizar peça e equipe, mas curto o bastante para que o estado atual do equipamento ainda seja informativo sobre o futuro próximo. A Seção 2.5 detalha e fundamenta empiricamente essa escolha. Em torno dessa pergunta primária, o estudo responde a um conjunto de perguntas secundárias, todas derivadas do mesmo pipeline de dados:
 
 - **Q3.** O comportamento do operador se correlaciona com a frequência de alertas?
 - **Q4.** Qual o perfil dos equipamentos que mais geram Don't Go (frota, tipo)?
@@ -65,15 +63,15 @@ As duas frentes cobrem escalas de tempo e segmentos de frota complementares; o v
 
 ---
 
-## 2. Metodologia
+## Metodologia
 
 Esta seção descreve o fluxo completo da solução, da análise exploratória à avaliação, incluindo os cuidados adotados para garantir qualidade e confiabilidade. A discussão dos resultados propriamente ditos está na Seção 3.
 
-### 2.1 Ferramentas e tecnologias
+### Ferramentas e tecnologias
 
 O trabalho usa Python 3.13, com ambiente reproduzível gerenciado por `uv` (versões travadas em `uv.lock`). O processamento dos dados usa **Polars**, escolhido pela capacidade de lidar com dezenas de milhões de linhas em memória modesta. A modelagem usa **LightGBM** (classificação principal), **lifelines** (sobrevivência Weibull AFT e Cox) e **scikit-learn** (Isolation Forest, Random Forest e métricas). A otimização de hiperparâmetros usa **Optuna**, a interpretabilidade usa **SHAP**, e as figuras usam **matplotlib** e **seaborn**. Cada escolha é justificada no ponto em que aparece.
 
-### 2.2 Análise exploratória dos dados
+### Análise exploratória dos dados
 
 **Carregamento e inspeção inicial.** O pacote de dados reúne dois conjuntos. A telemetria vem em seis arquivos mensais (janeiro a junho de 2025) e soma **37.164.054 eventos**. Os apontamentos, com o registro dos ciclos operacionais, somam **377.907 linhas**. A leitura foi feita com a biblioteca Polars, escolhida porque 37 milhões de linhas em pandas exigiriam da ordem de 24 GB de memória, enquanto o Polars processa o mesmo volume em cerca de 4 GB. A inspeção inicial exigiu correção de tipos que vieram como texto: os campos de data e hora precisaram ser convertidos para datetime, e o campo `Valor` da telemetria trazia dois problemas que só apareceram com asserções defensivas, a string literal `"NULL"` em 237 mil registros e o uso de vírgula decimal brasileira em outros 822 mil. Sem tratar ambos, o cast para número descartaria silenciosamente mais de um milhão de valores. Verificações de qualidade da etapa: **zero registros duplicados** por chave primária em ambos os conjuntos, o que confirma que o pipeline da Vale entrega chaves únicas. O único campo com ausências relevantes é o `Valor` da telemetria, nulo em 43,58% dos eventos após a filtragem; a decisão de tratamento está na Seção 2.3. A tabela de estatísticas descritivas das variáveis numéricas foi gerada e anexada (`estatisticas_descritivas.csv`). Dois achados laterais revelam a natureza dos dados: um quarto nível de criticidade (`Id_Criticidade = 4`) que não corresponde a falha, e sim a **eventos de bypass manual do operador**, 95% deles concentrados na frota de escavadeiras LeTourneau, o que motivou a criação de uma feature de comportamento do operador; e um punhado de registros com peso de carga fisicamente impossível (até 4.347, contra a capacidade de cerca de 240 toneladas de um 793-D), indicando erro de unidade no sensor, sem impacto no alvo (nenhum era Don't Go).
 
@@ -83,7 +81,7 @@ O trabalho usa Python 3.13, com ambiente reproduzível gerenciado por `uv` (vers
 
 [Figura 3: Distribuição de alertas por tipo de equipamento e criticidade](figuras/fig03_tipo_x_criticidade.png)
 
-[Figura 4: Série temporal dos Don't Go ao longo do semestre](figuras/fig04_serie_temporal_dgs.png)
+[Figura 4: Série temporal dos Don't Go ao longo do semestre (jan-jun/2025)](figuras/fig04_serie_temporal_dgs.png)
 
 **Perfil dos equipamentos (Q4) e padrões (Q5).** Cruzando os Don't Go com o estado operacional no momento do evento, via junção temporal entre telemetria e apontamentos, chegou-se ao perfil da frota. Os caminhões 793-D respondem por praticamente todos os alertas; as escavadeiras LeTourneau L 1850 têm uma taxa de Don't Go por equipamento cerca de 22 vezes menor. Esse contraste antecipa uma limitação importante do modelo (L11, Seção 3.2). Um segundo achado: 12,65% dos Don't Go ocorrem com o equipamento em estado de "Manutenção", e a investigação mostrou que não são falsos positivos de bancada, e sim alertas legítimos gerados quando o equipamento é reativado para testes, portanto não devem ser filtrados. Quanto aos padrões temporais (Q5), o mapa de calor por hora e dia da semana (Figura 6) mostra variação modesta, entre 2% e 6%, sem padrão sistemático forte: turno e dia têm efeito secundário, muito menor que o estado de deterioração do próprio equipamento. Já quanto a períodos do mês, existe concentração, mas ela não é sazonalidade de calendário: é dirigida pelos regimes descritos acima (as anomalias de fevereiro-março e de junho), ou seja, por eventos operacionais e mecânicos específicos, não por uma época do mês em si.
 
@@ -91,7 +89,7 @@ O trabalho usa Python 3.13, com ambiente reproduzível gerenciado por `uv` (vers
 
 **Equipamentos individuais problemáticos.** Um padrão emergiu ao longo da exploração e se tornou um fio condutor do estudo: a média da frota esconde equipamentos individualmente anômalos. O CA65926 aparece como outlier de volume de Don't Go e como origem quase exclusiva da anomalia de junho. O CA65789 concentra 100% de um problema de sobreposição de ciclos de apontamento, localizado em janeiro. Nenhum dos dois é visível na frota agregada; ambos só aparecem na análise estratificada por equipamento. Esse achado sustenta a recomendação de monitoramento por equipamento, e não apenas por frota (Seção 4). Seguindo a orientação do Estudo Guiado, todas as hipóteses levantadas na exploração foram registradas, confirmadas ou não, em `hipoteses_eda.md` (13 hipóteses em 6 temas); várias foram refutadas e reinterpretadas, e diversas dessas refutações viraram insights do relatório final (Seção 3.4).
 
-### 2.3 Limpeza e preparação
+### Limpeza e preparação
 
 A limpeza foi implementada como um pipeline único e reproduzível, documentado passo a passo:
 
@@ -102,7 +100,7 @@ A limpeza foi implementada como um pipeline único e reproduzível, documentado 
 
 Todas as decisões estão consolidadas na tabela de controle de alterações (`controle_alteracoes.csv`), no formato de colunas sugerido pelo Estudo Guiado (Campo, Problema Identificado, Quantidade de Registros, Tratamento Aplicado, Justificativa). Além dela, um registro narrativo em `controle_alteracoes.md` mantém o rastro de cada decisão metodológica relevante do projeto, no formato ANTES/DEPOIS.
 
-### 2.4 Engenharia de features
+### Engenharia de features
 
 A matriz final tem **35 features**, agrupadas em famílias, cada uma com motivação registrada em `documentacao_features.csv`:
 
@@ -117,7 +115,7 @@ A matriz final tem **35 features**, agrupadas em famílias, cada uma com motiva�
 
 **Codificação de categóricas.** Para as categóricas de alta cardinalidade (TAG e operador) adotou-se codificação por frequência, recomputada apenas sobre o conjunto de treino para não vazar informação de validação e teste (a correção de um vazamento sutil identificado após o split está registrada em `controle_alteracoes.md`). Testou-se empiricamente a alternativa mais sofisticada, o target encoding com validação cruzada temporal, mas ela **piorou o desempenho em validação (queda de 2,25 pontos percentuais de AUC-PR)**, provavelmente porque as taxas por categoria calibradas em janeiro a abril não se transferem bem para o regime de maio e junho. Manteve-se a codificação por frequência, por parcimônia e desempenho, e a comparação foi registrada. As categóricas de baixa cardinalidade (tipo, frota) foram tratadas nativamente pelo LightGBM ou por indicadores.
 
-### 2.5 Definição da variável-alvo
+### Definição da variável-alvo
 
 O alvo principal é uma classificação binária: um evento recebe rótulo 1 se houver um Don't Go do mesmo equipamento na janela das próximas 4 horas. Um resultado inicialmente surpreendente é que a **prevalência do alvo é de cerca de 17% no teste** (e 29% no treino), muito acima dos 0,05% da taxa bruta de Don't Go. A razão é simples: cada Don't Go "reivindica" como positivos as várias horas de eventos que o precedem no mesmo equipamento. Vale registrar essa distinção com clareza para não superestimar nem subestimar o desbalanceamento: a raridade extrema está no evento Don't Go em si (0,05%), enquanto o alvo de janela de 4h, que é o que o modelo prevê, é bem menos raro (17%). Ainda assim, o lift do modelo sobre a linha de base aleatória permanece expressivo, como mostra a Seção 3.
 
@@ -125,17 +123,17 @@ Cerca de 18,8% dos eventos não têm nenhum Don't Go futuro observado dentro do 
 
 **Justificativa da janela de 4 horas.** Além do argumento operacional (tempo de mobilização da manutenção), a escolha foi testada empiricamente. Foram gerados alvos paralelos de 2h, 4h e 8h e comparado o desempenho preditivo de cada um. A janela de 8h foi consistentemente a pior; as de 2h e 4h ficaram estatisticamente indistinguíveis (o ranking entre elas inverte entre validação e teste, dentro da faixa de ruído amostral). A conclusão honesta é que 4h está na zona ótima empírica e é compatível com a necessidade operacional, sem ser singularmente superior a 2h. A Figura 7 ilustra a semântica da janela de predição.
 
-[Figura 7: Diagrama da janela de predição](figuras/fig07_janela_predicao.png)
+[Figura 7: Diagrama da janela de predição do target operacional (target_4h)](figuras/fig07_janela_predicao.png)
 
-### 2.6 Estratégia de validação
+### Estratégia de validação
 
 Dados temporais não podem ser divididos aleatoriamente. Um k-fold embaralhado colocaria eventos do futuro no treino e eventos do passado no teste; como as features de janela móvel capturam a autocorrelação temporal do equipamento, isso produziria um vazamento massivo e uma estimativa de desempenho irrealista. Por isso adotou-se um **split temporal fixo**: treino de janeiro a abril, validação em maio, teste em junho. Para o ajuste de hiperparâmetros, usou-se validação cruzada temporal com quatro folds expandidos (walk-forward), sempre treinando no passado e validando no futuro imediato, e o teste de junho nunca foi tocado durante o ajuste.
 
 A Figura 8 quantifica um ponto crucial: existe **drift real** entre os meses. A taxa de Don't Go por evento varia de 1,62% em maio (o mês de validação, o mais calmo do semestre) a 7,35% em junho (o mês de teste, dominado pela anomalia do CA65926). Isso significa que treino, validação e teste representam regimes operacionais diferentes, um fato que não é escondido, e sim usado para interpretar os resultados.
 
-[Figura 8: Estratégia de validação temporal e drift entre meses](figuras/fig08_split_temporal.png)
+[Figura 8: Estratégia de validação temporal e drift entre meses: split walk-forward jan-abr / mai / jun](figuras/fig08_split_temporal.png)
 
-### 2.7 Baseline e modelos
+### Baseline e modelos
 
 **Baseline.** O modelo de referência é uma heurística deliberadamente simples, como deve ser um baseline: prevê Don't Go se houve ao menos N eventos críticos nas últimas 4 horas do equipamento. Seu desempenho: AUC-PR de 0,2397 em validação e **0,5803 em teste**. O resultado contém um achado contra-intuitivo que orientou toda a leitura posterior: o baseline vai **melhor no teste do que na validação**, o oposto do que o drift sugeria. A explicação é que junho é dominado por um único equipamento em crise (o CA65926), cujos alarmes críticos disparam em rajada; esse regime concentrado tem assinatura clara para uma regra simples "conte críticos recentes". Maio, ao contrário, é um regime distribuído sem alvo dominante, genuinamente mais difícil. A consequência prática: o baseline de teste é um teto alto (0,58), e o modelo principal precisa superá-lo com folga para justificar sua complexidade.
 
@@ -145,13 +143,13 @@ O Estudo Guiado sugere ao menos duas abordagens distintas, com a ressalva de que
 
 **Weibull AFT (Frente 2, sobrevivência).** Em vez de "vem Don't Go em 4h?", o modelo de sobrevivência responde "quanto tempo até o próximo Don't Go?". É uma segunda leitura independente do problema, com três contribuições que a Frente 1 não oferece: trata rigorosamente a censura (equipamentos que não falharam na janela observada são informação parcial, não zero), oferece interpretabilidade intrínseca via Time Ratios (com intervalo de confiança e p-valor por feature) e prevê em qualquer horizonte, não apenas 4 horas. O Weibull foi escolhido após comparação com o Cox de riscos proporcionais, e alcançou um índice de concordância (C-index) de 0,7444 no teste, sua métrica natural.
 
-**Isolation Forest (diagnóstico complementar, não supervisionado).** Não é um modelo competidor, e sim um teste empírico do viés do rótulo. Treinado sem jamais ver o rótulo Don't Go, ele marca eventos estatisticamente anômalos. A pergunta que responde: se um algoritmo cego ao rótulo recupera os Don't Go como anomalias, há sinal estrutural real além da regra da CMA. A resposta, nuançada, está na Seção 3.2.
+**Isolation Forest (diagnóstico complementar, não supervisionado).** Não é um modelo competidor, e sim um teste empírico do viés do rótulo. Treinado sem jamais ver o rótulo Don't Go, ele marca eventos estatisticamente anômalos. A pergunta que responde: se um algoritmo cego ao rótulo recupera os Don't Go como anomalias, há sinal estrutural real além da regra da CMA. A resposta, discutida, está na Seção 3.2.
 
 **Random Forest (comparação controlada).** Foi treinado um Random Forest com exatamente a mesma estratégia rigorosa da v3 (mesmas features, mesmo Optuna, mesma validação cruzada) para responder a uma pergunta específica: o algoritmo escolhido é o diferencial? A resposta é não, e isso é um mérito do estudo, não uma fraqueza. O Random Forest chegou a AUC-PR de 0,8541 contra 0,8556 da v3, um empate técnico. A conclusão é madura: o mérito deste trabalho está na engenharia de features e no enquadramento do problema, não na escolha do algoritmo da moda.
 
 Todos os hiperparâmetros e as decisões de pré-processamento específicas de cada modelo estão documentados (tabelas de hiperparâmetros e seções técnicas em `notas_metodologicas.md`). O determinismo foi garantido (dois treinos produzem o mesmo resultado até a última casa decimal), permitindo auditoria.
 
-### 2.8 Métricas de avaliação
+### Métricas de avaliação
 
 Pelas razões já expostas (evento raro, custo assimétrico), as métricas primárias são Recall, Precisão, F1 e as áreas sob as curvas ROC (AUC-ROC) e Precisão-Recall (AUC-PR). A AUC-PR é a mais informativa aqui, porque foca a classe positiva e ignora os verdadeiros negativos abundantes; a AUC-ROC complementa por ser independente da prevalência.
 
@@ -169,9 +167,9 @@ O custo dos erros é assimétrico: um falso negativo (Don't Go não detectado) v
 
 ---
 
-## 3. Resultados e Discussões
+## Resultados e Discussões
 
-### 3.1 Desempenho comparativo
+### Desempenho comparativo
 
 A comparação dos modelos no conjunto de teste (junho):
 
@@ -184,13 +182,13 @@ A comparação dos modelos no conjunto de teste (junho):
 
 O LightGBM v3 supera o baseline em **27,5 pontos percentuais de AUC-PR no teste**, uma folga que justifica com sobra a complexidade adicional. O AUC-PR baixo do Weibull não indica um modelo ruim: ele foi construído para ordenar tempo até o evento, e não para classificar a janela de 4h; sua métrica pertinente é o C-index de 0,7444. A Figura 9 traz as curvas ROC e Precisão-Recall comparativas.
 
-[Figura 9: Curvas ROC e Precisão-Recall dos modelos](figuras/fig09_curvas_comparativas.png)
+[Figura 9: Curvas ROC e Precisão-Recall dos 3 modelos no test set (jun/2025)](figuras/fig09_curvas_comparativas.png)
 
-### 3.2 Análise de erros e robustez
+### Análise de erros e robustez
 
 **Matriz de confusão e faixas de decisão (Q6).** No limiar 0,30, a matriz de confusão (Figura 10) foi anotada com impacto operacional. O risco foi operacionalizado em três faixas semafóricas: verde (probabilidade abaixo de 0,145, cerca de 70% dos eventos), amarelo (entre 0,145 e 0,30) e vermelho (acima de 0,30, cerca de 20% dos eventos). A faixa vermelha concentra a grande maioria dos Don't Go reais em um quinto do volume, o que a torna uma fila de inspeção priorizada eficaz, resposta direta a Q6 e Q7.
 
-[Figura 10: Matriz de confusão do LightGBM v3 com impacto operacional](figuras/fig10_matriz_confusao_v3.png)
+[Figura 10: Matriz de confusão do LightGBM v3 com impacto operacional no test set (jun/2025)](figuras/fig10_matriz_confusao_v3.png)
 
 **Onde o modelo falha (falsos negativos).** A análise estratificada por frota expôs a falha mais categórica: nas **escavadeiras LeTourneau L 1850, o modelo tem AUC-PR de 0,008 e não emite praticamente nenhum alerta**, embora elas representem 45% do volume do teste. A feature `tipo_caminhao` funciona como uma chave: quando o equipamento é escavadeira, o modelo virtualmente se desliga. Isso é honestamente uma limitação séria (L11), e sua mitigação está nos Trabalhos Futuros. Esse ponto não é escondido; ao contrário, ele motiva a existência das frentes complementares.
 
@@ -198,31 +196,31 @@ O LightGBM v3 supera o baseline em **27,5 pontos percentuais de AUC-PR no teste*
 
 **A questão do CA65926, tratada com o número do próprio modelo.** Como junho é dominado por um único equipamento, é legítimo perguntar se o desempenho do v3 não seria só "detectar o CA65926". Isso foi medido diretamente. Estratificando a AUC-PR do v3: no teste completo é 0,8556; considerando apenas o CA65926 é 0,9723, mas ali a prevalência é de 81%, então até um chute trivial acerta 0,81 (o lift é de apenas 1,20 vezes); **removendo o CA65926, a AUC-PR é 0,7693, com AUC-ROC praticamente intacta (0,9368) e lift de 7,77 vezes**, maior que o do próprio CA65926. A leitura honesta é que o número absoluto de 0,8556 é parcialmente inflado pela altíssima prevalência do CA65926, mas a **capacidade de generalização do modelo é genuína**: ele é, em termos de habilidade discriminativa, ainda mais forte nos outros 29 equipamentos. A crítica "o modelo só detecta um caminhão quebrado" fica refutada pelos próprios números.
 
-**Tempo de antecipação (L12), a análise mais delicada.** Como o desafio se chama "Antecipação", investigou-se quanto tempo de folga o modelo realmente entrega. No limiar 0,5, metade dos acertos são detecções diretas (o próprio evento já é um Don't Go, antecipação zero) e apenas 18% chegam aos 90 minutos típicos de mobilização. Isso poderia sugerir que o modelo só reage ao presente. Para testar se existe capacidade real de antecipação, o alvo foi redefinido exigindo antecedência mínima e a medição foi feita com rigor, separando o acerto genuíno do acerto por um Don't Go mais próximo na janela. No recorte estrito (próximo Don't Go entre 90 minutos e 4 horas, sem nada iminente antes), a **AUC-ROC honesta é 0,82, com lift estável em cerca de 5 vezes** de 30 a 120 minutos (Figura Extra K). A conclusão equilibrada: há capacidade de antecipação genuína, porém modesta; ela existe no escore e se realiza operando em um limiar mais baixo (a faixa amarela do Q6), ao custo de menor precisão. O limite real é o trade-off entre precisão e antecedência, gerenciável por ponto de operação, e não uma incapacidade de antecipar.
+**Tempo de antecipação (L12), a análise mais delicada.** Como o desafio se chama "Antecipação", investigou-se quanto tempo de folga o modelo realmente entrega. No limiar 0,5, metade dos acertos são detecções diretas (o próprio evento já é um Don't Go, antecipação zero) e apenas 18% chegam aos 90 minutos típicos de mobilização. Isso poderia sugerir que o modelo só reage ao presente. Para testar se existe capacidade real de antecipação, o alvo foi redefinido exigindo antecedência mínima e a medição foi feita com rigor, separando o acerto genuíno do acerto por um Don't Go mais próximo na janela. No recorte estrito (próximo Don't Go entre 90 minutos e 4 horas, sem nada iminente antes), a **AUC-ROC honesta é 0,82, com lift estável em cerca de 5 vezes** de 30 a 120 minutos (Figura 11). A conclusão equilibrada: há capacidade de antecipação genuína, porém modesta; ela existe no escore e se realiza operando em um limiar mais baixo (a faixa amarela do Q6), ao custo de menor precisão. O limite real é o trade-off entre precisão e antecedência, gerenciável por ponto de operação, e não uma incapacidade de antecipar.
 
-[Figura Extra K: Antecipação real do v3, medição estrita vs inflada](figuras/figExK_antecipacao_honesta.png)
+[Figura 11: Antecipação real do v3, medição pura vs inflada por DG mais próximo](figuras/figExK_antecipacao_honesta.png)
 
 **Calibração.** As probabilidades do v3 têm boa calibração (Brier de 0,057 no teste, com ganho de habilidade de 0,59 sobre o trivial). O erro de calibração esperado (3,78%) fica acima do ideal, e o Platt scaling foi testado para corrigi-lo; ele melhorou a validação mas piorou o teste, sinal de drift de calibração, então a decisão honesta foi **não aplicar** o Platt em produção e manter o modelo cru, recalibrando periodicamente.
 
 **Diagnóstico do rótulo (Isolation Forest).** O Isolation Forest, treinado sem ver o rótulo, recupera bem as anomalias em poucos equipamentos (o CA65926 tem AUC de 0,90), mas fica próximo do aleatório para os Don't Go distribuídos (AUC mediana por TAG de 0,61). Isso indica que a regra da CMA captura anomalia estatística real em alguns casos, mas em outros pode estar rotulando eventos sem assinatura estatística distinta. É um limite do **rótulo**, não do classificador (que, como mostrado acima, generaliza). O achado alimenta a Limitação L10 e a recomendação de auditoria manual (Seção 4).
 
-### 3.3 Interpretabilidade
+### Interpretabilidade
 
-**Importância global.** A análise SHAP do v3 (Figuras 9c e 9d) mostra três features dominando 76% do peso, todas com semântica antecipativa legítima: a contagem de alarmes "Muito Alto" da CMA nas últimas 6 horas (41%), o tipo de equipamento (24%) e a razão regimal do alarme (11%). É um resultado que valida as escolhas de engenharia de features: a feature derivada diretamente das regras de negócio é a mais importante, e a feature regimal, desenhada para pegar a anomalia do CA65926, aparece no topo como previsto.
+**Importância global.** A análise SHAP do v3 (Figuras 12 e 13) mostra três features dominando 76% do peso, todas com semântica antecipativa legítima: a contagem de alarmes "Muito Alto" da CMA nas últimas 6 horas (41%), o tipo de equipamento (24%) e a razão regimal do alarme (11%). É um resultado que valida as escolhas de engenharia de features: a feature derivada diretamente das regras de negócio é a mais importante, e a feature regimal, desenhada para pegar a anomalia do CA65926, aparece no topo como previsto.
 
-[Figura 9c: Importância global das features (SHAP)](figuras/fig09c_shap_bar_v3.png)
+[Figura 12: Importância global das features (SHAP)](figuras/fig09c_shap_bar_v3.png)
 
 **Validação de sentido.** O ranking do SHAP foi cruzado com os Time Ratios do modelo de sobrevivência, dois métodos independentes. Quatro features aparecem no top 10 de ambos (tipo, frota e as regimais), o que dá confiança de que o modelo aprendeu estrutura real, e não artefato. O peso alto de `tipo_caminhao` merece registro honesto: o modelo aprendeu a taxa base por tipo de equipamento como heurística inicial, o que é correto dado os dados (as escavadeiras realmente falham 22 vezes menos por unidade), mas é também a raiz da limitação L11 e da limitação L8 (a composição da frota influencia a taxa base aprendida).
 
-[Figura 9d: Distribuição dos valores SHAP por feature](figuras/fig09d_shap_beeswarm_v3.png)
+[Figura 13: Distribuição dos valores SHAP por feature](figuras/fig09d_shap_beeswarm_v3.png)
 
 **Comportamento do operador (Q3).** Sim, o comportamento do operador se correlaciona com a frequência de alertas, mas de forma difusa, não concentrada. Entre os 394 operadores do dataset, a taxa de Don't Go varia de menos de 1% no quartil inferior a mais de 10% no percentil 95, um continuum amplo, sem que um ou dois operadores "ruins" carreguem o problema. O único caso com massa estatística relevante é o operador OP_029, com 1.016 alertas (taxa de 32,5% sobre 3.125 eventos), candidato natural a acompanhamento individual. No modelo, a feature de taxa histórica do operador aparece em posição intermediária do ranking SHAP (oitava, com cerca de 2% do peso), o que confirma o quadro: sinal real, porém secundário frente ao estado de deterioração do próprio equipamento. A implicação prática é que leituras do tipo "o operador X é problemático" devem sempre ser estratificadas pelo volume de exposição, sob pena de apontar falsos culpados com poucos eventos.
 
-**Explicação local.** A Figura 12 decompõe uma predição individual: um Don't Go real do caminhão CA65933 (deliberadamente escolhido fora do CA65926, para demonstrar generalização), com probabilidade prevista de 0,97. As três features que sustentam o alerta são justamente as antecipativas legítimas, confirmando no caso individual o que o ranking global mostra no agregado.
+**Explicação local.** A Figura 14 decompõe uma predição individual: um Don't Go real do caminhão CA65933 (deliberadamente escolhido fora do CA65926, para demonstrar generalização), com probabilidade prevista de 0,97. As três features que sustentam o alerta são justamente as antecipativas legítimas, confirmando no caso individual o que o ranking global mostra no agregado.
 
-[Figura 12: Decomposição SHAP de uma predição individual](figuras/fig12_shap_waterfall_v3.png)
+[Figura 14: Decomposição SHAP de uma predição individual, explicação local de uma predição](figuras/fig12_shap_waterfall_v3.png)
 
-### 3.4 Tradução para o negócio e insights
+### Tradução para o negócio e insights
 
 **Ganho sobre o baseline.** O LightGBM v3 entrega AUC-PR de 0,8556 no teste contra 0,5803 do baseline, um ganho de 27,5 pontos percentuais, e generaliza para além do equipamento dominante (0,7693 sem o CA65926). O Random Forest, com a mesma estratégia, empata com a v3, confirmando que o valor está nas features e no enquadramento.
 
@@ -238,7 +236,7 @@ O LightGBM v3 supera o baseline em **27,5 pontos percentuais de AUC-PR no teste*
 
 ---
 
-## 4. Conclusão e Trabalhos Futuros
+## Conclusão e Trabalhos Futuros
 
 **Resposta à pergunta central.** Sim, é possível estimar de forma útil a probabilidade de um Don't Go nas próximas 4 horas. O LightGBM v3 faz isso com AUC-PR de 0,77 a 0,86 e AUC-ROC de 0,94, superando com folga a regra de negócio simples e generalizando para além do equipamento dominante. Ele é, de forma precisa, um **bom classificador de risco de curto prazo e um medidor real de deterioração nas próximas horas**. Como antecipador de longo prazo (90 minutos de folga), é modesto porém real, e a antecipação se realiza escolhendo o ponto de operação. As perguntas secundárias foram respondidas: o comportamento do operador correlaciona de forma difusa (Q3), o perfil de risco concentra-se nos caminhões 793-D (Q4), os padrões de turno e dia são secundários (Q5), e as faixas semafóricas e o ranking de risco operacionalizam a recomendação de ação e a fila de inspeção (Q6, Q7).
 

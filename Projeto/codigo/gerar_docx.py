@@ -7,14 +7,18 @@ layout), limpa o corpo de exemplo e reconstroi o documento a partir de
 `Projeto/relatorio/relatorio_final.md`: pagina de rosto, pagina de autor, resumo,
 4 secoes, tabela e figuras embutidas.
 
+Saida (arquivo de entrega final, movido para a raiz do repositorio em 19/07):
+    Relatorio_Final_Marcelo_Ayala_Gomes.docx
+
 Executar:
     PYTHONIOENCODING=utf-8 uv run python Projeto/codigo/gerar_docx.py
 """
 import re
+import sys
 from pathlib import Path
 
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
+from docx.shared import Pt, Cm, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
@@ -28,9 +32,13 @@ ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / "Original" / "Desenvolver_Template.docx"
 MD = ROOT / "Projeto" / "relatorio" / "relatorio_final.md"
 FIG_DIR = ROOT / "Projeto" / "relatorio"
-OUT = ROOT / "Projeto" / "relatorio" / "Relatorio_Final_Marcelo_Ayala_Gomes.docx"
+OUT = ROOT / "Relatorio_Final_Marcelo_Ayala_Gomes.docx"
 
 CENTER = WD_ALIGN_PARAGRAPH.CENTER
+JUSTIFY = WD_ALIGN_PARAGRAPH.JUSTIFY
+# recuo deslocado (hanging) das listas, igual a versao revisada pelo autor
+LIST_LEFT = Inches(0.5)
+LIST_HANG = Inches(-0.25)
 
 
 def clear_body(doc):
@@ -41,6 +49,17 @@ def clear_body(doc):
         if child.tag == qn("w:p") or child.tag == qn("w:tbl"):
             body.remove(child)
     return body, sectPr
+
+
+def clean_header(doc):
+    """Remove o texto 'Template Padrao' do cabecalho, preservando o logo (runs com desenho)."""
+    for sec in doc.sections:
+        for p in sec.header.paragraphs:
+            for r in p.runs:
+                tem_desenho = (r._element.find(qn("w:drawing")) is not None
+                               or bool(r._element.findall(".//" + qn("a:blip"))))
+                if not tem_desenho and r.text:
+                    r.text = ""
 
 
 def style_names(doc):
@@ -57,7 +76,8 @@ INLINE = re.compile(r"(\*\*.+?\*\*|`.+?`|\*.+?\*)")
 
 
 def add_runs(p, text):
-    """Adiciona runs interpretando **negrito**, *italico* e `codigo`."""
+    """Adiciona runs interpretando **negrito**, *italico* e `codigo`.
+    Texto normal herda o tamanho do template (12pt uniforme, docDefaults); codigo em 9pt."""
     pos = 0
     for m in INLINE.finditer(text):
         if m.start() > pos:
@@ -75,12 +95,19 @@ def add_runs(p, text):
 
 
 def add_image(doc, caption, relpath):
+    # legenda ACIMA da figura (justificada, italico 9pt), imagem centralizada
+    cap = doc.add_paragraph()
+    cap.alignment = JUSTIFY
+    rc = cap.add_run(caption)
+    rc.italic = True
+    rc.font.size = Pt(9)
+
     img = FIG_DIR / relpath
     if not img.exists():
         print(f"  [AVISO] figura ausente, pulada: {relpath}")
         p = doc.add_paragraph()
-        add_runs(p, f"[{caption}]")
         p.alignment = CENTER
+        add_runs(p, "[figura ausente]")
         return
     wc = 15.0
     if HAS_PIL:
@@ -93,11 +120,6 @@ def add_image(doc, caption, relpath):
             pass
     doc.add_picture(str(img), width=Cm(wc))
     doc.paragraphs[-1].alignment = CENTER
-    cap = doc.add_paragraph()
-    cap.alignment = CENTER
-    r = cap.add_run(caption)
-    r.italic = True
-    r.font.size = Pt(9)
 
 
 def build_title_pages(doc):
@@ -194,59 +216,56 @@ def build_body(doc, md_text, styles):
             i += 1
             continue
 
-        # headings
+        # headings (todos sem numero; Resumo e as 4 secoes -> Heading 1; subsecoes -> Heading 2)
         if s.startswith("## ") and not s.startswith("### "):
-            title = s[3:].strip()
-            if re.match(r"^\d", title):  # secao numerada -> Heading 1
-                doc.add_paragraph(title, style="Heading 1" if "Heading 1" in styles else "Normal")
-            else:  # Resumo -> mini-heading em negrito
-                p = doc.add_paragraph()
-                r = p.add_run(title); r.bold = True; r.font.size = Pt(13)
+            h = doc.add_paragraph(s[3:].strip(),
+                                  style="Heading 1" if "Heading 1" in styles else "Normal")
+            h.alignment = JUSTIFY
             i += 1
             continue
         if s.startswith("### "):
-            doc.add_paragraph(s[4:].strip(), style=heading2)
+            h = doc.add_paragraph(s[4:].strip(), style=heading2)
+            h.alignment = JUSTIFY
             i += 1
             continue
         if s.startswith("#### "):
-            p = doc.add_paragraph()
+            p = doc.add_paragraph(); p.alignment = JUSTIFY
             r = p.add_run(s[5:].strip()); r.bold = True
             i += 1
             continue
 
-        # blockquote
+        # blockquote (pergunta central): justificado, negrito + italico, recuo a esquerda
         if s.startswith("> "):
             p = doc.add_paragraph()
-            p.paragraph_format.left_indent = Cm(1)
+            p.alignment = JUSTIFY
+            p.paragraph_format.left_indent = Cm(1.25)
             add_runs(p, s[2:].strip())
             for r in p.runs:
                 r.italic = True
             i += 1
             continue
 
-        # lista numerada
+        # lista numerada -> paragrafo normal justificado com recuo deslocado, numero removido
         mnum = re.match(r"^\d+\.\s+(.*)$", s)
         if mnum:
-            if "List Number" in styles:
-                p = doc.add_paragraph(style="List Number")
-                add_runs(p, mnum.group(1))
-            else:
-                # sem estilo de lista numerada: mantem o numero no texto
-                p = doc.add_paragraph()
-                p.paragraph_format.left_indent = Cm(0.5)
-                add_runs(p, s)
+            p = doc.add_paragraph(); p.alignment = JUSTIFY
+            p.paragraph_format.left_indent = LIST_LEFT
+            p.paragraph_format.first_line_indent = LIST_HANG
+            add_runs(p, mnum.group(1))
             i += 1
             continue
 
-        # lista com marcador
+        # lista com marcador -> paragrafo normal justificado com recuo deslocado, marcador removido
         if s.startswith("- "):
-            p = doc.add_paragraph(style=list_bul)
+            p = doc.add_paragraph(); p.alignment = JUSTIFY
+            p.paragraph_format.left_indent = LIST_LEFT
+            p.paragraph_format.first_line_indent = LIST_HANG
             add_runs(p, s[2:].strip())
             i += 1
             continue
 
-        # paragrafo normal
-        p = doc.add_paragraph()
+        # paragrafo normal justificado
+        p = doc.add_paragraph(); p.alignment = JUSTIFY
         add_runs(p, s)
         i += 1
 
@@ -260,6 +279,7 @@ def main():
     print("Estilos disponiveis (relevantes):",
           [x for x in ["Normal", "Heading 1", "Heading 2", "List Bullet", "List Number", "Table Grid"] if x in styles])
 
+    clean_header(doc)  # remove "Template Padrao" do cabecalho, preserva o logo
     body, sectPr = clear_body(doc)
 
     build_title_pages(doc)
@@ -275,8 +295,9 @@ def main():
         doc.element.body.remove(sectPr)
         doc.element.body.append(sectPr)
 
-    doc.save(str(OUT))
-    print("Salvo:", OUT.relative_to(ROOT))
+    out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else OUT
+    doc.save(str(out_path))
+    print("Salvo:", out_path)
     print(f"Paragrafos: {len(doc.paragraphs)} | Tabelas: {len(doc.tables)}")
 
 
